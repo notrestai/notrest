@@ -15,7 +15,7 @@ then `claude plugin uninstall oracle-suite`.
 
 That's it. Four hooks come alive immediately:
 - **SessionStart** injects the fable-discipline anchor (verification-first working habits) AND the offload model policy (every job a Fable session delegates runs on explicit Opus) into every session, auto-creates `COORD.md` — the per-prompt session ledger — at any git-repo root, detects `START-HERE.md` / `HANDOFF.md` resume files, and self-updates the plugin from git (note: marketplace installs live in a version cache, not a git clone — there, update with `claude plugin update notrest@notrest`).
-- **UserPromptSubmit** — when `COORD.md` exists, every prompt carries a one-line reminder: append a ledger line when the work lands (ask → landed | evidence). The ledger survives crashes and compaction even if `/sessionend` never runs.
+- **UserPromptSubmit** — two per-prompt lines, both cheap and both optional-feeling by design: when `COORD.md` exists, a one-line reminder to append a ledger line when the work lands (ask → landed | evidence); and the **router** — when the prompt is a task shape a suite skill owns (research, decide, fact-check, red-team, plan, outbound, …), one line names the verb (`/notrest:<skill>` — fine to skip deliberately). The ledger survives crashes and compaction even if `/sessionend` never runs.
 - **PreCompact** reminds you to run `/sessionend` before context compaction eats your session state — or at minimum to append the COORD ledger line first.
 - **SubagentStop** — when a spawned agent finishes inside a git repo, auto-writes one line (id · model · last conclusion · transcript path) to `COORD-AGENTS.md`, so which agents were consulted and what each concluded lands in the repo automatically, at zero model-token cost.
 

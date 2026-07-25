@@ -26,6 +26,10 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/coord-nudge.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/router.sh\""
           }
         ]
       }

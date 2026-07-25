@@ -1,6 +1,6 @@
 ---
 name: eval
-description: "The harness's law-conformance suite — one static pass over the shipped files asking whether every law left a fingerprint: offload policy, honesty labels, scripts that compile, append-only ledgers, the worker contract, front-matter YAML accepts, safety laws, silent-on-failure hooks. Use on \"/eval\", \"check the laws\", \"conformance check\", \"does the harness obey its own rules\", or before any release. Zero model tokens, seconds, exits 0/5/6. doctor checks the INSTALL; eval checks the LAWS."
+description: "The harness's law-conformance suite — one static pass over the shipped files asking whether every law left a fingerprint: offload policy, honesty labels, scripts that compile, append-only ledgers, the worker contract, front-matter YAML accepts, safety laws, silent-on-failure hooks, the routing law's enforcer. Use on \"/eval\", \"check the laws\", \"conformance check\", \"does the harness obey its own rules\", or before any release. Zero model tokens, seconds, exits 0/5/6. doctor checks the INSTALL; eval checks the LAWS."
 ---
 
 # eval — does the harness obey its own laws?
@@ -30,7 +30,7 @@ model-last — the model is the *last* instrument you reach for, not the first.
 Every check names the law it guards, cites the **file and line** it judged, and carries
 a fix hint. A finding you cannot act on is a bug in this skill.
 
-## The eight checks
+## The nine checks
 
 | Check | The law |
 |---|---|
@@ -42,6 +42,7 @@ a fix hint. A finding you cannot act on is a bug in this skill.
 | `TRIGGER-SANITY` | front-matter `name` matches the directory; the description is a scalar YAML accepts (**an unquoted `": "` silently kills a skill while the file sits on disk**) and names at least one `/slash` trigger |
 | `SAFETY-LAWS` | draft: *a draft is never sent*. watch: *a dead source is never a refutation*. compile: *never auto-install*. fable-director: the tombstone/metered-key scope |
 | `HOOK-CONTRACT` | every hook is silent-on-failure — no `set -e`, always ends `exit 0` — and `hooks.json` references only files that exist |
+| `ROUTER` | the routing law has an enforcer: `hooks/router.sh` is registered under **UserPromptSubmit**, `bash -n` accepts it, it is silent-on-failure, and every `/notrest:<skill>` its table can emit names a skill directory that exists |
 
 A line that names sonnet, haiku or `fork` **alongside a negation** is the law being
 stated, not a breach of it; the checker reads the line before judging it.
@@ -94,12 +95,18 @@ Three hard constraints on any case added here:
 ## Finishing up
 
 ```bash
-bash plugins/notrest/skills/eval/scripts/fixture.sh    # exit 0 = every assertion held
+bash plugins/notrest/skills/eval/scripts/fixture.sh           # exit 0 = every assertion held
+bash plugins/notrest/skills/eval/scripts/router-fixture.sh    # exit 0 = the routing law holds
 ```
 
-The fixture builds a synthetic mini-harness that passes clean, then injects one violation
+`fixture.sh` builds a synthetic mini-harness that passes clean, then injects one violation
 per check and asserts each flips exactly its own check to FAIL with exit 6. Run it after
 any edit to `eval.py` — a conformance suite that cannot be falsified is decoration.
+
+`router-fixture.sh` is the one behavior fixture in the suite that costs nothing: it pipes
+real `UserPromptSubmit` payloads through `hooks/router.sh` and asserts each shape reaches
+its verb, each suppression stays silent, and malformed stdin never breaks a prompt. Run it
+after any edit to the routing table — a table nobody fires is a table nobody trusts.
 
 **Chains:** `/doctor` for install and estate integrity → `/eval` for law conformance →
 release. `/compile` when a check keeps finding the same violation by hand. `/spend` to

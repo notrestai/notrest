@@ -96,6 +96,12 @@ zero lost work).
     doesn't). When the suite's **spend** skill is present, receipt the rule: log each
     spawn's observed tokens to its ledger and close fan-out sessions with `spend.py
     report` (exit 4 = a violation to surface, never smooth).
+12. **Routing law — a task shape routes to the suite's verb for it.** Research →
+    `/notrest:researcher`, a choice → `/decider`, a claim → `/factcheck`, a plan →
+    `/stepbystep`, commands → `/actionplan`, outbound → `/draft`, prior art →
+    `/archivist`. The UserPromptSubmit router (`hooks/router.sh`) nudges the shape it
+    sees; **overriding it deliberately is fine — silently ad-hoc'ing a job a skill
+    already owns is the violation.** Authority: `skills/oracle/SKILL.md` intake routing.
 
 ## THE FABLE DIFFERENCE — your instinct vs the fable move
 

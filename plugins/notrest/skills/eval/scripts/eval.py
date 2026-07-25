@@ -13,6 +13,7 @@ import json
 import os
 import py_compile
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -400,8 +401,69 @@ def check_hooks(root, plug, _skills):
     return out
 
 
+ROUTE_RE = re.compile(r"\bSKILL=([a-z][a-z0-9-]*)")
+
+
+def check_router(root, plug, skills):
+    ID = "ROUTER"
+    law = "the routing law has an enforcer: router.sh is wired to UserPromptSubmit and every verb it emits exists"
+    out = []
+    hdir = os.path.join(plug, "hooks")
+    hj = os.path.join(hdir, "hooks.json")
+    if not os.path.isfile(hj):
+        return [R(ID, "SKIP", law, "no hooks/hooks.json under %s" % rel(root, plug))]
+    # (a) registered under UserPromptSubmit — not merely present on disk
+    try:
+        blob = json.loads(read(hj))
+        ups = json.dumps((blob.get("hooks") or {}).get("UserPromptSubmit", []))
+    except (ValueError, AttributeError) as exc:
+        return [R(ID, "FAIL", law, "%s  (unreadable: %s)" % (rel(root, hj), exc),
+                  "fix hooks.json — an unloadable manifest silently wires nothing")]
+    if "hooks/router.sh" not in ups:
+        out.append(R(ID, "FAIL", law, "%s  (UserPromptSubmit does not run hooks/router.sh)" % rel(root, hj),
+                     "register router.sh under UserPromptSubmit alongside coord-nudge.sh"))
+    # (b) the script itself: exists, parses, silent-on-failure
+    rs = os.path.join(hdir, "router.sh")
+    if not os.path.isfile(rs):
+        out.append(R(ID, "FAIL", law, "%s  (no router.sh — the routing law has no enforcer)" % rel(root, hdir),
+                     "ship hooks/router.sh"))
+        return out
+    txt = read(rs)
+    proc = subprocess.run(["bash", "-n", rs], stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        out.append(R(ID, "FAIL", law, "%s  (bash -n rejects it)" % rel(root, rs),
+                     proc.stdout.decode("utf-8", "replace").strip().splitlines()[0][:120]
+                     if proc.stdout else "syntax error"))
+    m = re.search(r"^\s*set -e", txt, re.M)
+    if m:
+        out.append(R(ID, "FAIL", law, "%s:%d  'set -e' aborts the router mid-prompt"
+                     % (rel(root, rs), lineno(txt, m.start())),
+                     "drop set -e — the router must never break a prompt"))
+    tail = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+    if not tail or tail[-1] != "exit 0":
+        out.append(R(ID, "FAIL", law, "%s  (last statement is %r, not 'exit 0')"
+                     % (rel(root, rs), tail[-1] if tail else ""),
+                     "end the router with 'exit 0'"))
+    # (c) every verb the table can emit is a skill that exists
+    routes = sorted(set(ROUTE_RE.findall(txt)))
+    if not routes:
+        out.append(R(ID, "FAIL", law, "%s  (no SKILL= routing table found)" % rel(root, rs),
+                     "keep the table a plain case chain with SKILL=<name> arms — greppable is checkable"))
+    for name in routes:
+        if name not in skills:
+            out.append(R(ID, "FAIL", law, "%s  (routes to /notrest:%s — no such skill dir)"
+                         % (rel(root, rs), name),
+                         "fix the arm or ship skills/%s" % name))
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law, "router.sh wired to UserPromptSubmit; %d verbs all exist: %s"
+                        % (len(routes), ", ".join(routes))))
+    return out
+
+
 CHECKS = [check_offload, check_labels, check_scripts, check_estate,
-          check_selfcheck, check_triggers, check_safety, check_hooks]
+          check_selfcheck, check_triggers, check_safety, check_hooks,
+          check_router]
 
 
 # ---------------------------------------------------------------------------

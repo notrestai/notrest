@@ -1,5 +1,31 @@
 # Changelog — the notrest harness
 
+## 3.7.0 — 2026-07-25
+
+**The routing law gets an enforcement layer — and the harness gets its capability register.**
+
+- **`hooks/router.sh`** (second UserPromptSubmit hook): recognizes 14 task shapes and
+  nudges the suite's verb in one ≤160-char line — prior-art→archivist (hoisted above
+  research: "have we researched" is a superset), research→researcher, market-sizing,
+  fact-check, decision, red-team, adversarial-review, planning, runbook, outbound,
+  explanation, recap, handoff, recheck. Word-bounded matching; silent on slash commands,
+  <4-word prompts, no match, or when the prompt already names the verb; every path exits
+  0. The payload field was verified against the CLI binary, not assumed.
+- **fable-mode Hard Rule 12 — the routing law:** overriding a route deliberately is fine;
+  silently ad-hoc'ing a job a skill already owns is the violation. Authority: oracle's
+  intake table.
+- **eval grows to nine checks:** #9 ROUTER — router.sh wired under UserPromptSubmit,
+  compiles, no set -e, exits 0 everywhere, and every verb it can emit names a real skill
+  dir. Fixtures: router-fixture.sh 21/21 (14 routes, 5 suppressions, 2 malformed-stdin);
+  eval fixture 12/12 with two ROUTER-only injections. All seat re-run at the gate.
+- **docs/CAPABILITIES.md — the capability register:** every skill and toolset cataloged
+  (does · how · concrete upgrades · biggest gap) from a three-lane analyst pass plus a
+  seat-written toolset half; build priorities re-ranked. Standout finding, now priority
+  #2: `spend.py`'s exit-4 gate still enforces the retired fable-only rule — a
+  sonnet/haiku lane passes CLEAN today. Fix scheduled next.
+- Skills-dir reload note: hook changes apply on `/reload-plugins` or restart; SKILL.md
+  edits hot-reload from the live tree.
+
 ## 3.6.1 — 2026-07-25
 
 **Hotfix: the manifest's redundant hooks reference — the double-fire root cause, now a load failure.**

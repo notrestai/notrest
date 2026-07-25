@@ -76,8 +76,21 @@ echo "[notrest] Fable discipline. Offload policy: every offloaded job runs on op
 exit 0
 EOF
 
+cat > "$P/hooks/router.sh" <<'EOF'
+#!/bin/bash
+# routing law — a task shape routes to the suite's verb for it.
+SKILL=""
+case " $1 " in
+  *" research"*) SKILL=researcher ;;
+  *" write the memo"*) SKILL=draft ;;
+esac
+[ -n "$SKILL" ] || exit 0
+echo "[notrest] route: /notrest:$SKILL"
+exit 0
+EOF
+
 cat > "$P/hooks/hooks.json" <<'EOF'
-{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash \"$CLAUDE_PLUGIN_ROOT/hooks/session-start.sh\""}]}]}}
+{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash \"$CLAUDE_PLUGIN_ROOT/hooks/session-start.sh\""}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"bash \"$CLAUDE_PLUGIN_ROOT/hooks/router.sh\""}]}]}}
 EOF
 
 # ------------------------------------------------------------------ base = 0
@@ -134,6 +147,14 @@ inject "hook with set -e" HOOK-CONTRACT \
   'sed -i.bak "2i\\
 set -e
 " "$P/hooks/session-start.sh" && rm -f "$P/hooks/session-start.sh.bak"'
+
+# router.sh still on disk and still valid — only the UserPromptSubmit wire is cut,
+# so this must flip ROUTER and nothing else.
+inject "router present but unregistered" ROUTER \
+  'printf "%s\n" "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"bash \\\"\$CLAUDE_PLUGIN_ROOT/hooks/session-start.sh\\\"\"}]}]}}" > "$P/hooks/hooks.json"'
+
+inject "router verb with no skill dir" ROUTER \
+  'sed -i.bak "s/SKILL=researcher/SKILL=nosuchskill/" "$P/hooks/router.sh" && rm -f "$P/hooks/router.sh.bak"'
 
 # ------------------------------------------------------------------- verdict
 echo "----"
