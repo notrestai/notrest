@@ -26,3 +26,4 @@
 [2026-07-25 05:42Z] lane=subagent model=claude-opus-5 tokens=121458 grade=observed purpose="rename lane: oracle-suite -> notrest (77 git renames, tombstone, full sweep) + caught pre-existing YAML frontmatter bug in 3 skills"
 [2026-07-25 06:12Z] lane=subagent model=claude-opus-5 tokens=177805 grade=observed purpose="compile lane round 1 (rethink+rewrite: compile.py scanner 34/34, doctrine, SKILL; ranked release ritual #1 at 9 occ on real estate)"
 [2026-07-25 06:18Z] lane=subagent model=claude-opus-5 tokens=212888 grade=observed purpose="compile lane round 2 (integration: hook nudge, sessionend scan, oracle+archivist wiring, 4 speed amendments; 28 calls / 4.4 min — the law working on its own author)"
+[2026-07-25 06:39Z] lane=subagent model=claude-opus-5 tokens=65014 grade=observed purpose="draft lane (outbound verb, fact-vs-framing law, 21/21; 13 calls / 3.7 min under speed law)"

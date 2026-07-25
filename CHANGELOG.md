@@ -1,4 +1,26 @@
-# Changelog — ORACLE Suite → the notrest harness
+# Changelog — the notrest harness
+
+## 3.2.0 — 2026-07-25
+
+**/draft — the outbound verb. Twenty-five skills.**
+
+Every other skill ends at "you now know / you decided"; draft turns the dossier into the
+thing you SEND — email, exec memo, slack update, one-pager, status update, each a skeleton
+with a hard length budget (references/formats.md). One law makes it trustworthy:
+**[fact] vs [framing]** — every factual sentence traces to a source line in a
+bottom-of-background source-map and keeps its honesty label; framing choices are LISTED as
+choices; persuasion never upgrades a label ([estimate] stays hedged, [unverified] drops or
+carries its hedge — never becomes fact). Numbers never invented, quotes never manufactured,
+recipients never guessed — and A DRAFT IS NEVER SENT: sending is the owner's act in the
+owner's client, and a draft file is never evidence a message was delivered. Chains:
+decider/researcher/recap → draft → (high-stakes) critic → the owner sends. 21-assertion
+fixture seat-run green; built in 13 tool calls / 3.7 minutes under the new speed law,
+shipped alone under the new release-slicing law.
+
+Also fixed at the gate: the v3.1.0 count bump missed two lowercase/rephrased count
+variants — docs claimed twenty-three while twenty-four skills existed. Counts now
+twenty-five everywhere; the incoming doctor skill's count check exists precisely for
+this defect class.
 
 ## 3.1.0 — 2026-07-25
 

@@ -78,6 +78,20 @@ Skip silently only when the skills aren't installed.
   session reads a short tail. It's machine-written — never hand-edit the entries, only
   move whole oldest lines into the archive.
 
+**The SessionEnd hook is the always-on cushion under all of this.** `hooks/session-end.sh`
+fires whenever a session terminates — clean exit, `/clear`, crash, closed terminal — and does
+two things silently, at zero model tokens: it appends one `[hook] … auto-cushion …` line to
+`COORD.md` when the last ledger line is neither a `[sessionend]` close nor already a cushion,
+and it enforces the compaction thresholds above (COORD.md >40 → newest 30 kept, the rest moved
+whole into `COORD-ARCHIVE.md`; COORD-AGENTS.md >100 → newest 60 kept). So `/sessionend` never
+*has* to run for the ledger to stay short and resumable — but it remains the deliberate,
+richer close: the four continuity files, the estate closes, the honest one-line outcome the
+hook cannot know. Read the signal in reverse when you resume: a cushion line in the tail means
+the previous session ended abruptly and its status files may lag the ledger; a `[sessionend]`
+close means someone finished on purpose. The cushion's one limitation, by design — it cannot
+tell a session that did real work from one that only read, so the dedupe guard is simply "never
+two cushion lines in a row."
+
 ## Phase 4 — Verify resumability (self-check)
 Before finishing, confirm — and fix any miss:
 - **Could a fresh session with zero memory resume from `START-HERE.md` alone?** It must name what to read and what to do, in order.

@@ -1,6 +1,6 @@
 # The notrest harness in 10 minutes
 
-The session harness — plus twenty-three skills — that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
+The session harness — plus twenty-five skills — that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
 
 ## 1. Install (once)
 
@@ -50,6 +50,7 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | Get an ordered, verified plan | "plan how to X" → **stepbystep** |
 | Turn the plan into exact commands | "make it copy-paste" → **actionplan** |
 | Attack something before trusting it | "red-team this" → **critic** |
+| Turn what you know into what you send | "write the email" / "/draft" → **draft** |
 | Run several skills in sequence | "research X, critique it, then plan it" → **director** |
 | Start / resume a session properly | "hey oracle" → **oracle** |
 | Save everything before stopping | "/sessionend" → **sessionend** |
