@@ -42,3 +42,4 @@
 [2026-07-25 08:14Z] lane=subagent model=claude-opus-5 tokens=2512048 grade=observed purpose="auto-receipt: Measurement complete. Verified the installed copy at `~/.cla" agent=a74c41ef0aa4030b7
 [2026-07-25 08:23Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ad3284192b7a2d1dd
 [2026-07-25 08:38Z] lane=subagent model=claude-opus-5 tokens=12942847 grade=observed purpose="auto-receipt: Three scope-negatives are worth buying back. Restoring them" agent=adb784bc1b4f56161
+[2026-07-25 19:53Z] lane=subagent model=claude-opus-5 tokens=10758382 grade=observed purpose="auto-receipt: Verified against current docs, and empirically tested on you" agent=a72972024631f0d8d

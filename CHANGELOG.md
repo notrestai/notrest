@@ -1,5 +1,21 @@
 # Changelog — the notrest harness
 
+## 3.6.1 — 2026-07-25
+
+**Hotfix: the manifest's redundant hooks reference — the double-fire root cause, now a load failure.**
+
+- Removed `"hooks": "./hooks/hooks.json"` from plugin.json. The standard `hooks/hooks.json`
+  is auto-loaded; the explicit manifest reference made current CLIs (≥2.1.x) refuse the
+  plugin outright ("Duplicate hooks file detected" — `claude plugin list` showed
+  `✘ failed to load`, i.e. fresh sessions got NO harness), and on older loaders the same
+  redundancy silently registered every hook TWICE — the confirmed root cause of the
+  doubled SessionStart/UserPromptSubmit echoes, the duplicate SubagentStop receipts in
+  COORD-AGENTS.md, and the spurious "session ended" auto-cushion lines.
+- Dev-machine runtime switches to a skills-dir plugin (`notrest@skills-dir`): a symlink to
+  the live git working tree, discovered in place — zero cache copies, `git pull` +
+  SKILL.md live-reload replace the marketplace update dance. The marketplace flow remains
+  the consumer install path and the release ritual is unchanged for it.
+
 ## 3.6.0 — 2026-07-25
 
 **The rightsizing pass — the harness stops reciting its own laws.**

@@ -13,9 +13,12 @@ Last updated: 2026-07-25
   **versions must match**. `plugins/oracle-suite-tombstone/` is the rename stub pinned
   at 9.0.0 — **never bump it**.
 - Release: bump both manifests + CHANGELOG.md + README table + both version stamps in
-  docs/oracle-skill-flow.html → commit → push → `claude plugin marketplace update notrest
-  && claude plugin update notrest@notrest` (restart applies). The hook's git self-update
-  no-ops on cache installs — the CLI path is the real one.
+  docs/oracle-skill-flow.html → commit → push. This machine runs `notrest@skills-dir`
+  (`~/.claude/skills/notrest` → this repo's `plugins/notrest`, loaded IN PLACE, zero cache
+  copies): SKILL.md edits apply live, hook/manifest changes need `/reload-plugins` or a
+  restart, and the SessionStart hook's `git pull --ff-only` genuinely self-updates.
+  Consumers still install via the marketplace (`claude plugin marketplace update notrest
+  && claude plugin update notrest@notrest`).
 - `spend/ledger.md` is append-only; the SubagentStop hook auto-receipts each finished lane
   (idempotent) — hand-logging double-counts.
 - COORD never compacts, it ROLLS: at 500 lines the active file seals as `COORD-<NNN>.md`
