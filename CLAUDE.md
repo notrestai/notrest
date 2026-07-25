@@ -7,8 +7,8 @@ Last updated: 2026-07-15
   `/fable-mode` loads the full contract).
 - **Offload model policy (HARD RULE, owner-set 2026-07-15):** Fable never rides in a
   subagent; every job a Fable session offloads runs on **opus** — set `model: "opus"`
-  on every Agent/Workflow call; no sonnet, no haiku. Delegate via **fable-swarm**
-  (the seat keeps decompose/judge/apply/gate); log every lane with `/spend`
+  on every Agent/Workflow call; no sonnet, no haiku. Delegate via **agentswarm**
+  (seat-agnostic — the seat keeps decompose/judge/apply/gate); log every lane with `/spend`
   (`report` exits 4 on a violation); consult `/archivist` before research fan-outs.
 - Never `/model`-switch the seat mid-session — the prompt cache is per-model, so a
   switch re-reads the context cold. A model change is a subagent or a handoff.

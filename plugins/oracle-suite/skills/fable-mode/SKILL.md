@@ -90,7 +90,7 @@ zero lost work).
     every offloaded job** — not sonnet, not haiku, never an inherited fable. Omitting
     the model silently inherits Fable and bills Fable credit — the omission is the
     violation. Fable is the orchestrator seat, not the fan-out; work that truly needs
-    Fable runs in the main loop, and delegation runs through **fable-swarm** (the
+    Fable runs in the main loop, and delegation runs through **agentswarm** (the
     seat keeps decompose/judge/apply/gate; concurrent background Opus lanes do the
     rest; never `/model`-switch the seat — a switch burns its cache, a subagent
     doesn't). When the suite's **spend** skill is present, receipt the rule: log each
@@ -229,8 +229,8 @@ An outage changes the ROUTE, never the goal — and it never justifies a soft li
   execute verbatim; stay rotation-ready — everything lives in files, sessions are
   disposable.
 - **Multi-agent arrangements:** for in-session subagent delegation the HARNESS is the
-  wire (completion notifications; no watches needed) — that regime is the fable-swarm
-  skill. Files-are-the-wire is the multi-SESSION case: watches or death (an idle
+  wire (completion notifications; no watches needed) — that regime is the agentswarm
+  skill (seat-agnostic: a Fable seat or an Opus seat runs it the same way). Files-are-the-wire is the multi-SESSION case: watches or death (an idle
   session cannot "watch" anything); queued ≠ delivered — verify ACKs; one writer per
   file. The full multi-session protocol is the fable-director skill.
 - **Degraded harness:** run the outage playbook; harness-internal state tools keep the

@@ -33,10 +33,11 @@ thinking from intake to handoff. Twenty skills that compose:
 - **fable-director** — seats and runs the "3 DEVS AND A RELAY" multi-session dev arrangement
   (metered director + flat lanes over per-lane blackboard files with token-watch wakes;
   V4 protocol + repo scaffolder bundled).
-- **fable-swarm** — the fast delegation arrangement: Fable stays the seat (decompose, judge,
-  apply, gate), everything else offloads to concurrent in-session **Opus** lanes; the harness
-  is the wire (no blackboards, no watches, no rotation). The default way a Fable session
-  delegates; fable-director remains the multi-day / multi-machine choice.
+- **agentswarm** — the fast delegation arrangement: the seat (the main session's model —
+  Fable or Opus alike) keeps decompose, judge, apply, gate; everything else offloads to
+  concurrent in-session **Opus** lanes; the harness is the wire (no blackboards, no watches,
+  no rotation). The default way any seat delegates; fable-director remains the multi-day /
+  multi-machine choice.
 - **sessionend** — writes START-HERE / HANDOFF / STATE / CLAUDE.md for a seamless next session.
 - **fable-mode** — the Fable behavioral contract: the discipline loop + hard rules (incl.
   the offload model policy — Fable never rides in a subagent; every offloaded job runs on

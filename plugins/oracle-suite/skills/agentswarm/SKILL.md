@@ -1,14 +1,19 @@
 ---
-name: fable-swarm
-description: The fast delegation arrangement (Oracle family) — Fable stays the seat (decompose, judge, apply, gate) and instantly offloads everything else to in-session background Opus agents and Workflow pipelines; the harness is the wire (no blackboards, no watches, no rotation choreography). Use on "/fable-swarm", "swarm this", "offload this", "fable swarm", or BY DEFAULT whenever a Fable session delegates substantial work on this machine. OWNER MODEL POLICY (2026-07-15) — every offloaded job runs on OPUS: no sonnet, no haiku, never Fable. For multi-day / multi-machine / owner-watchable arrangements, use fable-director instead.
+name: agentswarm
+description: The fast delegation arrangement (Oracle family) — the seat (the main session's model) keeps decompose/judge/apply/gate and instantly offloads everything else to in-session background Opus agents and Workflow pipelines; the harness is the wire (no blackboards, no watches, no rotation choreography). Applies to ANY seat — a Fable session or an Opus session alike. Use on "/agentswarm", "agent swarm", "swarm this", "offload this", or BY DEFAULT whenever a session delegates substantial work on this machine; the legacy "/fable-swarm" and "fable swarm" still mean this skill. MODEL POLICY (owner-set 2026-07-15) — every offloaded job runs on explicit OPUS: no sonnet, no haiku, never an inherited seat model. For multi-day / multi-machine / owner-watchable arrangements, use fable-director instead.
 ---
 
-# fable-swarm — the seat and the swarm
+# agentswarm — the seat and the swarm
+
+**THE SEAT is the main session's model** — Fable when Fable is driving, otherwise the
+latest Opus. The arrangement is the same either way: the seat decomposes, judges, applies,
+and gates; the swarm does everything else. Nothing here depends on which model holds the
+seat, and the few genuinely Fable-specific laws are marked as such where they appear.
 
 Fable-director's blackboard-and-watch machinery exists for one constraint: a metered
 API-key director whose in-session subagents would bill Fable-priced credit. Where that
-constraint doesn't hold — a Fable session in Claude Code with the Agent and Workflow
-tools — the machinery is pure drag. This skill is the fast arrangement for that case:
+constraint doesn't hold — a session in Claude Code with the Agent and Workflow tools —
+the machinery is pure drag. This skill is the fast arrangement for that case:
 same roles, same discipline, **the harness as the wire**. It deletes fable-director's
 three worst failure classes by construction: deaf lanes (no watches to re-arm —
 completion notifications are guaranteed), queued ≠ delivered (no message hops), and
@@ -16,28 +21,34 @@ split-brain rotation (no successor sessions). A round trip that took minutes and
 confirm-clicks becomes: one message spawns N concurrent lanes, results return in
 seconds to minutes, zero clicks.
 
-## The model rule (owner-set 2026-07-15, absolute)
+## The model rule (owner-set 2026-07-15, absolute — regardless of what the seat is)
 
-**Every offloaded job runs on Opus.** Set `model: "opus"` explicitly on every Agent
-call and every Workflow `agent()` call — no sonnet, no haiku, and never an inherited
-Fable. The owner chose closest-to-Fable quality on all delegated work over per-token
-savings; this supersedes the earlier sonnet/haiku difficulty ladder wherever the swarm
-operates. Two guards stay on:
+**Every offloaded job runs on Opus.** Set `model: "opus"` explicitly — the alias, which
+floats to the latest Opus — on every Agent call and every Workflow `agent()` call: no
+sonnet, no haiku, and never a silently inherited seat model. This holds whatever model
+holds the seat. The owner chose closest-to-seat quality on all delegated work over
+per-token savings; it supersedes the earlier sonnet/haiku difficulty ladder wherever the
+swarm operates. Three guards stay on:
 
-- **Never Fable below the seat.** An omitted `model` silently inherits Fable — the
-  omission is the violation. The spend report's exit-4 gate makes this checkable.
-- **Never spawn `subagent_type: "fork"` from a Fable seat.** Forks IGNORE the `model`
-  parameter and always inherit the parent model — a fork with `model: "opus"` silently
-  rides Fable while the ledger records the intended opus, a violation the exit-4 gate
-  cannot catch. Use a fresh non-fork Opus agent and hand it the context it needs.
+- **Fable never rides in a subagent.** (Fable-specific law — it is about Fable credit and
+  stays absolute.) Under a Fable seat an omitted `model` silently inherits Fable, and the
+  omission is the violation. Under any seat, an omitted `model` is still a violation: the
+  lane must be explicitly labeled. The spend report's exit-4 gate makes this checkable.
+- **Never spawn `subagent_type: "fork"` — from any seat.** Forks IGNORE the `model`
+  parameter and always inherit the PARENT model. Under a Fable seat that is a policy
+  violation (the lane rides Fable while the ledger records the intended opus — one the
+  exit-4 gate cannot catch); under an Opus seat it is an unlabeled lane that defeats the
+  ledger's explicitness. Banned either way. Use a fresh non-fork Opus agent and hand it
+  the context it needs.
 - **Receipts, not vibes.** Opus fan-out costs real tokens; the spend ledger receipts
   every lane so the policy can be revisited with numbers, not guesses.
 
 The **gpt lane** is unaffected (it bills the owner's ChatGPT plan, not this session).
 
-## The seat contract — what Fable keeps
+## The seat contract — what the seat keeps
 
-The seat keeps exactly the work where its judgment earns its price, nothing else:
+The seat stays the seat regardless of model. It keeps exactly the work where its judgment
+earns its price, nothing else:
 
 1. **Decompose** — cut the objective into lane-sized jobs with grep-able done-whens.
 2. **Judge** — read lane briefs adversarially; a lane's "done" is a claim, not a fact.
@@ -46,8 +57,9 @@ The seat keeps exactly the work where its judgment earns its price, nothing else
 4. **Gate** — ships, secrets, DNS, billing, anything irreversible: seat + owner only.
 5. **Talk to the owner** — one voice; lanes never address the owner.
 
-Two standing prohibitions at the seat: never `/model`-switch (a model switch burns the
-seat's prompt cache — delegation via subagents costs no cache at all), and never do
+Two standing prohibitions at the seat, true for every seat: never `/model`-switch (the
+prompt cache is per-model, so a switch re-reads the context cold — delegation via
+subagents costs no cache at all; a model change is a subagent or a handoff), and never do
 lane-work inline that a lane could do concurrently (the seat's context is the scarcest
 resource in the arrangement).
 
@@ -63,6 +75,28 @@ resource in the arrangement).
   returns machine-tight.
 - **Blocked ≠ stopped.** A lane hitting a wall doesn't idle the swarm: the seat keeps
   every unblocked lane moving and re-probes the blocked path cheaply next turn.
+
+### No caps — as many lanes, as many swarms, as the job needs
+
+- **No numeric limit.** The swarm caps nothing: not lanes, not concurrent fan-outs, not
+  simultaneous swarms. Scale is decided by the job's decomposition, never by a count —
+  spawning the 15th narrow lane is cheaper than making the 3rd broad one.
+- **Proven scale** (owner's dig.rest DIR sessions, measured from transcripts on this
+  machine, 2026-07-23): single sessions ran 16, 15, and 11 concurrent-era agents; one lane
+  returned a ~1 MB transcript; that repo's `COORD-AGENTS.md` carries 40 machine-written
+  entries. The arrangement held and the estate recorded all of it.
+- **The only real ceilings are HARNESS-level — the owner's dials, not the skill's.** The
+  Workflow tool runs ~16 concurrent agent slots per run and queues the excess
+  automatically (pass 100 items and they all complete); the app's workflow-size guideline
+  is adjustable via "Dynamic workflow size" in `/config`; Agent-tool lanes have no
+  practical cap. **Never present a harness queue as a reason to shrink the job.**
+- **Multiple swarms compose.** Several persistent builder lanes (one per domain) plus
+  diagnosis fan-outs plus refuter panels can all run at once — and separate SESSIONS each
+  running their own swarm on the same repo coexist safely: the estate files are
+  append-only / flock-guarded, and `COORD-AGENTS.md` receipts every lane from every
+  session (the DIR + DIR2 precedent).
+- **What makes uncapped safe is already law:** narrow lanes, tight returns, receipts per
+  lane, trail-walk at the gate. Scale the count, never loosen the contract.
 
 ## Persistent builder lanes — the seat-builder ritual (owner-ratified 2026-07-21)
 

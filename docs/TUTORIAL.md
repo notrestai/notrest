@@ -50,7 +50,7 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | Save everything before stopping | "/sessionend" → **sessionend** |
 | Work with discipline all session | automatic (hook) · full contract: **/fable-mode** |
 | Run a multi-SESSION dev team | "/fable-director" → **fable-director** |
-| Delegate heavy work fast (Fable seat + Opus lanes) | "swarm this" → **fable-swarm** |
+| Delegate heavy work fast (any seat + Opus lanes) | "swarm this" / "/agentswarm" → **agentswarm** |
 | Ask "what do we already know about X?" | "index the dossiers" → **archivist** |
 | Audit token spend / model routing | "spend report" → **spend** |
 | Get a GPT second opinion | "/gpt" → **gpt** |
@@ -74,4 +74,4 @@ Every skill enforces: real sources only (invented citations are banned), tiered 
 
 ## 7. Costs, quick
 
-Full runs search the web and write files; `--quick` variants stay in chat and cost a fraction. Search budgets are built in (a researcher run defaults to ~20 searches, factcheck ~3 per claim). You can always say "max 5 searches" or "keep it quick" — the skills honor stated caps and say what was traded away. Delegated fan-out runs on explicit Opus (the owner offload policy — Fable never rides in a subagent), and the **spend** ledger receipts every lane so the routing stays checkable, not asserted.
+Full runs search the web and write files; `--quick` variants stay in chat and cost a fraction. Search budgets are built in (a researcher run defaults to ~20 searches, factcheck ~3 per claim). You can always say "max 5 searches" or "keep it quick" — the skills honor stated caps and say what was traded away. Delegated fan-out runs on explicit Opus whatever model holds the seat (the owner offload policy — and Fable never rides in a subagent), via **agentswarm**; the **spend** ledger receipts every lane so the routing stays checkable, not asserted.

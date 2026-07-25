@@ -16,8 +16,9 @@ plugin, `~/.claude/skills/fable-director/` when running as a loose global skill.
 ## Absolute rules (hold even before you read V4)
 1. **Never spawn in-session subagents under this metered arrangement** — they bill this
    session's metered key; the LANES are your explorers. Route all research/sweeps as
-   directives. (Scope: this rule is the metered-key regime. A subscription Fable session
-   NOT seated as a metered director delegates via the sibling **fable-swarm** skill instead.)
+   directives. (Scope: this rule is the metered-key regime. A subscription session — Fable
+   or Opus — NOT seated as a metered director delegates via the sibling **agentswarm**
+   skill instead.)
    *Not a subagent:* the suite's **gpt lane** (`skills/gpt`) — it shells to Codex CLI on
    the OWNER'S ChatGPT plan, zero metered burn. Permitted `--once` (low/medium, empty dir,
    `--setup` flags never questions) for a second opinion on a risky EDIT SPEC or an extra
@@ -38,12 +39,12 @@ plugin, `~/.claude/skills/fable-director/` when running as a loose global skill.
    fallback in the ledger and continue; the protocol is model-agnostic. Lanes: never Fable.
    And Fable never rides below the seat: on the rare owner-sanctioned agent spawn anywhere
    in the arrangement (incl. lanes' own subagents), the model is set explicitly — opus for
-   every offloaded job under the owner policy (2026-07-15; see fable-swarm) — never
+   every offloaded job under the owner policy (2026-07-15; see agentswarm) — never
    inherited Fable. Fable pays for direction, not fan-out.
 
 **Sibling note:** for same-machine delegation without the blackboard machinery, the suite's
-**fable-swarm** skill is the fast arrangement (Fable seat + concurrent in-session Opus lanes;
-the harness is the wire — no watches, no rotation). This arrangement remains the choice when
+**agentswarm** skill is the fast arrangement (any seat — Fable or Opus — plus concurrent
+in-session Opus lanes; the harness is the wire — no watches, no rotation). This arrangement remains the choice when
 lanes must survive the machine sleeping, span machines/accounts, or stay owner-watchable.
 
 ## MODE DETECT (in order)

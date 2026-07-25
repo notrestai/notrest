@@ -1,5 +1,29 @@
 # Changelog — ORACLE Suite
 
+## 2.15.0 — 2026-07-25
+
+**fable-swarm becomes agentswarm — the swarm was an arrangement, never a model; and it is uncapped by design.**
+
+- **Renamed + seat-agnostic:** `git mv` to `skills/agentswarm` (history preserved; legacy
+  `/fable-swarm` still triggers it). THE SEAT is the main session's model — Fable when
+  Fable is driving, otherwise the latest Opus — and the seat stays the seat regardless:
+  decompose, judge, apply, gate. Every law survives generalization: offloads on explicit
+  `opus` (the alias) from ANY seat; the fork ban holds everywhere (under a Fable seat a
+  fork is a billing violation, under an Opus seat an unlabeled lane defeating the ledger);
+  never `/model`-switch the seat; and "Fable never rides in a subagent" stays verbatim as
+  the one Fable-specific absolute. Hook, fable-mode, fable-director, both READMEs,
+  TUTORIAL, foundation templates, manifests, repo CLAUDE.md all renamed; CHANGELOG,
+  ledgers, and receipts stay history, untouched.
+- **No caps — owner directive, evidence-backed:** the swarm imposes no numeric limit on
+  lanes, fan-outs, or simultaneous swarms; scale is decided by the job's decomposition,
+  never by a count. Proven scale cited in-skill from the owner's dig.rest DIR sessions
+  (measured 2026-07-23): 16/15/11 agents in single sessions, a ~1 MB lane transcript, and
+  40 machine-written COORD-AGENTS.md entries. Harness ceilings are the owner's dials
+  (Workflow's ~16 concurrent slots auto-queue; "Dynamic workflow size" in /config);
+  multiple swarms and separate sessions compose safely over the append-only, flock-guarded
+  estate — the DIR + DIR2 precedent. Uncapped is safe because the contract is already law:
+  narrow lanes, tight returns, receipts per lane, trail-walk at the gate.
+
 ## 2.14.0 — 2026-07-25
 
 **The successor escort — handoffs become a flown window, not an instant; and the estate floats to latest Opus.**

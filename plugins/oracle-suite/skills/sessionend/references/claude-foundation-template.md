@@ -79,7 +79,7 @@ Every factual claim ends with: `[confidence · source — what would invalidate 
 - **Offload model policy (HARD RULE, owner-set 2026-07-15):** Fable never rides in a
   subagent; every job a Fable session offloads runs on **opus** (`model: "opus"` on
   every Agent/Workflow call — no sonnet, no haiku, never inherited fable). Delegate
-  via fable-swarm (the seat keeps decompose/judge/apply/gate); receipts via /spend;
+  via agentswarm (seat-agnostic; the seat keeps decompose/judge/apply/gate); receipts via /spend;
   never `/model`-switch the seat mid-session (cache burn — delegate instead).
 - **[Anything else stable across your work]**
 
