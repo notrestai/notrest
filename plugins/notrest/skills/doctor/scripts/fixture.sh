@@ -175,10 +175,12 @@ import sys,io,os
 p=os.path.join(sys.argv[1],"plugins/fixtureplug/skills/beta/SKILL.md")
 io.open(p,"w",encoding="utf-8").write("---\nname: beta\ndescription: Beta lane: the unquoted form that silently kills the metadata.\n---\n\n# beta\n")'
 
+# the marketplace side is bumped, not plugin.json — a plugin.json bump would ALSO (correctly)
+# stale the render stamp, and this case asserts single-check precision.
 defect "manifest version mismatch" "MANIFESTS" '
 import sys,os,json
-p=os.path.join(sys.argv[1],"plugins/fixtureplug/.claude-plugin/plugin.json")
-d=json.load(open(p)); d["version"]="1.0.1"; json.dump(d,open(p,"w"),indent=2)'
+p=os.path.join(sys.argv[1],".claude-plugin/marketplace.json")
+d=json.load(open(p)); d["metadata"]["version"]="1.0.1"; json.dump(d,open(p,"w"),indent=2)'
 
 defect "tombstone bumped off its pin" "MANIFESTS" '
 import sys,os,json
@@ -191,7 +193,7 @@ json.dump(d,open(p,"w"),indent=2)'
 defect "broken hook syntax" "HOOKS" '
 import sys,io,os
 p=os.path.join(sys.argv[1],"plugins/fixtureplug/hooks/session-start.sh")
-io.open(p,"w",encoding="utf-8").write("#!/bin/bash\nif [ -z \"$X\" ; then\n  echo \"[fixtureplug] hi\"\nfi\n")'
+io.open(p,"w",encoding="utf-8").write("#!/bin/bash\nif [ -z \"$X\" ]; then\n  echo \"[fixtureplug] hi\"\n")'
 
 defect "skill count drift" "SKILL COUNT" '
 import sys,io,os
@@ -233,8 +235,10 @@ t "--plugin mode skips the repo-only checks" \
   "$(py 'import json,sys
 d=json.load(open(sys.argv[1]))
 print(sum(1 for c in d["checks"] if c["status"]=="SKIP")>=2)' "$W/plug.json")" "True"
-t "doctor never writes into the target" \
-  "$(cd "$H" && find . -newer "$H/.gitignore" -type f | grep -v candidates.json | wc -l | tr -d ' ')" "0"
+# the read-only boundary, asserted by content: every file byte-identical across a full run.
+snap(){ (cd "$1" && find . -type f | sort | while read -r f; do printf '%s %s\n' "$f" "$(cksum < "$f")"; done); }
+BEFORE="$(snap "$H")"; runjson "$H"; AFTER="$(snap "$H")"
+t "doctor never writes into the target" "$([ "$BEFORE" = "$AFTER" ] && echo identical || echo mutated)" "identical"
 
 echo
 echo "doctor fixture: $PASS passed, $FAIL failed"

@@ -1,5 +1,26 @@
 # Changelog — the notrest harness
 
+## 3.3.0 — 2026-07-25
+
+**/doctor — the harness passes its own physical. Twenty-six skills.**
+
+A read-only self-check born from this week's silent failures, each of its eight checks
+citing the real defect it descends from: SKILL frontmatter a YAML load would reject (the
+unquoted colon-space that made three skills invisible for weeks), manifest + tombstone
+version pins (tombstone forever 9.0.0), skill-count drift across every place the number is
+spelled, hook scripts that exist and parse plus rename residue, estate integrity (COORD
+header, agent ledger, spend report, compile candidates), installed-vs-repo-vs-clone drift
+(the stale-marketplace-clone class), unanchored gitignore rules that swallow skill dirs,
+and stale render stamps. Reads only — never repairs; every FAIL prints its fix command.
+43-assertion fixture: nine injected defect classes each flip exactly one named check.
+
+**It earned its keep before it shipped:** doctor's first live run against this repo failed
+its own count check — 26 skill dirs vs four prose surfaces claiming 25/25/23/23, the
+third count-drift incident in two releases (lowercase and rephrased variants kept dodging
+narrow regexes). Counts reconciled robustly to twenty-six; the ship gate for this release
+was doctor's own verdict: HEALTHY — 8/8, exit 0. That is Ring 1's thesis made mechanical:
+the harness's claims about itself are now checked by the harness.
+
 ## 3.2.1 — 2026-07-25
 
 **The crash cushion closes — a fifth hook completes the estate's insurance.**

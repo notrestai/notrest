@@ -1,7 +1,7 @@
 # ORACLE Suite
 
 A working-session toolkit for Claude Code by [Not Rest Inc.](https://do.not.rest) — structured
-thinking from intake to handoff. Twenty-five skills that compose:
+thinking from intake to handoff. Twenty-six skills that compose:
 
 - **oracle** — session intake (the ORACLE six-question setup) + loads/scaffolds the `CLAUDE.md` foundation. Say "hey oracle" or `/oracle`.
 - **researcher** — multi-pass research → background + decision dossier.
@@ -38,6 +38,12 @@ thinking from intake to handoff. Twenty-five skills that compose:
   `register` + `all` merge every registered project into one cross-project PM map.
 - **spend** — append-only model-spend ledger + report with a routing verdict (exits 4 if
   Fable ever rode below the seat) — makes the v2.7.0 routing hard rule checkable.
+- **doctor** — the harness's self-check: `doctor.py check --root .` runs eight named
+  PASS/WARN/FAIL checks — front-matter that a real YAML load would reject (the unquoted
+  colon-space that makes a skill invisible), manifest + tombstone pins, skill-count drift,
+  hook files that exist and parse, estate integrity, install-vs-repo drift, unanchored
+  gitignore rules, stale render stamps — each with the command that fixes it. Every check
+  descends from a defect that actually shipped. Reads only; never repairs.
 - **compile** — the estate's fourth verb: a python3-stdlib scanner mines COORD, the agent
   ledger and the spend ledger for the same job done three or more times (at zero model
   tokens), then a seat-run ritual reconstructs that job's contract from the trail, builds an
