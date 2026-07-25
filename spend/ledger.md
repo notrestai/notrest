@@ -19,3 +19,4 @@
 [2026-07-25 04:30Z] lane=subagent model=claude-opus-5 tokens=190520 grade=observed purpose="recap builder lane round 1 (skill + decision-map template + real example from this repo's trail; 3 citations seat-verified)"
 [2026-07-25 04:30Z] lane=subagent model=claude-opus-5 tokens=168092 grade=observed purpose="graph builder lane round 1 (graph.py scan/register/all + viewer; 56/56 fixture seat-run; canvas dpr defect caught at seat render gate -> round 2)"
 [2026-07-25 04:35Z] lane=subagent model=claude-opus-5 tokens=178631 grade=observed purpose="graph builder lane round 2 (canvas dpr fix, 63/63; caught seat's unanchored gitignore ship-blocker) — same lane resumed"
+[2026-07-25 04:49Z] lane=subagent model=claude-opus-5 tokens=202465 grade=observed purpose="graph lane round 3 (/graph default scan+open + hook glob fix, three-case verified) — same lane, third resume"

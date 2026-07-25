@@ -1,5 +1,24 @@
 # Changelog — ORACLE Suite
 
+## 2.16.1 — 2026-07-25
+
+**`/graph` now means "show me the graph" — scan, then open, no questions.**
+
+- **Default behavior rebuilt as an imperative flow:** every `/graph` invocation refreshes
+  the scan (cwd's git root; a path argument overrides; `all` builds the merged PM view),
+  then ALWAYS OPENS the viewer via an environment decision list — browser pane over a
+  localhost port loop (8790-99, curl-proven before handing over; the pane snapshots
+  file:// pages, so serving is the reliable door), plain macOS via `open graph/graph.html`
+  (self-contained file), else the absolute path — closing with nodes · edges · generated ·
+  which door was used. The lane executed its own documented blocks verbatim as the test
+  (81 nodes/149 edges, port 8790, pane JS alive). oracle's intake refresh stays scan-only
+  and silent; the open belongs to the explicit ask.
+- **Hook papercut fixed:** the director-detect nudge no longer false-fires on the
+  machine-written ledgers (COORD-AGENTS.md, COORD-ARCHIVE.md, COORD-AGENTS-ARCHIVE.md —
+  the third excluded proactively by the lane). Real lane blackboards and legacy
+  FABLE-COORD*.md still trigger it. Three-case behavior verified at both the lane and the
+  seat: ledgers-only silent, lane-file nudges, legacy nudges.
+
 ## 2.16.0 — 2026-07-25
 
 **recap + graph — the estate learns to tell its story and draw its map. Twenty-two skills.**

@@ -50,7 +50,19 @@ COORDEOF
 elif [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/COORD.md" ]; then
   echo "[oracle-suite] COORD.md is live in this repo — read its ledger tail before starting (prior sessions' trail), and append one line per substantive prompt's work (ask -> landed | evidence)."
 fi
-if ls COORD-*.md >/dev/null 2>&1 || ls FABLE-COORD*.md >/dev/null 2>&1 || [ -f "PLAN-FABLE-DIRECTOR-V4.md" ]; then
+# A lane blackboard is COORD-<LANE>.md — NOT the machine-written ledgers
+# (COORD-AGENTS.md, COORD-ARCHIVE.md, COORD-AGENTS-ARCHIVE.md), which exist in
+# every ORACLE repo and used to false-fire this nudge.
+LANE_BLACKBOARD=""
+for f in COORD-*.md FABLE-COORD*.md; do
+  [ -f "$f" ] || continue
+  case "$f" in
+    COORD-AGENTS.md|COORD-ARCHIVE.md|COORD-AGENTS-ARCHIVE.md) continue ;;
+  esac
+  LANE_BLACKBOARD="$f"
+  break
+done
+if [ -n "$LANE_BLACKBOARD" ] || [ -f "PLAN-FABLE-DIRECTOR-V4.md" ]; then
   echo "[oracle-suite] Per-lane COORD blackboards (COORD-<LANE>.md / legacy FABLE-COORD*.md) exist here — a fable-director arrangement lives in this repo. If this session is meant to direct (or rejoin) it, load the fable-director skill (oracle-suite:fable-director): it reads the repo's PLAN-FABLE-DIRECTOR-V4.md + blackboards and re-arms watches before anything else."
 fi
 exit 0
