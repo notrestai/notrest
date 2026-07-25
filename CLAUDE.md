@@ -1,4 +1,4 @@
-Last updated: 2026-07-15
+Last updated: 2026-07-25
 
 # CLAUDE.md — notrest harness foundation
 
@@ -24,4 +24,12 @@ Last updated: 2026-07-15
   `claude plugin marketplace update notrest && claude plugin update notrest@notrest`
   (restart applies). The hook's git self-update no-ops on marketplace-cache installs
   (`~/.claude/plugins/cache/...` is not a git clone) — the CLI path above is the real one.
-- Spend ledger: `spend/ledger.md` — append-only, via `spend.py` only, never hand-edited.
+- Spend ledger: `spend/ledger.md` — append-only. The SubagentStop hook auto-receipts every
+  finished lane (idempotent); hand-logging on top double-counts.
+- COORD never compacts — it ROLLS: at 500 ledger lines the active file seals as
+  `COORD-<NNN>.md` and a fresh volume opens. Sealed volumes are immutable; read the active
+  tail, read all volumes for history. Same for `COORD-AGENTS.md` at 1000.
+- Self-check before any ship: `doctor.py check` (install/estate) and `eval.py check` (law
+  conformance) — both seconds, zero model tokens. Green on both is the gate.
+- A compiled runtime lives isolated under `compile/<slug>/` and is SOURCE (tracked); only
+  derived scan output is gitignored. Promoting one to the ritual of record is a release.
