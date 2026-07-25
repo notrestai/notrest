@@ -2,6 +2,7 @@
 name: game-forge
 description: >-
   Build a complete, polished, playable game from a short request — on the fly.
+  Use on "/game-forge" or any ask to make, build, prototype, or vibe-code a game.
   Use this skill whenever the user wants to make, build, generate, prototype, or
   "vibe-code" a game of any kind: an arcade game, platformer, shooter, puzzle,
   tower defense, snake/breakout/tetris-style classic, an idle/clicker, a roguelike,

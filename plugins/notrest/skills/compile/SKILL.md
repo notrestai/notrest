@@ -69,6 +69,8 @@ python3 <compile-skill>/scripts/compile.py report --root "$ROOT"
 
 Exit codes: `scan` 0 · `report` 0/3 · bad arguments 2 · an invalid status 1.
 
+The skill's own contract test is `scripts/fixture.sh` — run it after any change to `compile.py`.
+
 ### How it decides two entries are the same job
 
 **In a ledger of work, FREQUENT tokens carry the procedure and RARE tokens carry the

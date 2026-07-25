@@ -1,7 +1,7 @@
 # ORACLE Suite
 
 A working-session toolkit for Claude Code by [Not Rest Inc.](https://do.not.rest) — structured
-thinking from intake to handoff. Twenty-six skills that compose:
+thinking from intake to handoff. Twenty-eight skills that compose:
 
 - **oracle** — session intake (the ORACLE six-question setup) + loads/scaffolds the `CLAUDE.md` foundation. Say "hey oracle" or `/oracle`.
 - **researcher** — multi-pass research → background + decision dossier.
@@ -9,6 +9,11 @@ thinking from intake to handoff. Twenty-six skills that compose:
 - **stepbystep** — goal/docs → a stress-tested, converged, ordered action plan.
 - **actionplan** — a stepbystep plan → a copy-paste runbook (exact commands per host).
 - **critic** — adversarial red-team with a severity-tiered verdict.
+- **refuter** — critic's executable-side sibling: a lane other than the builder attacks one
+  narrow target under a written brief (isolated scratch dir, hard prohibitions, a numbered
+  attack ladder, ~12 tool calls) and returns CONFIRMED findings with a pasted reproduction,
+  PLAUSIBLE ones with a concrete failure scenario, and what survived by name. Finds — never
+  fixes.
 - **explainer** — a correct mental model + three depth layers + misconceptions + verify-it-yourself.
 - **decider** — weighted criteria, evidence, the hinge ("what flips the winner"), pre-mortem → a reversibility-aware recommendation.
 - **factcheck** — claim-by-claim verdicts (✅/🟡/🔴/🔵/⚪) against independent real sources.
@@ -38,6 +43,13 @@ thinking from intake to handoff. Twenty-six skills that compose:
   `register` + `all` merge every registered project into one cross-project PM map.
 - **spend** — append-only model-spend ledger + report with a routing verdict (exits 4 if
   Fable ever rode below the seat) — makes the v2.7.0 routing hard rule checkable.
+- **eval** — the harness's law-conformance suite: `eval.py check --root .` runs eight
+  static checks over the SHIPPED files — offload policy (explicit opus, no sonnet/haiku,
+  fork ban), honesty labels, scanners that exist and compile, append-only ledgers, the
+  worker contract, front-matter YAML accepts with a `/slash` trigger, the named safety
+  laws, silent-on-failure hooks. A law that is well-encoded leaves a static fingerprint;
+  check the fingerprint, not the behavior. ~0.1s, zero model tokens, file:line on every
+  FAIL. Model-graded `behavior` cases are bounded, code-graded and opt-in.
 - **doctor** — the harness's self-check: `doctor.py check --root .` runs eight named
   PASS/WARN/FAIL checks — front-matter that a real YAML load would reject (the unquoted
   colon-space that makes a skill invisible), manifest + tombstone pins, skill-count drift,

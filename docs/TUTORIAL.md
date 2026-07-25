@@ -1,6 +1,6 @@
 # The notrest harness in 10 minutes
 
-The session harness — plus twenty-six skills — that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
+The session harness — plus twenty-eight skills — that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
 
 ## 1. Install (once)
 
@@ -50,6 +50,7 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | Get an ordered, verified plan | "plan how to X" → **stepbystep** |
 | Turn the plan into exact commands | "make it copy-paste" → **actionplan** |
 | Attack something before trusting it | "red-team this" → **critic** |
+| Attack code before you ship it | "refute this" / "review the fix" → **refuter** |
 | Turn what you know into what you send | "write the email" / "/draft" → **draft** |
 | Run several skills in sequence | "research X, critique it, then plan it" → **director** |
 | Start / resume a session properly | "hey oracle" → **oracle** |
@@ -61,6 +62,7 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | See how the files connect (or every project at once) | "map the files" / "/graph" → **graph** |
 | Audit token spend / model routing | "spend report" → **spend** |
 | Check the harness is healthy (or why a skill stopped firing) | "/doctor" / "health check" → **doctor** |
+| Check the harness still obeys its own laws (before a release) | "/eval" / "check the laws" / "conformance check" → **eval** |
 | How did we get here? | "recap the project" / "/recap" → **recap** |
 | Make repeated work cheaper | "what should we compile" / "/compile" → **compile** |
 | Get a GPT second opinion | "/gpt" → **gpt** |

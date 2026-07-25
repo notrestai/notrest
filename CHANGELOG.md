@@ -1,5 +1,42 @@
 # Changelog — the notrest harness
 
+## 3.4.0 — 2026-07-25
+
+**We build our own instruments: /eval and /refuter. Twenty-eight skills.**
+
+Owner ruling, with receipts: the external `claude plugin eval` is OUT. It spins a full
+agentic model session per case per arm per run plus LLM judges — ~13 minutes and $4.58
+per pass, opaque to the seat, uncancellable mid-flight, and in 45 minutes of grinding it
+produced zero fixes. That is the exact anti-pattern this harness exists to kill.
+
+- **New skill `eval` — law conformance as a STATIC FINGERPRINT.** The insight: a
+  well-encoded law leaves a fingerprint in the shipped text; check the fingerprint, not
+  the behavior. Eight checks read the files directly — every documented spawn names
+  explicit opus and bans forks; every claim-making skill carries a label/verdict grammar;
+  every "script owns the scanning" claim has a script that exists and compiles; every
+  estate instruction is append-only or script-routed; every worker has its self-check and
+  chains; frontmatter has name == dir, a description YAML accepts, and a real /slash
+  trigger; the safety laws are literally present (a draft is never sent, a dead source is
+  never a refutation, compile never auto-installs); hooks are silent-on-failure and wired.
+  **0.08 seconds, zero model tokens, 28 skills** — roughly 10,000× faster than the runner
+  it replaces, and it found two real defects on its first run that the expensive one never
+  did (game-forge's description carried no /slash trigger; compile shipped a fixture its
+  SKILL never named). Genuinely behavioral questions get a bounded opus one-shot with a
+  CODE grader — never an LLM judge — opt-in, outside the ship gate.
+- **New skill `refuter` — the adversarial reviewer, promoted from improvisation to
+  contract.** Its standard: the run hours earlier that returned 15 findings on a compiled
+  release runtime, three CONFIRMED criticals — a JSON key reorder that de-pinned a
+  version-pinned tombstone and committed at exit 0; a validator failure string-matched
+  into "CLI absent, proceed" reaching push/install; and proof that a "5/5 PARITY PASS" was
+  overclaimed. Now shipped as a brief template, a six-rung attack ladder (irreversible
+  paths → integrity invariants → claim honesty → partial-failure states → test honesty →
+  environment), a verdict grammar where CONFIRMED requires a pasted reproduction and
+  PLAUSIBLE requires a concrete scenario (anything else is deleted, not filed), the
+  requirement to name what SURVIVED, and a ~12-call budget: three narrow refuters beat one
+  broad one. It finds; it never fixes, and never grades its own findings.
+- eval's own first verdicts fixed in the same release; doctor remains the install/estate
+  check, eval is the law check — the distinction is stated in both skills.
+
 ## 3.3.0 — 2026-07-25
 
 **/doctor — the harness passes its own physical. Twenty-six skills.**

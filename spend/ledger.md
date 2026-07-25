@@ -33,3 +33,5 @@
 [2026-07-25 06:48Z] lane=subagent model=claude-opus-5 tokens=125790 grade=observed purpose="compile release-ritual: builder round 2 (legacy vocabulary, 5/5 scenarios PARITY PASS, self-caught respell honesty fix)"
 [2026-07-25 06:52Z] lane=subagent model=claude-opus-5 tokens=100027 grade=observed purpose="compile release-ritual: refuter (15 findings — F3 tombstone de-pin CONFIRMED, F1 validate-bypass CONFIRMED, F4-F6 parity overclaim CONFIRMED; pre-write ordering + spend gate survived)"
 [2026-07-25 07:12Z] lane=subagent model=claude-opus-5 tokens=208275 grade=observed purpose="compile release-ritual: builder round 3 FINAL (all 15 refuter findings fixed; 9-surface parity x5; F1/F3 repros die correctly at seat)"
+[2026-07-25 07:43Z] lane=subagent model=claude-opus-5 tokens=56851 grade=observed purpose="refuter lane (adversarial contract: brief template, 6-rung ladder, verdict grammar; 11 calls / 2.5 min)"
+[2026-07-25 07:43Z] lane=subagent model=claude-opus-5 tokens=90288 grade=observed purpose="eval lane (8 static-fingerprint checks, 10/10 fixture, 0.08s zero-token run; found 2 real defects first run)"
