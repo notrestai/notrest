@@ -27,3 +27,4 @@
 [2026-07-25 06:12Z] lane=subagent model=claude-opus-5 tokens=177805 grade=observed purpose="compile lane round 1 (rethink+rewrite: compile.py scanner 34/34, doctrine, SKILL; ranked release ritual #1 at 9 occ on real estate)"
 [2026-07-25 06:18Z] lane=subagent model=claude-opus-5 tokens=212888 grade=observed purpose="compile lane round 2 (integration: hook nudge, sessionend scan, oracle+archivist wiring, 4 speed amendments; 28 calls / 4.4 min — the law working on its own author)"
 [2026-07-25 06:39Z] lane=subagent model=claude-opus-5 tokens=65014 grade=observed purpose="draft lane (outbound verb, fact-vs-framing law, 21/21; 13 calls / 3.7 min under speed law)"
+[2026-07-25 06:41Z] lane=subagent model=claude-opus-5 tokens=75855 grade=observed purpose="crash-cushion lane (SessionEnd hook: auto-cushion + first proven compaction; 53/53; corrected seat's threshold arithmetic with evidence)"

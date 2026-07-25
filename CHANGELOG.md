@@ -1,5 +1,33 @@
 # Changelog — the notrest harness
 
+## 3.2.1 — 2026-07-25
+
+**The crash cushion closes — a fifth hook completes the estate's insurance.**
+
+- **New SessionEnd hook (`session-end.sh`):** when any session terminates in a git repo,
+  (1) if the COORD ledger's last line is neither a deliberate [sessionend] close nor an
+  existing cushion, it appends ONE auto-cushion line — so a session that dies without
+  /sessionend still leaves a resume pointer (the cushion line's presence in a tail IS the
+  abrupt-end signal); dedupe guard: never two cushions in a row. (2) Ledger auto-compaction,
+  finally exercised for real: COORD.md >40 ledger lines → newest 30 kept, oldest moved whole
+  into COORD-ARCHIVE.md (machine header, append-only); COORD-AGENTS.md >100 → newest 60.
+  Archive-append+fsync lands BEFORE the live file is replaced (temp + os.replace), so the
+  only crash window duplicates a line into the archive — never loses one; an inode guard
+  yields to concurrent writers; a marker-less file is refused, not "fixed". Silent on
+  success and failure, always exit 0. 53-assertion fixture seat-run green, including
+  byte-identical archive⧺live reconstruction proofs.
+- Honest gate notes, kept verbatim in the ledger: the lane corrected the seat's own brief
+  with evidence (the "~40 lines" trigger figure was wc -l including headers; the real
+  ledger was 31, so live compaction rightly did not fire — proven instead on a shadow copy
+  seeded from the real file); and the lane's live test left a cushion line in an alive
+  session's ledger — contextually false, corrected by appendix per the append-only law.
+- sessionend Phase 3.6 documents the split: the hook is the always-on cushion; /sessionend
+  remains the deliberate, richer close.
+
+Known residual, deferred one slice: one marketplace-description count phrase
+("twenty-three natural-language-invocable") survived two bump passes — the count-variant
+whack-a-mole that doctor's check #3 exists to end; reconciles at doctor's ship.
+
 ## 3.2.0 — 2026-07-25
 
 **/draft — the outbound verb. Twenty-five skills.**
