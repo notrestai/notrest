@@ -37,6 +37,16 @@ Protocol + message templates: the **sessionend** skill's `references/live-handof
 
 **Prior-dossier index (if present).** If the repo carries an `oracle-index.md` — or has ORACLE output folders (`research/`, `decision/`, `critique/`, …) without one — use the **archivist** skill during intake: refresh the index, then one `find` on the stated Objective's topic before routing. A hit means this project may already hold the answer — offer reuse/extend/fresh instead of silently re-spending a search budget.
 
+**File graph (cheap, script-only).** Alongside the archivist consult, refresh the project's
+file graph — `python3 <graph-skill>/scripts/graph.py scan --root .` (the **graph** skill;
+`${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/graph.py` when installed as a plugin). The
+scanner reads the files, not you, so it costs no context: one summary line back, and
+`graph/graph.html` is current if anyone wants to look at how this project connects. On a
+project's **first** scan, offer *once* to register it for the cross-project PM view
+(`graph.py register --root .`) — the owner's choice, never silent, because a registry entry
+puts this project on someone else's map. Skip the offer if the project is already registered
+in `~/.claude/oracle-projects.txt`.
+
 If there's **no `CLAUDE.md`**, you'll **always** scaffold one after the intake (see When done) — no matter how much was answered or skipped. The intake answers are foundation material: **Architecture** → how you work, **Leverage** → tooling, **Content** → the project/situation.
 
 ## How to run it
@@ -60,7 +70,7 @@ If there's **no `CLAUDE.md`**, you'll **always** scaffold one after the intake (
 - Reflect back a one-line summary per slot, "—" for anything skipped:
   > **O:** … **R:** … **A:** … **C:** … **L:** … **E:** …
 - Ask: "Ready to go, or want to change anything?"
-- **Route to the right tool:** from the Objective, name the suite skill (or chain) that fits and why, in one line — research a question → `/researcher` · understand a topic → `/explainer` · make a choice → `/decider` · verify claims → `/factcheck` · size a market → `/marketresearcher` · build a plan → `/stepbystep` (then `/actionplan` for commands) · red-team something → `/critic` · "what do we already know?" → `/archivist` · audit model spend/routing → `/spend` · several in sequence → `/director` — or say "no skill needed, working directly." The user can take the route or ignore it.
+- **Route to the right tool:** from the Objective, name the suite skill (or chain) that fits and why, in one line — research a question → `/researcher` · understand a topic → `/explainer` · make a choice → `/decider` · verify claims → `/factcheck` · size a market → `/marketresearcher` · build a plan → `/stepbystep` (then `/actionplan` for commands) · red-team something → `/critic` · "what do we already know?" → `/archivist` · "how does this project connect?" / map the files → `/graph` · audit model spend/routing → `/spend` · several in sequence → `/director` — or say "no skill needed, working directly." The user can take the route or ignore it.
 - **Foundation file — always create on a new session:** if no `CLAUDE.md` exists, **always scaffold one** from the bundled **`references/claude-foundation-template.md`** — no matter how many slots were answered or skipped (even an all-skipped/test intake still gets the file). Seed it with whatever answers you have (Architecture → protocol, Leverage → tooling, Content → the project section) and keep the template's placeholders for anything unanswered, so the structure is ready for `sessionend` to fill from real work. Keep it a *base*, not comprehensive. Write it where it persists: repo root in Claude Code (so it's auto-read), the working dir in Cowork, or the outputs area in a chat (present it for download). If `CLAUDE.md` already exists, leave it untouched — you loaded it; updates happen at session end.
 - Then do the work, applying the answers. Internally follow the loading rule: **use their Content first and keep their actual ask last; put the most important facts at the start or end, never buried in the middle.**
 - For any skipped slot, pick a sensible default and note in one line what you assumed. For a skipped **Evaluation**, default to the suite's reliability standard: label non-obvious claims, flag anything unverified plainly, and end substantial answers with the one thing most likely to be wrong.

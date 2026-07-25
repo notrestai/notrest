@@ -58,6 +58,8 @@ Two one-command closes, run after the files are written:
   `report` and paste the verdict line into `HANDOFF.md` — and any ROUTING VIOLATIONS
   verbatim, never smoothed.
 Skip silently only when the skills aren't installed.
+- A **recap** was produced this session → put its map/dossier paths in `HANDOFF.md` (the
+  decision track is part of the handoff).
 - **COORD.md** present (the session coordination ledger) → append the closing line:
   `- [UTC] [sessionend] session closed: <one-line outcome> | handoff: START-HERE.md` —
   and if the ledger has grown past ~40 lines, compact the oldest entries into

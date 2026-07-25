@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision map — recap</title>
+<style>
+:root{
+  --surface-0:#f7f6f2; --surface-1:#ffffff; --surface-2:#f1efe8; --border:#e6e3da; --border-strong:#d2cfc4;
+  --text-primary:#20201d; --text-secondary:#57564f; --text-muted:#86857b;
+  --c-ruling:#B4544E; --c-decision:#7F77DD; --c-consult:#C2803A; --c-ship:#1D9E75; --c-neutral:#8f8e84;
+  --edge:#b9b6ab; --edge-strong:#8f8e84; --edge-rev:#B4544E; --rail:#ded9cd;
+  --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --surface-0:#191917; --surface-1:#242421; --surface-2:#1f1f1c; --border:#37362e; --border-strong:#4b4a40;
+    --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+    --c-ruling:#d9736c; --c-decision:#9a92ea; --c-consult:#d99a55; --c-ship:#3fc79c; --c-neutral:#9d9c92;
+    --edge:#55544a; --edge-strong:#7d7c72; --edge-rev:#d9736c; --rail:#3a3931;
+  }
+}
+:root[data-theme="dark"]{
+  --surface-0:#191917; --surface-1:#242421; --surface-2:#1f1f1c; --border:#37362e; --border-strong:#4b4a40;
+  --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+  --c-ruling:#d9736c; --c-decision:#9a92ea; --c-consult:#d99a55; --c-ship:#3fc79c; --c-neutral:#9d9c92;
+  --edge:#55544a; --edge-strong:#7d7c72; --edge-rev:#d9736c; --rail:#3a3931;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--surface-0);color:var(--text-primary);line-height:1.5;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding:2rem 1.15rem 2.5rem}
+.wrap{max-width:1080px;margin:0 auto}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:1rem}
+h1{font-size:22px;font-weight:500;margin:0 0 .35rem}
+.lede{font-size:14px;color:var(--text-secondary);margin:0;max-width:70ch}
+.tbtn{flex:none;background:var(--surface-1);color:var(--text-secondary);border:1px solid var(--border);
+  border-radius:999px;padding:.35rem .8rem;font-size:12px;cursor:pointer;font-family:inherit}
+.tbtn:hover{border-color:var(--border-strong)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.row{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center}
+.lbl{font-size:12px;font-weight:500;color:var(--text-secondary);letter-spacing:.03em;margin:1.3rem 0 .5rem}
+.sub{font-size:12px;color:var(--text-muted)}
+.chip{display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--border);border-radius:999px;
+  padding:.24rem .65rem;font-size:12px;color:var(--text-secondary);background:var(--surface-1);
+  cursor:pointer;font-family:inherit;line-height:1.4}
+.chip:hover{border-color:var(--border-strong)}
+.chip[aria-pressed="false"]{opacity:.42}
+.chip .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.key{display:inline-flex;align-items:center;gap:.4rem;font-size:12px;color:var(--text-muted)}
+.key svg{width:34px;height:10px;overflow:visible}
+
+/* ---- board ---- */
+.board{margin-top:.9rem;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);
+  padding:.55rem .6rem .9rem;overflow-x:auto}
+.laneh{display:grid;gap:.55rem;padding:0 0 .45rem 34px;min-width:640px}
+.laneh > div{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);
+  border-bottom:1px solid var(--border);padding-bottom:.3rem}
+.rows{position:relative;display:grid;gap:.55rem;padding-left:34px;min-width:640px;align-items:start}
+#wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.card{position:relative;text-align:left;font-family:inherit;background:var(--surface-1);
+  border:1px solid var(--border);border-left:3px solid var(--kc,var(--c-neutral));border-radius:var(--radius);
+  padding:.5rem .6rem;cursor:pointer;color:inherit;width:100%;transition:border-color .12s,box-shadow .12s}
+.card:hover{border-color:var(--border-strong)}
+.card:focus-visible{outline:2px solid var(--kc,var(--c-neutral));outline-offset:2px}
+.card.sel{border-color:var(--kc,var(--c-neutral));box-shadow:0 0 0 2px color-mix(in srgb,var(--kc) 26%,transparent)}
+.card.dim{opacity:.34}
+.card .ts{font-size:11px;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.card .t{font-size:13.5px;font-weight:500;margin-top:.12rem}
+.card .d{font-size:12px;color:var(--text-secondary);margin-top:.18rem}
+.badge{display:inline-block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;
+  border:1px solid var(--border-strong);border-radius:999px;padding:0 .4rem;color:var(--text-muted);margin-left:.3rem}
+.badge.warn{color:var(--c-ruling);border-color:var(--c-ruling)}
+
+/* ---- detail ---- */
+.detail{margin-top:1rem;background:var(--surface-1);border:1px solid var(--border);border-radius:12px;
+  padding:.75rem .85rem;min-height:96px}
+.detail h2{font-size:15px;font-weight:500;margin:.1rem 0 .1rem}
+.detail .cite{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+  padding:.4rem .5rem;margin-top:.4rem;font-size:12px;overflow-wrap:anywhere;word-break:break-word}
+.detail .cite .k{display:block;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-bottom:.15rem}
+.jump{background:none;border:none;padding:0;font:inherit;font-size:12px;color:var(--text-secondary);
+  cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.jump:hover{color:var(--text-primary)}
+.foot{max-width:1080px;margin:1.8rem auto 0;padding-top:1rem;border-top:1px solid var(--border);
+  font-size:12px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:.35rem 1rem}
+@media (max-width:760px){
+  .laneh{display:none}
+  .board{padding-left:.4rem;padding-right:.4rem}
+  .rows{grid-template-columns:1fr !important;padding-left:26px;min-width:0}
+  .card{grid-column:1 !important}
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================================
+     RECAP DECISION MAP — template (oracle-suite / recap skill)
+     Fill ONLY the RECAP_DATA block at the bottom. Everything else is generic:
+     the layout, theming, wiring and interaction render any project's trail.
+     Self-contained: no CDNs, no fonts, no network. Theme-aware + manual toggle.
+     ============================================================================ -->
+
+<header class="wrap hdr">
+  <div>
+    <h1 id="h-title">Decision map</h1>
+    <p class="lede">Every node is a recorded trail event — an owner ruling, a decision, an agent
+      consultation, a ship. Click any node to see the trail line it was derived from. Nothing here
+      is remembered; it is all cited.</p>
+    <p class="sub mono" id="h-window" style="margin:.4rem 0 0"></p>
+  </div>
+  <button id="themeBtn" class="tbtn" type="button" aria-label="Toggle light or dark theme">light / dark</button>
+</header>
+
+<main class="wrap">
+  <div class="lbl">filter by kind — click to hide/show</div>
+  <div class="row" id="chips"></div>
+
+  <div class="row" style="margin-top:.55rem;gap:1rem">
+    <span class="key"><svg viewBox="0 0 34 10"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--edge-strong)" stroke-width="1.6"/></svg> led to</span>
+    <span class="key"><svg viewBox="0 0 34 10"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--edge)" stroke-width="1.6" stroke-dasharray="4 3"/></svg> informed by</span>
+    <span class="key"><svg viewBox="0 0 34 10"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--edge-rev)" stroke-width="1.8" stroke-dasharray="1 3" stroke-linecap="round"/></svg> reversed / corrected</span>
+    <span class="key">faint = inferred, not stated by the trail</span>
+  </div>
+
+  <div class="board">
+    <div class="laneh" id="laneh"></div>
+    <div class="rows" id="rows">
+      <svg id="wires" aria-hidden="true">
+        <defs>
+          <marker id="ah-led" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0.6 L7.4 4 L0 7.4 z" fill="var(--edge-strong)"/></marker>
+          <marker id="ah-inf" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0.6 L7.4 4 L0 7.4 z" fill="var(--edge)"/></marker>
+          <marker id="ah-rev" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0.6 L7.4 4 L0 7.4 z" fill="var(--edge-rev)"/></marker>
+        </defs>
+      </svg>
+    </div>
+  </div>
+
+  <aside class="detail" id="detail" aria-live="polite"></aside>
+</main>
+
+<footer class="foot" id="foot"></footer>
+
+<script>
+/* ============================ RECAP_DATA — REPLACE THIS BLOCK ============================
+   Everything below this block is generic template logic. Do not edit it.
+   kind:  ruling | decision | consult | ship        (lane order = KINDS order below)
+   rel:   led-to | informed-by | reversed           (+ inferred:true for an unproven edge)
+   flag:  "" | "unverified" | "inferred"
+   cites: type = coord | commit | transcript | spend | dossier | note
+   ts:    VERBATIM from the trail. Never reformat, never re-timezone.
+========================================================================================= */
+const RECAP_DATA = {
+  project: "<project name>",
+  window:  "<resolved span — e.g. 2026-07-15 19:18Z → 2026-07-25 04:30Z>",
+  generated: "<YYYY-MM-DD>",
+  sources: ["COORD.md (N lines)", "COORD-AGENTS.md (N entries)", "git (N commits)", "spend/ledger.md (N lines)"],
+  nodes: [
+    { id:"n1", ts:"<ts>", kind:"ruling", title:"<the ruling, in a phrase>",
+      summary:"<what it settled, one or two lines>",
+      cites:[{type:"coord", text:"<the COORD line, verbatim>"}], flag:"" },
+    { id:"n2", ts:"<ts>", kind:"consult", title:"<agent id / lane name>",
+      summary:"<what it concluded>",
+      cites:[{type:"transcript", text:"<abs path>", note:"verified present"}], flag:"" },
+    { id:"n3", ts:"<ts>", kind:"ship", title:"<vX.Y.Z>",
+      summary:"<what shipped>",
+      cites:[{type:"commit", text:"<sha> <subject>"}], flag:"" }
+  ],
+  edges: [
+    { from:"n1", to:"n3", rel:"led-to",      why:"<the trail line that justifies this edge>" },
+    { from:"n2", to:"n3", rel:"informed-by", why:"<…>" }
+  ]
+};
+/* ========================== END RECAP_DATA — generic logic below ========================= */
+
+const KINDS = {
+  ruling:   { label:"owner ruling",       css:"var(--c-ruling)"   },
+  decision: { label:"decision / pivot",   css:"var(--c-decision)" },
+  consult:  { label:"agent consultation", css:"var(--c-consult)"  },
+  ship:     { label:"ship",               css:"var(--c-ship)"     }
+};
+const CITE_LABEL = { coord:"COORD.md", commit:"git commit", transcript:"agent transcript",
+                     spend:"spend/ledger.md", dossier:"dossier", note:"note" };
+const REL = {
+  "led-to":      { stroke:"var(--edge-strong)", dash:"",      w:1.6, marker:"ah-led" },
+  "informed-by": { stroke:"var(--edge)",        dash:"4 3",   w:1.6, marker:"ah-inf" },
+  "reversed":    { stroke:"var(--edge-rev)",    dash:"1 3",   w:1.9, marker:"ah-rev" }
+};
+
+const D = RECAP_DATA;
+const laneKeys = Object.keys(KINDS).filter(k => D.nodes.some(n => n.kind === k));
+const hidden = new Set();
+let selected = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const byId = id => D.nodes.find(n => n.id === id);
+
+/* header + footer */
+$("h-title").textContent = (D.project || "Project") + " — decision map";
+document.title = (D.project || "Project") + " — decision map";
+$("h-window").textContent = D.window ? "window walked: " + D.window : "";
+$("foot").innerHTML =
+  (D.sources || []).map(s => "<span>" + esc(s) + "</span>").join("") +
+  "<span>generated " + esc(D.generated || "") + "</span>" +
+  "<span>derived from the recorded trail — every node carries its citation</span>" +
+  "<span>self-contained · no external dependencies</span>";
+
+/* filter chips */
+$("chips").innerHTML = laneKeys.map(k => {
+  const n = D.nodes.filter(x => x.kind === k).length;
+  return '<button class="chip" type="button" data-k="' + k + '" aria-pressed="true">' +
+         '<span class="dot" style="background:' + KINDS[k].css + '"></span>' +
+         esc(KINDS[k].label) + ' <span class="sub">' + n + '</span></button>';
+}).join("");
+$("chips").addEventListener("click", e => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  const k = b.dataset.k;
+  if (hidden.has(k)) { hidden.delete(k); b.setAttribute("aria-pressed", "true"); }
+  else { hidden.add(k); b.setAttribute("aria-pressed", "false"); }
+  render();
+});
+
+function visibleNodes(){
+  return D.nodes.filter(n => !hidden.has(n.kind))
+                .slice().sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+}
+
+function render(){
+  const rows = $("rows"), wires = $("wires");
+  const cols = Math.max(laneKeys.length, 1);
+  rows.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+  $("laneh").style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+  $("laneh").innerHTML = laneKeys.map(k => "<div>" + esc(KINDS[k].label) + "</div>").join("");
+
+  [...rows.querySelectorAll(".card")].forEach(el => el.remove());
+  const ns = visibleNodes();
+  if (!ns.length){
+    rows.insertAdjacentHTML("beforeend",
+      '<div class="card" style="grid-column:1;grid-row:1;cursor:default"><div class="d">Nothing to show — every kind is filtered out.</div></div>');
+  }
+  ns.forEach((n, i) => {
+    const lane = Math.max(laneKeys.indexOf(n.kind), 0);
+    const flag = n.flag ? '<span class="badge ' + (n.flag === "unverified" ? "warn" : "") + '">' + esc(n.flag) + "</span>" : "";
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "card"; b.dataset.id = n.id;
+    b.style.cssText = "grid-column:" + (lane + 1) + ";grid-row:" + (i + 1) + ";--kc:" + KINDS[n.kind].css;
+    b.innerHTML = '<div class="ts">' + esc(n.ts) + "</div>" +
+                  '<div class="t">' + esc(n.title) + flag + "</div>" +
+                  (n.summary ? '<div class="d">' + esc(n.summary) + "</div>" : "");
+    b.addEventListener("click", () => select(n.id));
+    rows.appendChild(b);
+  });
+  requestAnimationFrame(() => { drawWires(); paintSelection(); });
+}
+
+function drawWires(){
+  const rows = $("rows"), wires = $("wires");
+  [...wires.querySelectorAll("path,line,circle")].forEach(el => el.remove());
+  const R = rows.getBoundingClientRect();
+  wires.setAttribute("viewBox", "0 0 " + rows.offsetWidth + " " + rows.offsetHeight);
+  const NS = "http://www.w3.org/2000/svg";
+  const pos = {};
+  rows.querySelectorAll(".card").forEach(c => {
+    const r = c.getBoundingClientRect();
+    pos[c.dataset.id] = { x: r.left - R.left, y: r.top - R.top, w: r.width, h: r.height };
+  });
+
+  /* time rail: a continuous line down the gutter with a tick per event */
+  const railX = Math.max(rows.offsetLeft ? 14 : 14, 14);
+  const ys = Object.values(pos).map(p => p.y + 14);
+  if (ys.length){
+    const line = document.createElementNS(NS, "line");
+    line.setAttribute("x1", railX); line.setAttribute("x2", railX);
+    line.setAttribute("y1", Math.min(...ys)); line.setAttribute("y2", Math.max(...ys));
+    line.setAttribute("stroke", "var(--rail)"); line.setAttribute("stroke-width", "2");
+    wires.appendChild(line);
+    ys.forEach(y => {
+      const c = document.createElementNS(NS, "circle");
+      c.setAttribute("cx", railX); c.setAttribute("cy", y); c.setAttribute("r", "3");
+      c.setAttribute("fill", "var(--rail)");
+      wires.appendChild(c);
+    });
+  }
+
+  (D.edges || []).forEach(e => {
+    const a = pos[e.from], b = pos[e.to];
+    if (!a || !b) return;                         /* endpoint filtered out */
+    const st = REL[e.rel] || REL["led-to"];
+    const down = (b.y >= a.y);
+    const x1 = a.x + a.w / 2, y1 = down ? a.y + a.h : a.y;
+    const x2 = b.x + b.w / 2, y2 = down ? b.y : b.y + b.h;
+    const dy = Math.max(18, Math.min(64, Math.abs(y2 - y1) * 0.42)) * (down ? 1 : -1);
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", "M" + x1 + " " + y1 + " C " + x1 + " " + (y1 + dy) + ", " + x2 + " " + (y2 - dy) + ", " + x2 + " " + y2);
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", st.stroke);
+    p.setAttribute("stroke-width", st.w);
+    if (st.dash) p.setAttribute("stroke-dasharray", st.dash);
+    p.setAttribute("stroke-linecap", "round");
+    p.setAttribute("marker-end", "url(#" + st.marker + ")");
+    p.setAttribute("opacity", e.inferred ? "0.4" : "1");
+    p.dataset.from = e.from; p.dataset.to = e.to;
+    const t = document.createElementNS(NS, "title");
+    t.textContent = e.rel + (e.inferred ? " (inferred)" : "") + (e.why ? " — " + e.why : "");
+    p.appendChild(t);
+    wires.appendChild(p);
+  });
+}
+
+function select(id){
+  selected = (selected === id) ? null : id;
+  paintSelection();
+  renderDetail();
+}
+
+function paintSelection(){
+  const rows = $("rows");
+  const near = new Set();
+  if (selected){
+    near.add(selected);
+    (D.edges || []).forEach(e => { if (e.from === selected) near.add(e.to); if (e.to === selected) near.add(e.from); });
+  }
+  rows.querySelectorAll(".card").forEach(c => {
+    c.classList.toggle("sel", selected === c.dataset.id);
+    c.classList.toggle("dim", !!selected && !near.has(c.dataset.id));
+  });
+  $("wires").querySelectorAll("path").forEach(p => {
+    const on = !selected || p.dataset.from === selected || p.dataset.to === selected;
+    p.setAttribute("opacity", on ? (p.dataset.inferred ? "0.4" : "1") : "0.18");
+  });
+}
+
+function renderDetail(){
+  const d = $("detail");
+  if (!selected){
+    d.innerHTML = '<div class="sub">Select a node to see the trail line it was derived from — the ledger entry, the commit, the transcript path.</div>';
+    return;
+  }
+  const n = byId(selected);
+  const ins  = (D.edges || []).filter(e => e.to === selected);
+  const outs = (D.edges || []).filter(e => e.from === selected);
+  const link = (id, label) => '<button class="jump" type="button" data-jump="' + id + '">' + esc(label) + "</button>";
+  const relLine = (e, other, dir) =>
+    '<div class="sub" style="margin-top:.2rem">' + esc(dir) + " <strong>" + esc(e.rel) + "</strong>" +
+    (e.inferred ? " (inferred)" : "") + " · " + link(other.id, other.title) +
+    (e.why ? ' <span class="sub">— ' + esc(e.why) + "</span>" : "") + "</div>";
+
+  d.innerHTML =
+    '<div class="row" style="justify-content:space-between;align-items:baseline">' +
+      '<span class="sub mono">' + esc(n.ts) + "</span>" +
+      '<span class="chip" style="cursor:default"><span class="dot" style="background:' + KINDS[n.kind].css + '"></span>' + esc(KINDS[n.kind].label) + "</span>" +
+    "</div>" +
+    "<h2>" + esc(n.title) + (n.flag ? '<span class="badge ' + (n.flag === "unverified" ? "warn" : "") + '">' + esc(n.flag) + "</span>" : "") + "</h2>" +
+    (n.summary ? '<div class="d" style="font-size:13px;color:var(--text-secondary)">' + esc(n.summary) + "</div>" : "") +
+    '<div class="lbl" style="margin:.7rem 0 .1rem">trail citation</div>' +
+    ((n.cites && n.cites.length)
+      ? n.cites.map(c => '<div class="cite mono"><span class="k">' + esc(CITE_LABEL[c.type] || c.type) + "</span>" +
+          esc(c.text) + (c.note ? ' <span class="sub">(' + esc(c.note) + ")</span>" : "") + "</div>").join("")
+      : '<div class="cite"><span class="k">no citation</span>Nothing in the trail supports this node — treat as unverified.</div>') +
+    (ins.length || outs.length
+      ? '<div class="lbl" style="margin:.7rem 0 .1rem">connections</div>' +
+        outs.map(e => relLine(e, byId(e.to) || { id:e.to, title:e.to }, "→")).join("") +
+        ins.map(e => relLine(e, byId(e.from) || { id:e.from, title:e.from }, "←")).join("")
+      : "");
+}
+
+$("detail").addEventListener("click", e => {
+  const b = e.target.closest("[data-jump]"); if (!b) return;
+  const id = b.dataset.jump;
+  selected = id; paintSelection(); renderDetail();
+  const card = $("rows").querySelector('.card[data-id="' + id + '"]');
+  if (card) card.scrollIntoView({ block:"center", behavior:"smooth" });
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && selected){ selected = null; paintSelection(); renderDetail(); }
+});
+
+/* theme toggle — same contract as docs/oracle-skill-flow.html */
+(function(){
+  const b = $("themeBtn"), r = document.documentElement;
+  const cur = () => r.getAttribute("data-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  b.addEventListener("click", () => { r.setAttribute("data-theme", cur() === "dark" ? "light" : "dark"); requestAnimationFrame(drawWires); });
+})();
+
+let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawWires, 90); });
+window.addEventListener("load", () => requestAnimationFrame(drawWires));
+render(); renderDetail();
+</script>
+</body>
+</html>

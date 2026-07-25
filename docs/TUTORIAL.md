@@ -1,6 +1,6 @@
 # The ORACLE Suite in 10 minutes
 
-Twenty skills that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
+Twenty-two skills that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
 
 ## 1. Install (once)
 
@@ -52,7 +52,9 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | Run a multi-SESSION dev team | "/fable-director" → **fable-director** |
 | Delegate heavy work fast (any seat + Opus lanes) | "swarm this" / "/agentswarm" → **agentswarm** |
 | Ask "what do we already know about X?" | "index the dossiers" → **archivist** |
+| See how the files connect (or every project at once) | "map the files" / "/graph" → **graph** |
 | Audit token spend / model routing | "spend report" → **spend** |
+| How did we get here? | "recap the project" / "/recap" → **recap** |
 | Get a GPT second opinion | "/gpt" → **gpt** |
 | Let Claude sessions + GPT work in one room | "open a chatroom" → **chatroom** |
 | Snapshot what the model is thinking (scored) | "/introspect" → **introspect** |
@@ -65,6 +67,7 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 - `marketresearcher → critic → stepbystep` — opportunity → stress-test → plan.
 - `stepbystep → actionplan` — plan → copy-paste runbook.
 - `researcher → decider` — evidence → structured choice.
+- `recap → archivist → critic` — walk the trail into the decision story, pull the dossiers it references, then red-team the conclusion the project has been running on.
 
 Say it naturally ("research X, then critique it, then plan it") — **director** parses the chain and runs every stage for real, each in its own context.
 

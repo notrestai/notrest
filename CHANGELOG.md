@@ -1,5 +1,37 @@
 # Changelog — ORACLE Suite
 
+## 2.16.0 — 2026-07-25
+
+**recap + graph — the estate learns to tell its story and draw its map. Twenty-two skills.**
+
+- **New skill: `recap`** (the debrief, renamed simple) — walks the recorded trail in
+  timestamp order (COORD, COORD-AGENTS, git, spend, dossiers) and delivers the complete
+  decision track: a narrated timeline dossier, a who-was-consulted table with transcript
+  citations, and a self-contained decision-map HTML (swimlanes over time; every node
+  opens its trail citation). Claims cite trail lines or commits; anything without one is
+  [unverified]. Fixture was the real thing: this repo's own v2.9→v2.15 story, three
+  citations seat-verified against the ledgers (including the sonnet-lanes-pre-policy
+  proof and the hook recording its own birth in the same minute as its ship commit).
+  Timestamps mandate TZ=UTC git dates — author-local dates sort the story wrong.
+- **New skill: `graph`** — the Obsidian-style file graph, script-built at zero model
+  tokens (stdlib scanner: wikilinks, md links, imports, source/estate references; git
+  ls-files scoping; binary sniff). Emits graph/graph.json + a self-contained
+  force-directed viewer (vanilla canvas, both themes, drag/zoom/search/pin, estate nodes
+  purple and provably central — COORD.md degree 27 on this repo). `register` + `all`
+  merge every registered project into ONE connected map — the PM-session view
+  (~/.claude/oracle-projects.txt is the registry; per-project cap so no repo drowns the
+  view; estate filenames stoplisted from cross-linking so projects don't all wire to all).
+  oracle intake now refreshes the scan (script-only, cheap) and offers registration once.
+- **Gates that earned their keep, both directions:** the seat's render gate caught the
+  viewer's canvas dpr/resize defect (stale backing store, no CSS pinning) — fixed with a
+  sizeCanvas contract + ResizeObserver + per-frame guard, locked by 7 new fixture
+  assertions (63/63); and the graph lane caught the SEAT's ship-blocker — an unanchored
+  `graph/` gitignore line that was silently ignoring the entire new skill directory
+  (anchored to `/graph/`; skill tracked, output still ignored). A gate that only reads
+  the lane's report is not a gate — in either direction.
+- sessionend puts a produced recap in the handoff; archivist indexes recap/ dossiers;
+  README/TUTORIAL/manifests reconciled to twenty-two.
+
 ## 2.15.0 — 2026-07-25
 
 **fable-swarm becomes agentswarm — the swarm was an arrangement, never a model; and it is uncapped by design.**

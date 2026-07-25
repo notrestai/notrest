@@ -12,7 +12,7 @@ import argparse, pathlib, re, sys
 from datetime import datetime, timezone
 
 DIRS = ["research", "market-research", "understanding", "decision", "factcheck",
-        "critique", "action-plan", "runbook", "pipeline", "introspection"]
+        "critique", "action-plan", "runbook", "pipeline", "introspection", "recap"]
 INDEX = "oracle-index.md"
 LEDGER = "COORD-AGENTS.md"  # the SubagentStop hook's agent activity ledger
 

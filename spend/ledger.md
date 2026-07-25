@@ -16,3 +16,6 @@
 [2026-07-21 05:24Z] lane=subagent model=claude-opus-4-8 tokens=137461 grade=observed purpose="agent-estate builder lane round 3 (4 refuter fixes + speed discipline + hook clause; 43/43 lane-run) — same lane, third resume"
 [2026-07-25 03:51Z] lane=subagent model=claude-opus-5 tokens=78015 grade=observed purpose="successor-escort builder lane (escort window + multi-predecessor live line + model unpin) — first claude-opus-5 lane, alias floated"
 [2026-07-25 03:59Z] lane=subagent model=claude-opus-5 tokens=141955 grade=observed purpose="agentswarm rename lane round 4 (seat-agnostic + no-caps w/ DIR evidence) — same builder lane, fourth resume"
+[2026-07-25 04:30Z] lane=subagent model=claude-opus-5 tokens=190520 grade=observed purpose="recap builder lane round 1 (skill + decision-map template + real example from this repo's trail; 3 citations seat-verified)"
+[2026-07-25 04:30Z] lane=subagent model=claude-opus-5 tokens=168092 grade=observed purpose="graph builder lane round 1 (graph.py scan/register/all + viewer; 56/56 fixture seat-run; canvas dpr defect caught at seat render gate -> round 2)"
+[2026-07-25 04:35Z] lane=subagent model=claude-opus-5 tokens=178631 grade=observed purpose="graph builder lane round 2 (canvas dpr fix, 63/63; caught seat's unanchored gitignore ship-blocker) — same lane resumed"

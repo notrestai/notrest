@@ -1,3 +1,5 @@
 **/.DS_Store
 .DS_Store
-graph/
+# the file-graph scan output at the REPO ROOT only — anchored, or this would also
+# ignore plugins/oracle-suite/skills/graph/ (gitignore matches any depth otherwise)
+/graph/
