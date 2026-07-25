@@ -81,16 +81,26 @@ Before finishing, confirm — and fix any miss:
 Files are lossy; the ending session's context is not. Where session-to-session tools exist
 (Claude Code desktop: `list_sessions` / `send_message` / `search_session_transcripts`), the handoff
 gets a second layer — full protocol and message templates in
-**`references/live-handoff-template.md`**. In short:
+**`references/live-handoff-template.md`**. **When context is near-full and the user asks for a new
+session, this protocol IS the answer**: run this skill fully — *files first, always* — then the
+**owner** creates the successor (a one-click owner action; the harness has no create-session tool),
+and the **escort is this session's duty**, not the owner's. In short:
 1. **Don't close this session after writing the files.** Tell the user to keep it alive until the
    successor confirms it's oriented; give them the paste-ready successor opener from the template.
    **Record the line in `START-HERE.md`**: add the "Live line:" row (this session's title, and id if
-   known) so the successor's `oracle` intake knows exactly whom to call.
+   known) so the successor's `oracle` intake knows exactly whom to call — and when more than one
+   predecessor is alive (proven: two at once), the row becomes a **LIST**, one row per live session
+   naming the domain it can answer for.
 2. When the successor exists, **proactively send it the six-part orientation message** (state in 3
    lines · predictable questions answered · **honest unknowns** · decisions that are the user's ·
    gated actions · open line). `send_message` prompts the user each time — that's the consent gate.
-3. **Answer its replies from full context**, marking fact vs recommendation vs user's-call, and have
-   it write discoveries back into the continuity files (docs stay truth; the line is a patch channel).
+3. **Escort it through the window** — the template's **"The escort window (first ~10 successor
+   responses)"**: stay alive and *watch* (read its recent turns with `list_events` after each of your
+   wakes), proactively correcting it when it's missing context, going wrong, or re-deriving what you
+   already know. Answer from full context, marking fact vs recommendation vs user's-call; the
+   `COORD.md` / `COORD-AGENTS.md` tails are the first referral answer, and discoveries get written
+   back into the continuity files (docs stay truth; the line is a patch channel). Stand down at ~10
+   responses or on its explicit "oriented" — write the final COORD line; **the owner** archives.
 In plain chats, skip this phase — but note the successor can often still search old transcripts.
 
 ## The files

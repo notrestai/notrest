@@ -1,5 +1,30 @@
 # Changelog — ORACLE Suite
 
+## 2.14.0 — 2026-07-25
+
+**The successor escort — handoffs become a flown window, not an instant; and the estate floats to latest Opus.**
+
+- **Escort window (sessionend live-handoff-template):** the dig.rest DIR/DIR2 pattern,
+  codified. Near context-full + "new session" = the trigger; sessionend runs files-first;
+  the owner one-click-creates the successor (honest limit, probed: NO create-session tool
+  exists — the session surface is read/write into existing sessions only); the predecessor
+  sends the orientation immediately, then ESCORTS the successor's first ~10 responses —
+  reading its turns via list_events and proactively correcting via send_message the moment
+  it sees missing context, a wrong branch, or re-derivation of known ground. START-HERE's
+  "Live line:" becomes a LIST with a domain per row when multiple predecessors are alive;
+  referral etiquette (oracle side): trail first, then ONE consolidated batch per
+  predecessor, domain-matched; stand-down is explicit, archive stays owner-confirmed.
+- **Model unpin:** the estate never names an Opus point-version again — V4 topology,
+  KICKOFF, and the spend example now say latest Opus / the `opus` alias / "the id observed
+  in the lane transcript". Proven live this build: the same `model: "opus"` spawn ran
+  claude-opus-4-8 lanes yesterday and claude-opus-5 lanes today, zero policy edits.
+  History (receipts, changelog, example ledgers) stays verbatim — never rewritten.
+- **First production day of the v2.13.0 agent ledger, self-proving:** COORD-AGENTS.md
+  wrote itself during this very build — the escort lane's entry carries the real model
+  (claude-opus-5), byte count, closing line, and transcript path. Two papercuts parked
+  for a future round: duplicate SubagentStop firings produce twin lines, and a transcript
+  absent at hook time yields model=?/bytes=? (contract held — silent, valid, id+path known).
+
 ## 2.13.0 — 2026-07-21
 
 **The agent estate — every agent leaves a record; the seat judges by the trail; speed is the owner's experience.**

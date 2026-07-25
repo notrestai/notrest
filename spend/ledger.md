@@ -14,3 +14,4 @@
 [2026-07-21 05:17Z] lane=subagent model=claude-opus-4-8 tokens=105077 grade=observed purpose="agent-estate builder lane round 2 (index.py + trail-walk + gate checklist) — notification count, same lane resumed"
 [2026-07-21 05:17Z] lane=subagent model=claude-opus-4-8 tokens=73870 grade=observed purpose="agent-estate refuter lane — contract held, 4 CONFIRMED quality findings (model=<synthetic> on real data)"
 [2026-07-21 05:24Z] lane=subagent model=claude-opus-4-8 tokens=137461 grade=observed purpose="agent-estate builder lane round 3 (4 refuter fixes + speed discipline + hook clause; 43/43 lane-run) — same lane, third resume"
+[2026-07-25 03:51Z] lane=subagent model=claude-opus-5 tokens=78015 grade=observed purpose="successor-escort builder lane (escort window + multi-predecessor live line + model unpin) — first claude-opus-5 lane, alias floated"

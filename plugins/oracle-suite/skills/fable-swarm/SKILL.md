@@ -151,10 +151,13 @@ while other lanes still work; no barrier unless dedup genuinely needs one.
 
 ## Receipts and estate
 
-- **spend** — log every completed lane at the moment the notification shows its count:
-  `python3 <spend-skill>/scripts/spend.py log --lane subagent --model claude-opus-4-8
-  --tokens <N> --grade observed --purpose "..."`. Close with `spend.py report`; exit 4
-  is surfaced verbatim, never smoothed.
+- **spend** — log every completed lane at the moment the notification shows its count. The
+  ledger records the model id **exactly as observed in the lane transcript**, verbatim — never
+  a remembered or assumed pin (`opus` resolves to whatever the latest Opus is, and the receipt
+  must say which one actually ran):
+  `python3 <spend-skill>/scripts/spend.py log --lane subagent --model <the id observed in the
+  lane transcript, e.g. claude-opus-5> --tokens <N> --grade observed --purpose "..."`. Close
+  with `spend.py report`; exit 4 is surfaced verbatim, never smoothed.
 - **archivist** — before any research fan-out, consult `oracle-index.md`; a question
   the estate already answered costs one grep, not a lane.
 - **Agent activity records itself.** Every completed lane is auto-written to

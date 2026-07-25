@@ -2,8 +2,9 @@
 
 **Supersedes V3.** V3 was the battle-tested field report; **V4 is the same machine promoted to
 its final shape and packaged for reuse on any project**: the owner-christened topology
-("3 devs and a relay", all lanes Opus 4.8), rotation as a first-class self-carrying ritual,
-and every rotation-killer CRITICALLY flagged. Evidence base: one real production run
+("3 devs and a relay", all lanes on the latest Opus — the `opus` alias, never a pinned
+point-version), rotation as a first-class self-carrying ritual, and every rotation-killer
+CRITICALLY flagged. Evidence base: one real production run
 (tell.rest, 2026-07-05/06 — ~32 director bursts, 25+ directives, 5 shipped rounds
 v0.153–v0.157, 6 confirmed bugs fixed incl. 2 donor-money, 2 adversarial reviews, 2 session
 rotations, live archive/kickoff automation).
@@ -37,8 +38,8 @@ corrections. The owner stays above both: rulings, ships, secrets, billing, sessi
   dev-A SHIP lane     dev-B RESEARCH      dev-C CONTENT/OPS   QC — THE RELAY
   ritual·golden·tars  surveys·specs·web   seeding QA·checkl.  verifies EVERY brief,
   commits·STATE       research            assets·test specs   aggregates → 1 ping
-  (Opus 4.8 flat)     (Opus 4.8 flat)     (Opus 4.8 flat;     to the director
-                                           Sonnet valve OK)   (Opus 4.8 flat)
+  (latest-Opus flat)  (latest-Opus flat)  (latest-Opus flat;  to the director
+                                           Sonnet valve OK)   (latest-Opus flat)
 ```
 
 - **QC relay flow:** lanes end reviewable completions with `→PING-QC` (in their OWN file);

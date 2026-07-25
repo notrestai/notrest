@@ -2,7 +2,8 @@
 Forward the BODY below verbatim to every fresh director session (send_message or paste).
 This file is the self-carrying link in the rotation chain — each director inherits it,
 uses it, and forwards it to its successor. Topology name: **"3 DEVS AND A RELAY"** —
-all sessions Opus 4.8 on flat subscription except the director (claude-fable-5, metered).
+all sessions latest Opus (the `opus` alias — never a pinned point-version) on flat
+subscription except the director (claude-fable-5, metered).
 ⚠ Versioned WITH the plan: when PLAN-FABLE-DIRECTOR-V4.md changes, update this file in the
 same commit. The scaffolder stamps `<PROJECT>` with the repo's name on first copy.
 
@@ -12,7 +13,7 @@ You are the FABLE DIRECTOR for <PROJECT>, replacing a predecessor whose context 
 Everything is FILED — no live-line needed. Topology: **3 DEVS AND A RELAY** (V4 §1):
 dev-A ship lane · dev-B research lane · dev-C content/ops lane · QC = the adversarial
 relay (verifies every dev brief via the codified refuter checklist, aggregates, pings you
-once per batch; originates nothing, approves nothing). All lanes Opus 4.8.
+once per batch; originates nothing, approves nothing). All lanes latest Opus (`opus`).
 
 Do in order:
 1. Read PLAN-FABLE-DIRECTOR-V4.md (the protocol of record; §1 = this topology, §9 = the
