@@ -1,5 +1,35 @@
 # Changelog — the notrest harness
 
+## 3.4.1 — 2026-07-25
+
+**The seat stops doing bookkeeping — receipts write themselves.**
+
+Measured tax: the seat hand-ran the same lane-close trio **34 times today** — grep the
+agent transcript for its model, run `spend.py log` with the token count, append the COORD
+line — roughly 150 tool calls of pure clerical work. The compile scanner had already
+ranked that exact shape candidate #1 (15×) and #5; the estate saw it before the seat did.
+
+- **Auto-receipt in the SubagentStop hook.** `agent-ledger.sh` already parsed every
+  finished agent's transcript for model and size; it now also sums per-message usage and
+  appends the spend receipt itself — fields byte-identical to `spend.py`'s own writer (so
+  `report` still parses and still exits 4 on a routing violation), with the agent id as a
+  trailing `agent=<id>` token so it never pollutes `purpose`. Idempotent by design: the
+  guard is a substring test inside the flock'd critical section, so a re-fire or a
+  concurrent replay cannot double-log (proven: two runs, identical md5, one line).
+  Honest grading survives the automation — a transcript with usage data writes
+  `grade=observed`; one without writes `tokens=unknown grade=estimate` rather than a
+  guess. A repo with no `spend/` ledger is opted out: nothing is created.
+- **`render-check.sh`** — the render gate as one command: serve on a free 127.0.0.1 port,
+  prove HTTP 200, print the URL, reap with `--close`. Replaces a five-call dance the seat
+  ran all week.
+- **`gategrep.sh`** — whitespace-normalized phrase counting. A naive `grep -F` returns a
+  false zero on a phrase wrapped across markdown lines; that defect burned the seat twice
+  today, once nearly causing a bad gate call.
+- 43-assertion fixture covering all three, plus the opt-out and no-usage paths.
+
+Ship gate for this release, both green on the shipped tree: **eval PASS — 28 skills, 8
+checks, 0 fail, 0 warn, 0.07s, 0 model tokens**; **doctor HEALTHY — 8/8, exit 0**.
+
 ## 3.4.0 — 2026-07-25
 
 **We build our own instruments: /eval and /refuter. Twenty-eight skills.**

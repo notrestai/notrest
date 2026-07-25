@@ -72,7 +72,11 @@ try:
     # lines) — NOT a global "model" regex, which grabs decoy/tool-content or
     # "<synthetic>" keys. Keep the LAST real assistant's model, pairing it with
     # the same line whose text becomes the snippet.
+    # tok_total/tok_seen also fund the spend auto-receipt below: summed from the
+    # per-message usage objects the transcript actually carries (no guessing —
+    # zero usage objects means no number is written at all).
     model, snippet, size = "?", "?", "?"
+    tok_total, tok_seen = 0, False
     if tpath:
         p = tpath if os.path.isabs(tpath) else os.path.join(os.getcwd(), tpath)
         try:
@@ -103,6 +107,22 @@ try:
                     content = msg.get("content", obj.get("content"))
                 else:
                     content = obj.get("content")
+                # ── token usage: one usage object per line at most (message-level
+                # first, else top-level) so nothing is counted twice. Every
+                # numeric *_tokens field is summed — input, output, and both
+                # cache legs — because that is the whole billed footprint.
+                usage = None
+                if isinstance(msg, dict) and isinstance(msg.get("usage"), dict):
+                    usage = msg["usage"]
+                elif isinstance(obj.get("usage"), dict):
+                    usage = obj["usage"]
+                if usage:
+                    for uk, uv in usage.items():
+                        if isinstance(uv, bool) or not isinstance(uv, int):
+                            continue
+                        if uk.endswith("_tokens") and uv >= 0:
+                            tok_total += uv
+                            tok_seen = True
                 if role != "assistant":
                     continue
                 # model from THIS assistant line (msg-level first, then top-level);
@@ -174,6 +194,49 @@ try:
                     lf.flush()
                 finally:
                     fcntl.flock(lf, fcntl.LOCK_UN)
+        except Exception:
+            pass
+
+        # ── spend auto-receipt (the seat-tax cut): the transcript is already
+        # parsed, so the ledger line the seat used to hand-run costs nothing
+        # here. Rules:
+        #   · APPEND ONLY to an existing <git_root>/spend/ledger.md — never
+        #     create it, never mkdir spend/: a repo without a ledger has opted out.
+        #   · IDEMPOTENT — the line carries a trailing "agent=<id>" token and we
+        #     skip entirely if that token is already in the ledger, so replayed
+        #     or duplicated SubagentStop events can never double-log.
+        #   · Format is byte-compatible with spend.py's own log writer (same
+        #     field order, same flock'd O_APPEND discipline, same "unknown"
+        #     rendering for a missing count). Replicated rather than imported
+        #     because spend.py's cmd_log prints to stdout and creates the ledger —
+        #     both forbidden here.
+        #   · Honest grade: a real summed usage total is "observed"; a transcript
+        #     carrying no usage objects yields tokens=unknown and "estimate".
+        # Wrapped in its own try/except: a receipt failure must never disturb the
+        # COORD-AGENTS write above.
+        try:
+            sledger = os.path.join(git_root, "spend", "ledger.md")
+            if os.path.isfile(sledger):
+                marker = f" agent={agent_id}"
+                purpose = "" if snippet == "?" else snippet[:60]
+                purpose = re.sub(r"\s+", " ", purpose).replace('"', "'").strip()
+                stokens = str(tok_total) if tok_seen else "unknown"
+                sgrade = "observed" if tok_seen else "estimate"
+                sline = (f"[{ts}] lane=subagent model={model} tokens={stokens} "
+                         f"grade={sgrade} purpose=\"auto-receipt: {purpose}\""
+                         f"{marker}\n")
+                fd = os.open(sledger, os.O_RDWR | os.O_APPEND, 0o644)
+                with os.fdopen(fd, "a+", encoding="utf-8") as sf:
+                    fcntl.flock(sf, fcntl.LOCK_EX)
+                    try:
+                        sf.seek(0)
+                        prior = sf.read()
+                        # already receipted (exact trailing token) → write nothing
+                        if agent_id != "?" and (marker + "\n") not in prior:
+                            sf.write(sline)
+                            sf.flush()
+                    finally:
+                        fcntl.flock(sf, fcntl.LOCK_UN)
         except Exception:
             pass
 except Exception:

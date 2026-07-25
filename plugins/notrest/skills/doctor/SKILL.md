@@ -80,3 +80,15 @@ mismatch, tombstone bump, broken hook syntax, count drift, unanchored gitignore,
 stamp, damaged COORD header, broken `candidates.json` — and asserts each one flips **exactly**
 its own named check to FAIL at exit 6, with every other check still passing. A health checker
 that cries wolf is worse than none, so precision is asserted, not just detection.
+
+## Companion utilities
+
+Two small seat tools ship beside the checker (both `bash -n` clean, typed exits):
+
+- `scripts/render-check.sh <file.html>` — serves the file on a free 127.0.0.1 port (8790-8799),
+  proves HTTP 200, prints the URL to open, and reaps with `--close <port>`. The render gate,
+  as one command instead of five.
+- `scripts/gategrep.sh <file> <phrase> [expected]` — counts a phrase after normalizing
+  whitespace, so a phrase wrapped across markdown lines still matches. A naive `grep -F`
+  returns a false zero on wrapped text; this is the fix.
+- `scripts/seat-tax-fixture.sh` — the contract test for both, plus the hook's auto-receipt.
