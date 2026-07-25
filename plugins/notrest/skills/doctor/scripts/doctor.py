@@ -589,8 +589,15 @@ def check_gitignore(t):
 
     for derived in ("graph", "compile"):
         anchored, unanchored = "/%s/" % derived, "%s/" % derived
+        # A dir-wide anchored rule is one valid shape. The other is per-file rules for the
+        # genuinely derived outputs — required when the dir also holds SOURCE (compile/<slug>/
+        # runtimes are hand-built and must stay tracked). Either shape passes.
+        per_file = [r for r in rules if r.startswith(anchored) and not r.endswith("/")]
         if anchored in rules:
             detail.append("%s present (anchored to the repo root)" % anchored)
+        elif per_file:
+            detail.append("%s derived-file rules present (%s) — dir holds source, so per-file is correct"
+                          % (anchored, ", ".join(sorted(per_file))))
         elif unanchored in rules:
             status = FAIL
             detail.append("UNANCHORED '%s' — gitignore matches at ANY depth, so this also ignores "

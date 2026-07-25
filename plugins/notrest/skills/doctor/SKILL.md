@@ -92,3 +92,5 @@ Two small seat tools ship beside the checker (both `bash -n` clean, typed exits)
   whitespace, so a phrase wrapped across markdown lines still matches. A naive `grep -F`
   returns a false zero on wrapped text; this is the fix.
 - `scripts/seat-tax-fixture.sh` — the contract test for both, plus the hook's auto-receipt.
+- `scripts/coord-volume-fixture.sh` — the contract test for the COORD volume law (seal at 500,
+  never compact) enforced by the SessionEnd hook.

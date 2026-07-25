@@ -36,3 +36,6 @@
 [2026-07-25 07:43Z] lane=subagent model=claude-opus-5 tokens=56851 grade=observed purpose="refuter lane (adversarial contract: brief template, 6-rung ladder, verdict grammar; 11 calls / 2.5 min)"
 [2026-07-25 07:43Z] lane=subagent model=claude-opus-5 tokens=90288 grade=observed purpose="eval lane (8 static-fingerprint checks, 10/10 fixture, 0.08s zero-token run; found 2 real defects first run)"
 [2026-07-25 07:44Z] lane=subagent model=claude-opus-5 tokens=70190 grade=observed purpose="seat-tax lane (auto-receipt in SubagentStop hook + render-check.sh + gategrep.sh; 43/43; kills the 34x/day bookkeeping trio)"
+[2026-07-25 08:00Z] lane=subagent model=claude-opus-5 tokens=85419 grade=observed purpose="COORD volumes lane (seal-not-compact, 31/31, director-glob fix)"
+[2026-07-25 08:00Z] lane=subagent model=claude-opus-5 tokens=110880 grade=observed purpose="cleanup lane (scanner stopwords+weak-source, evals retired, 42/42)"
+[2026-07-25 08:00Z] lane=subagent model=claude-opus-5 tokens=87280 grade=observed purpose="dossier lane (maiden-compile background+dossier+verdict.html)"

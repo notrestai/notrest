@@ -22,9 +22,13 @@ When invoked, glance at the working directory for files a prior session may have
   what every prior prompt actually landed. Append an intake line when setup completes
   (e.g. `[oracle] intake done: O=<objective one-liner> -> routed to /<skill>`), and keep
   the discipline for the whole session: **one honest ledger line per substantive prompt,
-  written when the work lands, evidence included**. Newest at the bottom; compact to
-  `COORD-ARCHIVE.md` at ~40 lines. In fable-director repos the per-lane blackboards are
-  `COORD-<LANE>.md` beside it — never write to a lane's file.
+  written when the work lands, evidence included**. Newest at the bottom. `COORD.md` is
+  the **ACTIVE volume** — read its tail, and append there. It is never compacted: past
+  ~500 lines the hook seals it whole as `COORD-<NNN>.md` and starts a fresh active
+  volume, so sealed volumes exist for history (immutable; `/recap`, `/compile` and
+  `/archivist` read them all) but a session only needs this tail. In fable-director
+  repos the per-lane blackboards are `COORD-<LANE>.md` beside it (a lane name is never
+  all digits — that's a sealed volume) — never write to a lane's file.
 
 **Resuming a continuation? Open the live line back (multi-session environments only).** In Claude Code desktop (where `list_sessions` / `send_message` / `search_session_transcripts` exist), a continuation session should connect to its predecessor instead of relying on docs alone:
 1. Find the predecessor: `START-HERE.md` may name it on a **"Live line:"** row (title + session id, written by `sessionend`); otherwise `list_sessions` and match the most recent session for this project/cwd.

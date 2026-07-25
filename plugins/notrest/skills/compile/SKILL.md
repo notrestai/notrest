@@ -52,7 +52,8 @@ python3 <compile-skill>/scripts/compile.py report --root "$ROOT"
 ```
 
 - **`scan --root DIR [--transcripts DIR] [--out DIR] [--sim F] [--min-df N]`** — reads
-  `COORD.md` + `COORD-ARCHIVE.md` (the `ask -> landed | evidence` lines), `COORD-AGENTS.md`
+  `COORD.md` plus any sealed `COORD-<NNN>.md` volumes in order (+ legacy
+  `COORD-ARCHIVE.md`) (the `ask -> landed | evidence` lines), `COORD-AGENTS.md`
   (each lane's last conclusion, falling back to the sibling `agent-<id>.meta.json` where the
   hook wrote `last: ?`), and `spend/ledger.md` (`purpose=` strings — the estate's most
   explicit statement of what a lane was *for*). Clusters them by **shape**, then writes
@@ -102,6 +103,17 @@ over.
   lost. Rule with `decide`; fix the estate, re-scan.
 - **A thin estate gets an empty table, not an invented one.** No repetition yet is a finding:
   say so, and say that appending honest COORD lines is what makes the next scan see anything.
+- **Estate vocabulary is not a workflow — hence the stopwords and the `weak-source` mark.**
+  Spend purposes share a vocabulary by construction: every job is a "lane", with "rounds",
+  "gates" and "fixtures", and things get "shipped". Because similarity is df-weighted those
+  were the *heaviest* tokens in the corpus, which once made `lan` the #1 candidate at 31×
+  (same-shape 0.15) out of nothing but the seat's own word for a lane. Those words are now
+  dropped before weighting (`ESTATE_STOP` in `compile.py`, list and reasoning in-code), so a
+  candidate has to repeat in the words of the WORK. Separately, a candidate whose evidence is
+  >80% spend purposes with no COORD support is marked **weak-source** and sorted below every
+  other candidate — a purpose says what a lane was CALLED, a COORD line says what was ASKED
+  and what LANDED. Demoted, never deleted: read a weak-source row as shared vocabulary until
+  the ledger says otherwise.
 
 ---
 

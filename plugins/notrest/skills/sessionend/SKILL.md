@@ -70,20 +70,28 @@ Skip silently only when the skills aren't installed.
   checked + cadence ≤ today) in `HANDOFF.md`, so the next session inherits the calendar and
   not just the conclusions. Don't run the cycle here; just say what's due.
 - **COORD.md** present (the session coordination ledger) → append the closing line:
-  `- [UTC] [sessionend] session closed: <one-line outcome> | handoff: START-HERE.md` —
-  and if the ledger has grown past ~40 lines, compact the oldest entries into
-  `COORD-ARCHIVE.md` now so the next session reads a short tail.
-- **COORD-AGENTS.md** present (the hook-written agent activity ledger) and grown past
-  ~100 lines → compact the oldest entries into `COORD-AGENTS-ARCHIVE.md` so the next
-  session reads a short tail. It's machine-written — never hand-edit the entries, only
-  move whole oldest lines into the archive.
+  `- [UTC] [sessionend] session closed: <one-line outcome> | handoff: START-HERE.md`.
+  **Never compact it.** The ledger is permanent bookkeeping; it ROLLS INTO VOLUMES
+  instead. `COORD.md` is the ACTIVE volume; past ~500 ledger lines the hook seals it
+  WHOLE as the next `COORD-<NNN>.md` (001, 002, …) and starts a fresh active volume
+  that opens with a `> Continues COORD-<NNN>.md · volume <N>` line. Sealed volumes are
+  immutable — never edited, never appended to, never deleted.
+- **COORD-AGENTS.md** present (the hook-written agent activity ledger) → same law at
+  ~1000 lines, sealed as `COORD-AGENTS-<NNN>.md`. Machine-written: never hand-edit.
+- **Why sealing, not archiving:** archiving MOVES lines (a crash window on every
+  compaction, and the archive is never actually read); sealing PRESERVES them —
+  immutable, complete, chronological. Sessions read only the ACTIVE volume's tail, so
+  a resume stays short, while `/recap`, `/compile` and `/archivist` read every volume
+  in order for full history. Legacy `COORD-ARCHIVE.md` / `COORD-AGENTS-ARCHIVE.md` are
+  the retired scheme: leave them exactly as found, never migrate them.
 
 **The SessionEnd hook is the always-on cushion under all of this.** `hooks/session-end.sh`
 fires whenever a session terminates — clean exit, `/clear`, crash, closed terminal — and does
 two things silently, at zero model tokens: it appends one `[hook] … auto-cushion …` line to
 `COORD.md` when the last ledger line is neither a `[sessionend]` close nor already a cushion,
-and it enforces the compaction thresholds above (COORD.md >40 → newest 30 kept, the rest moved
-whole into `COORD-ARCHIVE.md`; COORD-AGENTS.md >100 → newest 60 kept). So `/sessionend` never
+and it enforces the volume law above (COORD.md >500 ledger lines → sealed whole as the next
+`COORD-<NNN>.md`, fresh active volume; COORD-AGENTS.md >1000 → `COORD-AGENTS-<NNN>.md`), sealed
+copy fsync'd before the active file is atomically replaced. So `/sessionend` never
 *has* to run for the ledger to stay short and resumable — but it remains the deliberate,
 richer close: the four continuity files, the estate closes, the honest one-line outcome the
 hook cannot know. Read the signal in reverse when you resume: a cushion line in the tail means

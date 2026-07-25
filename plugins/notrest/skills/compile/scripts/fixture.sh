@@ -61,7 +61,10 @@ has "candidates.md is marked machine-written" "NEVER hand-edit" "$O/candidates.m
 has "candidates.md states repetition != value" "Ranking measures REPETITION, not value" "$O/candidates.md"
 has "absent source named, not omitted" "| COORD-AGENTS.md | NO |" "$O/candidates.md"
 t "exactly one RIPE candidate" "$(J "sum(1 for x in c if x['ripe'])")" "1"
-t "the ripe candidate is the release ritual" "$(J "'ship' in top['signature'] and '<ver>' in top['signature']")" "True"
+# `ship`/`shipped` are ESTATE_STOP words now (they describe the harness, not the job),
+# so the release ritual is identified by its parameters+verbs instead: a version
+# placeholder and a commit. Same assertion, on tokens the stopword list cannot eat.
+t "the ripe candidate is the release ritual" "$(J "'commit' in top['signature'] and '<ver>' in top['signature']")" "True"
 t "release ritual counts every recorded occurrence" "$(J "top['occurrences'] >= 4")" "True"
 t "cross-source fusion folded the spend purposes in" "$(J "sorted(top['sources'])")" "['coord', 'spend']"
 t "same-shape ratio is reported" "$(J "0 < top['shape'] <= 1")" "True"
@@ -125,6 +128,54 @@ python3 "$CP" decide --root "$R" --slug x --status NONSENSE >/dev/null 2>&1
 t "an invalid status is refused" "$?" "1"
 python3 "$CP" scan --root "$R" --out "$W/elsewhere" >/dev/null 2>&1
 t "--out honours an absolute path" "$([ -f "$W/elsewhere/candidates.md" ] && echo yes)" "yes"
+
+echo "── I · estate vocabulary is not a workflow (stopwords + weak-source demotion)"
+# Regression for the measured defect: the scanner's #1 candidate was `lan` at 31×,
+# built entirely out of spend purposes that all said "lane"/"round"/"gate". Two
+# defences, both asserted here: those words never reach the weighting, and a cluster
+# with no COORD line behind it is demoted below one that has one.
+R5="$W/vocab"; mkdir -p "$R5/spend"
+cat > "$R5/COORD.md" <<'EOF'
+# COORD.md
+## LEDGER
+- [2026-02-01 09:00Z] [main] regenerate the customer invoice pdf for acme -> pdf mailed, archive updated | evidence: invoice-acme.pdf
+- [2026-02-03 09:00Z] [main] regenerate the customer invoice pdf for globex -> pdf mailed, archive updated | evidence: invoice-globex.pdf
+- [2026-02-06 09:00Z] [main] regenerate the customer invoice pdf for initech -> pdf mailed, archive updated | evidence: invoice-initech.pdf
+- [2026-02-07 09:00Z] [main] owner interview about tarot deck pricing -> notes captured | evidence: notes/tarot.md
+- [2026-02-08 09:00Z] [main] chase the flaky dns resolver on the laptop -> stale cache blamed | evidence: dig output
+- [2026-02-09 09:00Z] [main] draft the grocery budget spreadsheet formulas -> three columns rewritten | evidence: budget.xlsx
+EOF
+cat > "$R5/spend/ledger.md" <<'EOF'
+# spend ledger — append-only via spend.py
+[2026-02-01 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="comprehensive review: model-policy lane (round 2 gate, fixtures verified)"
+[2026-02-02 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="visual-plan research lane (round 1, opus agents, receipts shipped)"
+[2026-02-03 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="tarot deck illustration lane (round 3 gated, evidence shipped)"
+[2026-02-04 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="dns latency probe lane (round 2, seat gate, tokens observed)"
+[2026-02-05 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="grocery budget spreadsheet lane (round 1 fixture, receipt verified)"
+[2026-02-06 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="nightly dashboard screenshot refresh lane (round 1)"
+[2026-02-07 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="nightly dashboard screenshot refresh lane (round 2)"
+[2026-02-08 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="nightly dashboard screenshot refresh lane (round 3)"
+[2026-02-09 09:05Z] lane=subagent model=claude-opus-5 tokens=100 grade=observed purpose="nightly dashboard screenshot refresh lane (round 4)"
+EOF
+python3 "$CP" scan --root "$R5" >/dev/null 2>&1; t "scan of the vocabulary estate exits 0" "$?" "0"
+J5(){ python3 -c "
+import json,sys
+d=json.load(open('$R5/compile/candidates.json')); c=d['candidates']
+BAD=set('lan round gat seat fixtur ship opu agent model token purpos receipt evidenc spend ledger verif'.split())
+def by(tok): return next((x for x in c if tok in ' '.join(x['core'])), None)
+print(eval(sys.argv[1], {'d':d,'c':c,'by':by,'BAD':BAD}))
+" "$1"; }
+t "estate vocabulary never reaches a candidate core" \
+  "$(J5 'not any(BAD.intersection(x["core"]) for x in c)')" "True"
+t "the vocabulary-only purposes ripened nothing of their own" \
+  "$(J5 'not any(x["ripe"] and x["sources"].get("spend",0) and any(w in " ".join(e["text"] for e in x["evidence"]) for w in ("tarot deck illustration","grocery budget spreadsheet lane")) for x in c)')" "True"
+t "a COORD-supported candidate still ripens" \
+  "$(J5 'bool(by("invoic") and by("invoic")["ripe"] and by("invoic")["sources"].get("coord",0) >= 3)')" "True"
+t "the spend-only cluster is flagged weak-source" "$(J5 'by("dashboard")["weak_source"]')" "True"
+t "…and is demoted below the COORD-supported one despite more occurrences" \
+  "$(J5 'by("dashboard")["rank"] > by("invoic")["rank"] and by("dashboard")["occurrences"] > by("invoic")["occurrences"]')" "True"
+has "candidates.md explains the weak-source mark" "purposes say what a lane was CALLED" "$R5/compile/candidates.md"
+has "the weak-source row is marked in the table" "weak-source" "$R5/compile/candidates.md"
 
 echo
 echo "compile fixture: $PASS passed, $FAIL failed"

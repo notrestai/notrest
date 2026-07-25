@@ -97,6 +97,29 @@ def _stem(t):
 
 STOP = {_stem(w) for w in _STOP_RAW.split()}
 
+# Estate vocabulary — the harness's words for its OWN machinery, not for the work.
+#
+# Measured defect (2026-07-25): the top candidate on this repo was `lan` at 31
+# occurrences, same-shape 0.15, and its whole evidence set was spend purposes —
+# "comprehensive review: model-policy lane (…)", "visual-plan research lane (…)".
+# The scanner had clustered the seat's word for a LANE and called it a workflow.
+#
+# Cause, and why the fix belongs here rather than in the threshold: spend purposes
+# share this vocabulary BY CONSTRUCTION — every lane is a "lane", every build has
+# "rounds", "gates", "fixtures", every ship is "shipped". Because similarity is
+# df-weighted (inverse-IDF, deliberately: frequent tokens carry the procedure),
+# these are the HEAVIEST tokens in the corpus — exactly backwards here. They are
+# frequent because of how the estate writes itself down, not because a procedure
+# repeated. Dropped AFTER masking and BEFORE weighting, so they never reach the
+# document-frequency count, the signatures, the slug, or the fusion weights.
+#
+# The bar for adding a word: it describes the RECORDING apparatus (who ran it, in
+# what arrangement, with what receipt) rather than the job that was run.
+_ESTATE_STOP_RAW = """lane lanes round rounds seat gate gated gates fixture fixtures shipped
+ship spend ledger evidence verified agent agents opus model tokens purpose receipt receipts"""
+
+ESTATE_STOP = {_stem(w) for w in _ESTATE_STOP_RAW.split()}
+
 
 def tokens(text):
     """Lowercase → mask volatile literals → split → stem → drop stopwords/shorts.
@@ -113,7 +136,7 @@ def tokens(text):
         if not raw:
             continue
         s = raw if raw.startswith("<") else _stem(raw)
-        if s in STOP or (len(s) < 3 and not s.startswith("<")):
+        if s in STOP or s in ESTATE_STOP or (len(s) < 3 and not s.startswith("<")):
             continue
         out.append(s)
     return out
@@ -155,8 +178,13 @@ def read_coord(root):
     The lane tag is parsed OFF, never tokenized: it is on every line by
     construction, so it carries no information about what the work was.
     """
-    items, name = [], "COORD.md"
-    for fn in (name, "COORD-ARCHIVE.md"):
+    # The ledger rolls into VOLUMES: COORD.md is the active volume, sealed ones
+    # are COORD-<NNN>.md (immutable, oldest first). COORD-ARCHIVE.md is the
+    # retired compaction scheme — still read so legacy repos keep their history.
+    sealed = sorted(p.name for p in root.glob("COORD-*.md")
+                    if p.stem.split("-")[-1].isdigit() and p.stem.count("-") == 1)
+    items = []
+    for fn in sealed + ["COORD-ARCHIVE.md", "COORD.md"]:
         text = _read(root / fn)
         if text is None:
             continue
@@ -358,6 +386,32 @@ def fuse(cands, gdf, thr):
     return merged
 
 
+WEAK_SPEND_SHARE = 0.80   # above this share of spend evidence, with no COORD line...
+
+
+def mark_weak_source(cands):
+    """Flag candidates whose evidence is almost entirely spend-ledger purposes.
+
+    Not all sources are equal witnesses. A COORD line records what was ASKED and
+    what LANDED — it is a statement about the work. A spend purpose records what a
+    lane was CALLED — it is a label the seat typed while paying for the lane, and
+    labels rhyme with each other even when the jobs do not. So a cluster built
+    only out of purposes is evidence that the seat NAMES things consistently,
+    which is not the same claim as "this procedure repeated".
+
+    Demotion, never deletion: the cluster may still be real, and hiding it would
+    be the scanner deciding instead of reporting. It is marked `weak-source` and
+    sorted below every candidate with any other support, so it can never present
+    itself as the #1 thing to compile on the strength of shared vocabulary alone.
+    """
+    for c in cands:
+        srcs = c.get("sources", {})
+        total = sum(srcs.values()) or 1
+        c["weak_source"] = (srcs.get("spend", 0) / total > WEAK_SPEND_SHARE
+                            and not srcs.get("coord", 0))
+    return cands
+
+
 # ── transcripts (optional, never required) ────────────────────────────────────
 def _tool_uses(obj, out):
     if isinstance(obj, dict):
@@ -493,6 +547,12 @@ def render_md(data):
         f"estate recorded the same shape {RIPE_AT}+ times — never because compiling it is",
         "worth doing. That judgment belongs to `/compile <slug>`, and to the owner.",
         "",
+        "**`weak-source`** marks a candidate whose evidence is >"
+        f"{int(WEAK_SPEND_SHARE * 100)}% spend-ledger purposes",
+        "with no COORD line behind it. Spend purposes say what a lane was CALLED; COORD",
+        "lines say what was ASKED and what LANDED. Such candidates are demoted below every",
+        "other candidate — read them as shared vocabulary until the ledger says otherwise.",
+        "",
         f"Last scan: {data['generated']} · root: `{data['root']}`",
         "",
         "| source | present | entries |",
@@ -513,7 +573,8 @@ def render_md(data):
         b.append("| — | *(nothing repeated twice yet — a thin estate gets an empty table, "
                  "not an invented one)* | | | | | | |")
     for c in data["candidates"]:
-        name = c["slug"] + (f" ({c['alias']})" if c.get("alias") else "")
+        name = (c["slug"] + (f" ({c['alias']})" if c.get("alias") else "")
+                + (" **weak-source**" if c.get("weak_source") else ""))
         srcs = " ".join(f"{k}={v}" for k, v in c["sources"].items())
         b.append(f"| {c['rank']} | {name} | {c['occurrences']} | {c['shape']:.2f} | "
                  f"{'RIPE' if c['ripe'] else '—'} | {c['status']} | {c['kind']} | {srcs} |")
@@ -522,7 +583,9 @@ def render_md(data):
         b.append(f"### {c['rank']} · {c['slug']}"
                  + (f" ({c['alias']})" if c.get("alias") else "")
                  + f" — {c['occurrences']}× · same-shape {c['shape']:.2f} · "
-                 + ("RIPE" if c["ripe"] else "not ripe") + f" · {c['status']}")
+                 + ("RIPE" if c["ripe"] else "not ripe") + f" · {c['status']}"
+                 + (" · **weak-source** (spend purposes only, no COORD support)"
+                    if c.get("weak_source") else ""))
         b.append(f"core: `{', '.join(c['core']) or '(none)'}`")
         b.append(f"signature: `{', '.join(c['signature'])}`")
         if c.get("overlaps"):
@@ -590,8 +653,12 @@ def cmd_scan(a):
     sources.append({"name": "transcripts", "present": bool(a.transcripts),
                     "items": tcount})
 
+    cands = mark_weak_source(cands)
     cands = apply_decisions(cands, read_decisions(out))
-    cands.sort(key=lambda c: (not c["ripe"], -c["occurrences"], -c["shape"], c["slug"]))
+    # weak-source first in the key: a spend-purpose-only cluster never outranks a
+    # candidate the COORD ledger actually witnessed, however many times it recurs.
+    cands.sort(key=lambda c: (c["weak_source"], not c["ripe"], -c["occurrences"],
+                              -c["shape"], c["slug"]))
     for i, c in enumerate(cands, 1):
         c["rank"] = i
 
@@ -627,7 +694,8 @@ def cmd_report(a):
     for c in ripe:
         name = c["slug"] + (f" ({c['alias']})" if c.get("alias") else "")
         print(f"[compile] RIPE {name} · {c['occurrences']}× · shape "
-              f"{c['shape']:.2f} · {c['status']} · {c['kind']}")
+              f"{c['shape']:.2f} · {c['status']} · {c['kind']}"
+              + (" · weak-source" if c.get("weak_source") else ""))
     if fresh:
         print(f"[compile] {len(fresh)} ripe candidate(s) not yet ruled on — "
               f"/compile {fresh[0]['slug']} reconstructs its contract from the trail; "

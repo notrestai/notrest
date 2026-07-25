@@ -6,7 +6,15 @@
 # compile.py's repeated-work scan output at the REPO ROOT only — derived, regenerated
 # by every scan (same rationale as /graph/). Anchored, so the skill's own directory
 # (plugins/notrest/skills/compile/) stays tracked.
-/compile/
-# `claude plugin eval --output-dir evals/results` writes run artifacts here. Anchored,
-# so the plugin's own case files (plugins/notrest/evals/) stay tracked.
+# compile: derived scan output is ignored; hand-built compiled runtimes under
+# compile/<slug>/ are SOURCE and must be tracked.
+# fixture scratch trees are throwaway clones, never source
+compile/*/.fixture-scratch/
+/compile/candidates.md
+/compile/candidates.json
+/compile/decisions.md
+# Run artifacts from the RETIRED external runner (`claude plugin eval --output-dir
+# evals/results`). Kept ignored so any stray old artifacts stay out of the tree; the
+# retired cases themselves live tracked at plugins/notrest/evals-legacy-external-runner/.
+# The live gate is /eval (skills/eval/scripts/eval.py), which writes nothing here.
 /evals/results/

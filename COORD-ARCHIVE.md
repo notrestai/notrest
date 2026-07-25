@@ -1,0 +1,22 @@
+# COORD-ARCHIVE.md — archived COORD ledger lines (auto-written by the notrest SessionEnd hook)
+
+Machine-written — never hand-edit. Archived oldest ledger lines — moved whole, never
+edited, never summarized. Append-only, oldest at the top; COORD.md keeps the newest
+lines. Read this when a resume needs history older than the live ledger's tail.
+
+## ARCHIVE
+- [2026-07-15 19:59Z] [hook] COORD.md scaffolded by oracle-suite SessionStart
+- [2026-07-15 19:18Z] [fable-main] update plugin window broken -> root-caused stale marketplace clone; CLI-updated 2.2.0->2.8.1 | evidence: installed_plugins.json sha 0e3059a
+- [2026-07-15 19:45Z] [fable-main] build fable-swarm + opus-only offload policy -> v2.9.0 shipped, hardcoded in hook/fable-mode/fable-director/templates/global+repo CLAUDE.md | evidence: commit 9522ded, plugin updated
+- [2026-07-15 19:54Z] [fable-main] swarm live test (2 opus lanes) -> fork loophole CONFIRMED + 6 ladder residues fixed, v2.9.1 shipped | evidence: commit e281ede, spend report CLEAN 61/39 opus/sonnet
+- [2026-07-15 20:02Z] [fable-main] COORD.md generalized (rename + auto-create + per-prompt hook) -> v2.10.0 shipped, fixture-proven | evidence: commit 09aa9b0, scaffolder emits COORD-*.md, plugin updated 2.10.0
+- [2026-07-15 20:10Z] [fable-main] owner ruling: keep all five continuity files (CLAUDE/COORD/START-HERE/HANDOFF/STATE) — redundancy is a deliberate safety cushion; do NOT consolidate | evidence: owner message this session
+- [2026-07-15 20:16Z] [fable-main] START-HERE read order now includes COORD tail (pos 2, crash-tiebreaker) -> v2.10.1 | evidence: sessionend SKILL lines 102-107
+- [2026-07-15 20:40Z] [fable-main] comprehensive 4-lane swarm review -> 21 findings fixed (critical: hook-stub broke director bootstrap; fixture-proven fix), v2.11.0 | evidence: spend report CLEAN 74/26 opus/sonnet, exit 0
+- [2026-07-15 20:55Z] [fable-main] oracle-skill-flow.html reviewed -> stamped v2.11.0, sessionend card fixed (COORD close line), wired into docs/ + README + TUTORIAL + release ritual, render-verified in browser | evidence: commit follows
+- [2026-07-15 21:20Z] [fable-main] planview explored: BuilderIO visual-plan read (6 files), HTML demo built (scratchpad), inline chat-widget demo rendered -> OWNER RULING: not a value adder, planview does NOT enter the plugin; nothing repo-side to revert | evidence: repo clean of planview, ruling this session
+- [2026-07-15 21:20Z] [fable-main] honesty correction: research-lane spend (52,136 tok opus) claimed "logged" before it was — ledger showed 0 entries; spend.py log PENDING (classifier outage blocks Bash; script-only append rule forbids hand-edit) | evidence: spend/ledger.md tail, outage errors in transcript
+- [2026-07-21 04:58Z] [fable-main] seat-builder ritual ratified by owner -> codified in fable-swarm (persistent builder lanes, resume-same-lane), hook + global CLAUDE.md + memory; v2.12.0 | evidence: commit follows, spend report exit 0 this turn
+- [2026-07-21 05:34Z] [fable-main] agent estate shipped: SubagentStop auto-ledger (refuter-hardened, 44/44 seat-run) + archivist indexing + trail-walk + multi-way gate + speed discipline -> v2.13.0 | evidence: fixture exit 0, commit follows
+- [2026-07-25 04:05Z] [fable-main] successor escort codified (DIR/DIR2 pattern: trigger, bring-up, 10-response escort via list_events, referral etiquette, stand-down) + estate unpinned to latest Opus -> v2.14.0 | evidence: lane greps reproduced at seat, pin sweep exit 1, commit follows
+- [2026-07-25 04:05Z] [fable-main] agent ledger first production day: hook wrote COORD-AGENTS.md itself (escort lane entry: model=claude-opus-5, real snippet+path); papercuts parked: duplicate SubagentStop lines, model=?/bytes=? when transcript absent at hook time | evidence: COORD-AGENTS.md lines 8-11

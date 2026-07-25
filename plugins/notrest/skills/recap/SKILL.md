@@ -49,8 +49,8 @@ everything downstream — a thin estate gets an honest short recap, not a padded
 
 | Source | How to inventory | What it gives the story |
 |---|---|---|
-| `COORD.md` | read the `## LEDGER` block; note first + last timestamps and line count | the human layer: what each prompt asked and landed, **with intent** |
-| `COORD-ARCHIVE.md` | exists only if compacted — read it for anything before the COORD span | the older ledger |
+| `COORD.md` | read `COORD.md` plus any sealed `COORD-<NNN>.md` volumes in order (`ls COORD-[0-9][0-9][0-9].md`) — the active volume is the newest; note first + last timestamps and line count | the human layer: what each prompt asked and landed, **with intent** |
+| `COORD-ARCHIVE.md` | legacy compaction scheme — exists only in older repos; read it for anything before the oldest volume | the older ledger |
 | `COORD-AGENTS.md` | `grep -c '^- \[' COORD-AGENTS.md`; note span | who was consulted, what each concluded, transcript paths |
 | git | `TZ=UTC git log --date=format-local:'%Y-%m-%d %H:%MZ' --pretty=format:'%h|%ad|%s'` | ships, and what actually changed |
 | `spend/ledger.md` | read all lines; total per model and per day | what each round cost |

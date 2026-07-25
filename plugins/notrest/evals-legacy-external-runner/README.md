@@ -1,4 +1,26 @@
-# ORACLE suite — eval harness
+# RETIRED — external plugin-eval cases, kept as a record and never as a gate
+
+**Do not run these to gate a ship.** Five cases and 13 graders written for Claude Code's
+external runner (`claude plugin eval`, CLI 2.1.207), retired by owner ruling on 2026-07-25.
+
+**Why it was retired, with the measured receipts:** a full agentic model session per case,
+per ablation arm, plus an LLM judge call per grader — **~13 minutes per pass**, **$4.58**
+for one graded run, and **zero case fixes on disk after ~45 minutes** of a lane grinding on
+it. Worst of all it was **opaque to the seat**: failures arrived as scores, never as
+`file:line`, and a grader that cannot name the line cannot be acted on.
+
+**The live gate is now `/eval`** — `plugins/notrest/skills/eval/scripts/eval.py`, a static
+fingerprint check over the shipped skills: **0.07s, zero model tokens**, deterministic,
+naming the file and line of every failure — together with **`/doctor`** for installation
+health. Run those before a version bump.
+
+The case files under this directory are kept **untouched**, as a record of what was
+measured and what it cost. Everything below this line is the retired runner's own
+documentation: history, not a procedure to follow.
+
+---
+
+## (historical) ORACLE suite — eval harness
 
 Five cases that guard the suite's load-bearing behaviors, written for Claude Code's
 built-in plugin eval runner (`claude plugin eval`, CLI 2.1.207).

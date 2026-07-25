@@ -95,10 +95,14 @@ Most skills also support `--quick` (chat-only, no files) and write a paired *bac
 *Dossier* file for anything substantial.
 
 ## Evals
-`evals/` holds the suite's release-gate eval cases (5 cases, 13 graders) for Claude Code's
-plugin eval runner — they guard the offload policy, COORD discipline, honesty labels,
-intake routing, and graph's zero-token rule. Run per `evals/README.md`; eval runs cost
-real tokens, so they gate releases rather than run on hooks.
+`/eval` is the release gate: `skills/eval/scripts/eval.py` statically fingerprints the
+shipped skills — offload policy, COORD discipline, honesty labels, intake routing, graph's
+zero-token rule — in ~0.07s for **zero model tokens**, naming the file and line of every
+failure. Run it with `/doctor` (installation health) before a version bump.
+
+`evals-legacy-external-runner/` holds the retired `claude plugin eval` cases (5 cases, 13
+graders), kept only as a record of what was measured: ~13 min per pass, $4.58 per graded
+run, zero fixes in 45 minutes. **Never run as a ship gate.**
 
 ## Install
 ```

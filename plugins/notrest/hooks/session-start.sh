@@ -39,9 +39,12 @@ if [ -n "$REPO_ROOT" ] && [ ! -f "$REPO_ROOT/COORD.md" ] && ! ls "$REPO_ROOT"/FA
 
 Append-only, newest at the bottom, one line per substantive prompt when its work
 lands: `- [YYYY-MM-DD HH:MMZ] [session-or-lane] <what was asked> -> <what landed> | evidence: <exit code / commit / path / status>`.
-Honest entries only: in-progress is "in progress", untested is "untested". Compact
-to COORD-ARCHIVE.md at ~40 ledger lines. In a fable-director arrangement, lane
-blackboards live beside this file as COORD-<LANE>.md; this file is the ship/main ledger.
+Honest entries only: in-progress is "in progress", untested is "untested". Never
+compacted: past ~500 ledger lines this file is SEALED WHOLE as the next COORD-<NNN>.md
+and a fresh active volume starts — sealed volumes are immutable, sessions read this
+active tail, /recap + /compile + /archivist read every volume. In a fable-director
+arrangement, lane blackboards live beside this file as COORD-<LANE>.md (never all
+digits — that is a sealed volume); this file is the ship/main ledger.
 
 ## LEDGER
 COORDEOF
@@ -67,12 +70,20 @@ if r: print(r[0]["slug"], r[0]["occurrences"])' "$REPO_ROOT/compile/candidates.j
 fi
 # A lane blackboard is COORD-<LANE>.md — NOT the machine-written ledgers
 # (COORD-AGENTS.md, COORD-ARCHIVE.md, COORD-AGENTS-ARCHIVE.md), which exist in
-# every ORACLE repo and used to false-fire this nudge.
+# every ORACLE repo and used to false-fire this nudge. Nor the SEALED LEDGER
+# VOLUMES, whose suffix is purely numeric (COORD-001.md, COORD-AGENTS-007.md):
+# a lane name is never all digits, so that test separates them cleanly.
 LANE_BLACKBOARD=""
 for f in COORD-*.md FABLE-COORD*.md; do
   [ -f "$f" ] || continue
   case "$f" in
     COORD-AGENTS.md|COORD-ARCHIVE.md|COORD-AGENTS-ARCHIVE.md) continue ;;
+  esac
+  COORD_SUF="${f#COORD-}"; COORD_SUF="${COORD_SUF%.md}"
+  COORD_SUF="${COORD_SUF#AGENTS-}"
+  case "$COORD_SUF" in
+    ''|*[!0-9]*) : ;;   # has a non-digit -> a real lane name
+    *) continue ;;      # all digits -> a sealed ledger volume, not a lane
   esac
   LANE_BLACKBOARD="$f"
   break

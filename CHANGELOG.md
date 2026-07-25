@@ -1,5 +1,53 @@
 # Changelog — the notrest harness
 
+## 3.5.0 — 2026-07-25
+
+**The maiden compile lands, the ledger becomes permanent, and the scanner learns to distrust its own vocabulary.**
+
+- **COORD is never compacted again — it ROLLS (owner design).** Archiving *moves* lines (a
+  crash window, and nobody ever reads the archive); sealing *preserves* them. Past 500
+  ledger lines the active `COORD.md` is sealed byte-identical as `COORD-001.md` (then 002…)
+  and a fresh volume opens carrying a `> Continues COORD-001.md · volume 2` pointer;
+  `COORD-AGENTS.md` seals at 1000. Sealed volumes are immutable; sessions read the active
+  tail; recap/compile/archivist read every volume. Crash-safe ordering (seal + fsync, then
+  atomic replace). The director-detect glob now excludes numeric suffixes so a volume can
+  never masquerade as a lane blackboard. 31-assertion fixture, md5 identity proven across
+  two rolls. Legacy `COORD-ARCHIVE.md` files are left untouched.
+- **MAIDEN COMPILE — the release ritual is now `compile/release-ritual/ship.py`:** 853 lines
+  of stdlib Python making **zero model calls**, replaying **five historical ships**
+  (v2.16.0 → v3.1.0, across the rename) at `surfaces=9 · differs=0 · PARITY PASS` each,
+  ~775 ms per ship-pipeline. On the v3.1.0 replay it also *corrected* three count-surface
+  inconsistencies the human ship had shipped. Evidence label is **DIRECTIONAL, not
+  PROVEN** — stated on the verdict screen, not a footnote: two of the nine compared
+  surfaces are round-trip identities that cannot fail, and two count surfaces are
+  rewritten without being compared. An independent refuter returned 15 findings including
+  three CONFIRMED criticals (a JSON key reorder that de-pinned the tombstone and committed
+  at exit 0; a validator failure string-matched into "CLI absent → proceed" reaching
+  push/install; the earlier parity overclaim) — all fixed in one bounded round, both
+  critical repros re-run at the seat. One-time compilation cost, receipted and NEVER
+  amortized: **542,492 observed opus tokens** across four lanes. The runtime stays
+  **isolated and NOT installed**; USE IT is NOT-LIVE-VERIFIED; INSTALL IT is described,
+  not executed. Dossier + background + render-gated verdict page ship beside it, and
+  `.gitignore` was narrowed so hand-built runtimes are tracked as source while only the
+  derived scan output stays ignored.
+- **compile scanner defect fixed:** its top candidate was `lan` at 31× — it was clustering
+  the seat's own word for a lane, because spend purposes share harness vocabulary by
+  construction and the deliberate inverse-IDF weighting made those tokens heaviest. Now a
+  24-word estate stopword list (lane, round, seat, gate, fixture, shipped…) plus
+  weak-source demotion: a candidate whose evidence is >80% spend purposes with no COORD
+  support can never outrank a COORD-supported one. COORD says what was *asked and landed*;
+  spend says what a lane was *called*. The junk cluster no longer forms; the release ritual
+  holds #1 at 18×, its alias carried across a slug change by signature match.
+- **The retired external eval runner is quarantined:** `plugins/notrest/evals/` →
+  `evals-legacy-external-runner/` (history preserved) under a RETIRED banner carrying its
+  receipts; the live gate is `/eval` + `/doctor`, stated wherever the old dir was cited.
+- doctor's gitignore check learned that a derived directory holding source takes per-file
+  rules, not a blanket one — and a 28 MB fixture scratch tree that the narrowed ignore
+  would have committed was caught and excluded.
+
+Ship gate, both green on the shipped tree: **eval PASS — 28 skills, 0 fail, 0 warn, 0.06s,
+0 model tokens**; **doctor HEALTHY — 8/8, exit 0**.
+
 ## 3.4.1 — 2026-07-25
 
 **The seat stops doing bookkeeping — receipts write themselves.**

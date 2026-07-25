@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>release-ritual — the maiden compile · verdict</title>
+<style>
+  :root{
+    --bg:#f7f6f2; --surface:#ffffff; --ink:#1a1a18; --muted:#6b6a63; --line:#e2e0d8;
+    --accent:#7F77DD; --accent-soft:#efedfb;
+    --ok:#1D9E75; --ok-soft:#e6f5ef;
+    --warn:#B7791F; --warn-soft:#fbf2e0;
+    --danger:#C0392B; --danger-soft:#fbeae7;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#191917; --surface:#242421; --ink:#eceae3; --muted:#a3a096; --line:#37372f;
+      --accent:#9a92ea; --accent-soft:#2b2a44;
+      --ok:#3fc79c; --ok-soft:#1c332c;
+      --warn:#e0b155; --warn-soft:#37301d;
+      --danger:#e2705f; --danger-soft:#3a2320;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f7f6f2; --surface:#ffffff; --ink:#1a1a18; --muted:#6b6a63; --line:#e2e0d8;
+    --accent:#7F77DD; --accent-soft:#efedfb;
+    --ok:#1D9E75; --ok-soft:#e6f5ef;
+    --warn:#B7791F; --warn-soft:#fbf2e0;
+    --danger:#C0392B; --danger-soft:#fbeae7;
+  }
+  :root[data-theme="dark"]{
+    --bg:#191917; --surface:#242421; --ink:#eceae3; --muted:#a3a096; --line:#37372f;
+    --accent:#9a92ea; --accent-soft:#2b2a44;
+    --ok:#3fc79c; --ok-soft:#1c332c;
+    --warn:#e0b155; --warn-soft:#37301d;
+    --danger:#e2705f; --danger-soft:#3a2320;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:0 0 72px}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+  header.top{padding:44px 0 8px;display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
+  h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:15px;margin:0;max-width:62ch}
+  .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+  button#themeToggle{background:var(--surface);color:var(--ink);border:1px solid var(--line);
+    border-radius:999px;padding:8px 15px;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap}
+  button#themeToggle:hover{border-color:var(--accent);color:var(--accent)}
+  h2{font-size:13px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);margin:52px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px}
+  .grid{display:grid;gap:14px}
+  .stats{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+  .stat .k{font:600 10px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-size:34px;font-weight:650;letter-spacing:-.03em;margin:10px 0 4px;line-height:1}
+  .stat .v.sm{font-size:23px}
+  .stat .n{font-size:12.5px;color:var(--muted);line-height:1.45}
+  .accent .v{color:var(--accent)} .okc .v{color:var(--ok)} .warnc .v{color:var(--warn)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);
+    border-radius:14px;background:var(--surface)}
+  .scroll table{min-width:600px}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font:600 10.5px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  tbody tr:last-child td{border-bottom:none}
+  code,.mono{font-family:var(--mono);font-size:.88em}
+  code{background:var(--accent-soft);color:var(--accent);padding:1px 5px;border-radius:5px}
+  pre{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;
+    overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65;margin:0}
+  pre code{background:none;color:var(--ink);padding:0}
+  .pill{display:inline-block;font:600 10.5px/1 var(--mono);letter-spacing:.07em;
+    padding:5px 9px;border-radius:999px;white-space:nowrap}
+  .p-ok{background:var(--ok-soft);color:var(--ok)}
+  .p-warn{background:var(--warn-soft);color:var(--warn)}
+  .p-danger{background:var(--danger-soft);color:var(--danger)}
+  .p-accent{background:var(--accent-soft);color:var(--accent)}
+  .callout{border:1px solid var(--warn);background:var(--warn-soft);border-radius:14px;padding:22px}
+  .callout h3{margin:0 0 10px;font-size:17px;color:var(--warn);letter-spacing:-.01em}
+  .callout p{margin:0 0 10px} .callout p:last-child{margin-bottom:0}
+  .callout ul{margin:0 0 10px;padding-left:20px} .callout li{margin-bottom:7px}
+  .cost{border:1px solid var(--accent);background:var(--accent-soft);border-radius:14px;padding:22px}
+  .cost table{font-size:14px} .cost th,.cost td{border-bottom-color:rgba(127,119,221,.28)}
+  .cost .total td{font-weight:700;border-bottom:none}
+  .tiers{grid-template-columns:repeat(auto-fit,minmax(258px,1fr))}
+  .tier h3{margin:12px 0 8px;font-size:16px}
+  .tier p{margin:0;font-size:13.5px;color:var(--muted)}
+  .tier pre{margin-top:12px;font-size:11.5px}
+  .lede{font-size:17px;line-height:1.6;margin:0 0 18px}
+  .muted{color:var(--muted)}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:12.5px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <p class="eyebrow">/compile · maiden run</p>
+      <h1>release-ritual — the notrest ship, compiled</h1>
+      <p class="sub">Twelve clauses of release mechanics, mined from ten real ships, moved into
+      853 lines of stdlib Python that make <strong>zero model calls</strong>. Five historical
+      ships replayed. One of them corrected.</p>
+    </div>
+    <button id="themeToggle" type="button" aria-label="Toggle colour theme">◐ Theme</button>
+  </header>
+
+  <h2>The verdict</h2>
+  <div class="grid stats">
+    <div class="card stat accent">
+      <div class="k">Model calls at runtime</div>
+      <div class="v">0</div>
+      <div class="n">Zero LLM invocations. Not a cheaper model — none.</div>
+    </div>
+    <div class="card stat okc">
+      <div class="k">Parity</div>
+      <div class="v sm">5&nbsp;/&nbsp;5 PASS</div>
+      <div class="n"><span class="mono">surfaces=9 · differs=0</span> on every scenario.</div>
+    </div>
+    <div class="card stat accent">
+      <div class="k">Latency · ship pipeline</div>
+      <div class="v sm">775&nbsp;ms</div>
+      <div class="n">~1.2&nbsp;s end-to-end per replay. <span class="mono">observed</span></div>
+    </div>
+    <div class="card stat okc">
+      <div class="k">Drift corrected</div>
+      <div class="v">3</div>
+      <div class="n">Count surfaces the real v3.1.0 ship got wrong.</div>
+    </div>
+    <div class="card stat warnc">
+      <div class="k">Evidence label</div>
+      <div class="v sm">DIRECTIONAL</div>
+      <div class="n">Five fair scenarios, but 2 of the 9 compared surfaces are round-trip identities that cannot fail.</div>
+    </div>
+    <div class="card stat accent">
+      <div class="k">Tool calls</div>
+      <div class="v">1</div>
+      <div class="n">One command, plus the script's own <span class="mono">git</span> / <span class="mono">spend.py</span> / <span class="mono">claude</span> subprocesses.</div>
+    </div>
+  </div>
+
+  <h2>Old vs new</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Metric</th><th>OLD — the seat ships by hand</th><th>NEW — <span class="mono">ship.py</span></th></tr></thead>
+      <tbody>
+        <tr><td><strong>Model calls</strong></td><td>every step of twelve</td><td><span class="pill p-ok">0</span></td></tr>
+        <tr><td><strong>LLM invocations</strong></td><td>one long session per ship</td><td><span class="pill p-ok">0</span></td></tr>
+        <tr><td><strong>Latency</strong></td><td>a session's worth of turns <span class="muted">(never metered — <em>unavailable</em>)</span></td><td>~1.2&nbsp;s replay · 775&nbsp;ms pipeline · clone 290 · seed 48 · extract 58 · parity 54 <span class="muted">(observed)</span></td></tr>
+        <tr><td><strong>Tool calls</strong></td><td>dozens of reads/edits/greps <span class="muted">(never counted — <em>unavailable</em>)</span></td><td>1 command</td></tr>
+        <tr><td><strong>Quality</strong></td><td>history is the baseline; it skipped 3 surfaces at v3.1.0</td><td><span class="pill p-ok">PARITY PASS</span> + 3 corrections</td></tr>
+        <tr><td><strong>Evidence</strong></td><td>—</td><td><span class="pill p-warn">DIRECTIONAL</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted" style="font-size:13.5px;margin-top:12px">Old-side token cost is deliberately
+  <strong>not</strong> given a number: those ships predate per-ship metering in this estate, and
+  inventing a figure to make a ratio would launder an estimate into an observation. The honest
+  comparison is <strong>0 model calls vs. an unmetered session</strong>.</p>
+
+  <h2>Five scenarios · Method A replay</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>#</th><th>Commit</th><th>Version</th><th>Surfaces</th><th>Differs</th><th>Drift</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td class="mono">f3b148a</td><td>3.1.0</td><td>9</td><td><strong>0</strong></td><td><span class="pill p-accent">3 corrected</span></td><td><span class="pill p-ok">PARITY PASS</span></td></tr>
+        <tr><td>2</td><td class="mono">fbe1e07</td><td>3.0.0 <span class="muted">— the rename ship, hardest case</span></td><td>9</td><td><strong>0</strong></td><td>0</td><td><span class="pill p-ok">PARITY PASS</span></td></tr>
+        <tr><td>3</td><td class="mono">4c78590</td><td>2.17.0 <span class="muted">— legacy paths</span></td><td>9</td><td><strong>0</strong></td><td>0</td><td><span class="pill p-ok">PARITY PASS</span></td></tr>
+        <tr><td>4</td><td class="mono">f115695</td><td>2.16.1 <span class="muted">— legacy paths</span></td><td>9</td><td><strong>0</strong></td><td>0</td><td><span class="pill p-ok">PARITY PASS</span></td></tr>
+        <tr><td>5</td><td class="mono">5c422ed</td><td>2.16.0 <span class="muted">— legacy paths</span></td><td>9</td><td><strong>0</strong></td><td>0</td><td><span class="pill p-ok">PARITY PASS</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted" style="font-size:13.5px;margin-top:12px"><strong>drift=3</strong> is the ritual
+  <em>correcting</em> history, not reproducing it: at <span class="mono">f3b148a</span> three
+  spelled count surfaces said “twenty-three” against 24 skill directories. Established by
+  arithmetic (<span class="mono">git ls-tree</span> count vs. the word in the file), never by the
+  script's opinion. Drift is counted separately and never silences a real difference.</p>
+
+  <h2>Read this before you read the PASS</h2>
+  <div class="callout">
+    <h3>⚠ The evidence is DIRECTIONAL, not PROVEN</h3>
+    <p>Five fair scenarios would earn PROVEN if every metric were provenance-backed and the
+    surface set were uniformly independent. It is not — two disclosures:</p>
+    <ul>
+      <li><strong>Two of the nine compared surfaces cannot fail.</strong>
+      <span class="mono">CHANGELOG.md</span> and <span class="mono">COORD.md</span> are de-shipped
+      by <em>removing</em> the section and the line the ritual writes, then the ritual puts them
+      back — <strong>round-trip identities by construction</strong>. They prove the insertion
+      point, ordering and whitespace. They do not prove the prose, and they cannot fail. The tool
+      labels them <span class="mono">round-trip</span> in its own output for exactly this reason.</li>
+      <li><strong>Two more surfaces are written but never compared.</strong> The repo-root
+      <span class="mono">README.md</span> and <span class="mono">CLAUDE.md</span> numerals are
+      rewritten by the count clause and excluded from parity — no historical ship kept them in
+      sync, so comparing them would fail every replay for a defect that predates the script.</li>
+    </ul>
+    <p>An earlier draft claimed a flat “5/5 PARITY PASS” with neither disclosure. The independent
+    refuter lane caught it — that overclaim was one of three confirmed criticals, alongside a
+    tombstone de-pin that committed at exit 0 and a validator failure string-matched into
+    “CLI absent → proceed”. All <strong>15 findings</strong> were fixed in <strong>one bounded
+    repair round</strong>; the seat re-ran both critical repros itself.</p>
+  </div>
+
+  <h2>Responsibility crosswalk</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>OLD — the seat did it</th><th>NEW component</th><th>Owner</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>“Did we pass the gates?”</td><td><span class="mono">--gates-passed</span> refusal switch <span class="mono">(10)</span></td><td><span class="pill p-warn">HUMAN</span></td><td>A script may enforce that the ruling was made. It may never make it.</td></tr>
+        <tr><td>Bump both manifests, leave the tombstone alone</td><td>clause 2 — entries found <strong>by name</strong>, post-write byte-for-byte tombstone re-assert <span class="mono">(11/12)</span></td><td><span class="pill p-accent">CODE</span></td><td>Two manifests must agree and a third entry must not move. Exactly what humans get wrong at 1am.</td></tr>
+        <tr><td>Recount skills, rewrite six prose surfaces</td><td>clause 3 — checker wider than rewriter <span class="mono">(13)</span></td><td><span class="pill p-accent">CODE</span></td><td>Counting directories is arithmetic. History skipped three surfaces.</td></tr>
+        <tr><td>Patch flow-page header + footer</td><td>clause 4 — each pattern matches <strong>exactly once</strong> <span class="mono">(14)</span></td><td><span class="pill p-accent">CODE</span></td><td>Two fixed patterns; “exactly once” is the safety property.</td></tr>
+        <tr><td>Write the release narrative</td><td><span class="mono">--changelog-file</span></td><td><span class="pill p-warn">HUMAN</span></td><td>What a release <em>means</em> is not derivable from a diff.</td></tr>
+        <tr><td>Prepend it, with the right date</td><td>clause 5 — first line must read <span class="mono">## X.Y.Z — &lt;today UTC&gt;</span> <span class="mono">(15)</span></td><td><span class="pill p-accent">CODE</span></td><td>Placement and date assertion are mechanics.</td></tr>
+        <tr><td>Write the COORD testimony</td><td><span class="mono">--coord-line</span></td><td><span class="pill p-warn">HUMAN</span></td><td>Testimony about what happened is the seat's.</td></tr>
+        <tr><td>Append it in ledger format</td><td>clause 6 — must start <span class="mono">- [</span> <span class="mono">(16)</span></td><td><span class="pill p-accent">CODE</span></td><td>Format is mechanical.</td></tr>
+        <tr><td>Remember to run the spend report</td><td>clause 7 — its exit 4 <strong>aborts the ship</strong> <span class="mono">(17)</span></td><td><span class="pill p-accent">CODE</span></td><td>The routing policy existed; only its enforcement was optional.</td></tr>
+        <tr><td>Remember to validate the plugin</td><td>clause 8 — absence detected <strong>only</strong> by <span class="mono">FileNotFoundError</span> <span class="mono">(18)</span></td><td><span class="pill p-accent">CODE</span></td><td>The old string-match turned a real failure into “proceed”.</td></tr>
+        <tr><td>Write the commit message</td><td><span class="mono">--message</span></td><td><span class="pill p-warn">HUMAN</span></td><td>Same reason as the changelog.</td></tr>
+        <tr><td>Commit with the <span class="mono">Co-Authored-By</span> trailer</td><td>clause 9 <span class="mono">(19)</span></td><td><span class="pill p-accent">CODE</span></td><td>Mechanical, and the trailer is policy that got forgotten.</td></tr>
+        <tr><td>Decide whether to push</td><td><span class="mono">--push</span></td><td><span class="pill p-warn">HUMAN</span></td><td>Irreversible.</td></tr>
+        <tr><td>Push safely and prove it landed</td><td>clause 10 — exact object <span class="mono">&lt;sha&gt;:refs/heads/&lt;branch&gt;</span>, detached HEAD refused, <span class="mono">ls-remote</span> read back <span class="mono">(20)</span></td><td><span class="pill p-accent">CODE</span></td><td>Proving the push landed is verification, not judgment.</td></tr>
+        <tr><td>Decide whether to install</td><td><span class="mono">--install</span></td><td><span class="pill p-warn">HUMAN</span></td><td>Mutates the user's installed toolchain.</td></tr>
+        <tr><td>Marketplace + plugin update</td><td>clause 11 — output parsed for the target version <span class="mono">(21)</span></td><td><span class="pill p-accent">CODE</span></td><td>Two fixed commands and an assertion.</td></tr>
+        <tr><td>Write a paragraph about what happened</td><td>clause 12 — one typed summary line</td><td><span class="pill p-accent">CODE</span></td><td>A typed terminal state beats a model's account of its own work.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted" style="font-size:13.5px;margin-top:12px"><strong>Bucket B — bounded model calls
+  — is empty.</strong> Once the three prose artifacts exist, no remaining step needed semantic
+  judgment. That is the finding of the maiden compile, and the claim the refuter lane was pointed
+  straight at.</p>
+
+  <h2>One-time compilation cost</h2>
+  <div class="cost">
+    <p class="lede" style="margin-bottom:14px"><strong>542,492 observed opus tokens</strong> —
+    reported separately, <strong>never amortized</strong>, no break-even math.</p>
+    <table>
+      <tbody>
+        <tr><td>builder · round 1</td><td class="mono" style="text-align:right">108,400</td></tr>
+        <tr><td>builder · round 2</td><td class="mono" style="text-align:right">125,790</td></tr>
+        <tr><td>builder · round 3</td><td class="mono" style="text-align:right">208,275</td></tr>
+        <tr><td>refuter</td><td class="mono" style="text-align:right">100,027</td></tr>
+        <tr class="total"><td>TOTAL</td><td class="mono" style="text-align:right">542,492</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:14px;font-size:13.5px">Every lane carried <span class="mono">model:
+    "opus"</span> explicitly. Seat orchestration is not in that number. <strong>Spend's caveat:</strong>
+    the ledger covers what the harness exposed; the main loop's own consumption is not visible to
+    the model; <strong>542,492 is not the session's bill.</strong></p>
+  </div>
+
+  <h2>Readiness — three tiers</h2>
+  <div class="grid tiers">
+    <div class="card tier">
+      <span class="pill p-ok">DEMO IT · VERIFIED</span>
+      <h3>Replay, zero side effects</h3>
+      <p>Ran. Five scenarios plus the full battery — <strong>fixture 51/51, exit 0</strong>.</p>
+      <pre><code>python3 compile/release-ritual/ship.py \
+  replay --at f3b148a \
+  --scratch /tmp/replay-a --time
+
+bash compile/release-ritual/fixture.sh</code></pre>
+    </div>
+    <div class="card tier">
+      <span class="pill p-warn">USE IT · NOT-LIVE-VERIFIED</span>
+      <h3>The real ship</h3>
+      <p>It has <strong>never executed a real ship.</strong> Everything proven is replay-proven.
+      First live use: omit both flags, inspect the commit, push by hand.</p>
+      <pre><code>python3 compile/release-ritual/ship.py ship \
+  --version X.Y.Z --gates-passed \
+  --message "…" --changelog-file &lt;f&gt; \
+  --coord-line "- [...]" [--push] [--install]</code></pre>
+    </div>
+    <div class="card tier">
+      <span class="pill p-danger">INSTALL IT · NOT EXECUTED</span>
+      <h3>Described only</h3>
+      <p>Wiring it into a skill, hook, or command is itself a normal versioned release through
+      this repo's ship ritual — owner-gated like any other. Not done. Never automatic. The old
+      hand-run path stays warm as the rollback.</p>
+    </div>
+  </div>
+
+  <h2>Success standard — 10 conditions</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>#</th><th>Condition</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Complete workflow reconstructed — nothing dropped</td><td><span class="pill p-ok">PASS</span> 12 clauses, incl. both irreversible ones</td></tr>
+        <tr><td>2</td><td>Every responsibility carries a trail citation</td><td><span class="pill p-ok">PASS</span></td></tr>
+        <tr><td>3</td><td>Evidence coverage stated, including what was unreadable</td><td><span class="pill p-ok">PASS</span> COORD 07-15→07-25 · <span class="mono">9522ded</span>→<span class="mono">f3b148a</span></td></tr>
+        <tr><td>4</td><td>Both sides start from equivalent raw inputs</td><td><span class="pill p-ok">PASS</span> count surfaces de-shipped to <span class="mono">sha~1</span></td></tr>
+        <tr><td>5</td><td>Cost components separate, each provenance-graded</td><td><span class="pill p-warn">PASS · DISCLOSED</span> old-side tokens <em>unavailable</em>, never estimated</td></tr>
+        <tr><td>6</td><td>Parity judged on the contract; cheaper-but-worse = failure</td><td><span class="pill p-ok">PASS</span> 5/5 <span class="mono">differs=0</span></td></tr>
+        <tr><td>7</td><td>Evidence label honest about what the scenarios prove</td><td><span class="pill p-warn">PASS · DIRECTIONAL</span></td></tr>
+        <tr><td>8</td><td>Independent lane attacked it; findings resolved</td><td><span class="pill p-ok">PASS</span> 15 findings · 3 criticals · one bounded round</td></tr>
+        <tr><td>9</td><td>One-time cost in its own section, not amortized</td><td><span class="pill p-ok">PASS</span></td></tr>
+        <tr><td>10</td><td>Runtime isolated; claimed tier matches what was run</td><td><span class="pill p-warn">PASS · DISCLOSED</span> version monotonicity <strong>UNTESTED</strong>; root README/CLAUDE.md parity <strong>UNTESTED</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Recommendation</h2>
+  <div class="card">
+    <p class="lede"><strong>Adopt at USE IT, gated — before considering INSTALL IT.</strong></p>
+    <p>Run the next real release through <span class="mono">ship.py</span> <strong>without</strong>
+    <span class="mono">--push</span> and <strong>without</strong> <span class="mono">--install</span>.
+    Inspect the commit it produces, then push by hand. That converts the one gap that matters — the
+    runtime has never done a real ship — into evidence, at the cost of one manual push, with the old
+    path warm behind it and a <span class="mono">git checkout --</span> rollback armed if anything
+    aborts.</p>
+    <p style="margin-bottom:0">Two fixes before full adoption, neither blocking a gated first use:
+    <strong>(1)</strong> assert version monotonicity — <span class="mono">ship --version 3.1.1</span>
+    on a 3.3.0 tree currently succeeds; <strong>(2)</strong> either bring the root
+    <span class="mono">README.md</span>/<span class="mono">CLAUDE.md</span> numerals into the parity
+    set or state permanently that the count clause writes six surfaces and proves four.
+    <strong>Do not auto-install. Do not replace the existing path.</strong> The owner makes that call.</p>
+  </div>
+
+  <footer>
+    <span>compile/release-ritual · maiden run of <span class="mono">/compile</span> · notrest harness</span>
+    <span>Evidence label: <strong>DIRECTIONAL</strong> · 853 lines · 0 model calls</span>
+  </footer>
+
+</div>
+<script>
+  (function(){
+    var b=document.getElementById('themeToggle'),r=document.documentElement;
+    b.addEventListener('click',function(){
+      var cur=r.getAttribute('data-theme');
+      if(!cur){cur=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}
+      r.setAttribute('data-theme',cur==='dark'?'light':'dark');
+    });
+  })();
+</script>
+</body>
+</html>

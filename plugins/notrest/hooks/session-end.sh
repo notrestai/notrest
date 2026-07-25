@@ -7,10 +7,12 @@
 #      append one line to COORD.md saying so, pointing the next session at the
 #      tail, the agent ledger, and /notrest:oracle. The line's presence in a tail
 #      is itself the signal that the previous session ended abruptly.
-#   2. COMPACTION — enforce the ~40-line ledger law that was documented but never
-#      executed: over threshold, the OLDEST lines move WHOLE into an archive file
-#      (COORD-ARCHIVE.md / COORD-AGENTS-ARCHIVE.md) and the live ledger keeps the
-#      newest. Lines are moved byte-identical — never rewritten, never summarized.
+#   2. VOLUME ROLL — the ledger is permanent bookkeeping and is NEVER compacted.
+#      Over threshold the WHOLE active file is SEALED byte-identical as the next
+#      COORD-<NNN>.md (001, 002, 003…) and a fresh active COORD.md continues the
+#      count. Archiving MOVES lines (a crash window, and the archive is never
+#      read); sealing PRESERVES them — immutable, complete, chronological.
+#      Sessions read the ACTIVE volume's tail; recap/compile read every volume.
 #
 # Absolutely silent on success AND on every failure: no stdout, no stderr, always
 # exit 0 — a broken hook must never break a session teardown. The whole body is
@@ -77,15 +79,22 @@ try:
     except Exception:
         pass
 
-    # ── duty 2: compaction ───────────────────────────────────────────────────
-    def compact(path, apath, threshold, keep, header):
-        # Over `threshold` ledger lines: move the oldest (count - keep) into
-        # `apath`, preserving order, byte-identical. Structure lines (header,
-        # blanks) stay where they are. Ordering is archive-first + fsync, then
-        # the live file is replaced atomically (temp + os.replace) — so the only
-        # crash window duplicates a line into the archive, never loses one.
+    # ── duty 2: volume roll ──────────────────────────────────────────────────
+    # OWNER LAW: the ledger is never compacted-and-archived. Over `threshold`
+    # ledger lines the ACTIVE volume is SEALED WHOLE as the next free
+    # `<prefix>-<NNN>.md` (zero-padded 3) and a fresh active file starts. Sealed
+    # volumes are immutable — never edited, never appended to, never deleted.
+    # Crash-safe order: the sealed copy is written + fsync'd FIRST, then the
+    # active file is replaced atomically (tmp + os.replace) — so the worst crash
+    # leaves a complete sealed copy beside an untouched active file (the next run
+    # simply seals to the next free number), never a lost line.
+    # LEGACY: COORD-ARCHIVE.md / COORD-AGENTS-ARCHIVE.md are the RETIRED scheme —
+    # where a repo still has them they are left exactly as found: not migrated,
+    # not appended to, not deleted (readers still read them for old history).
+    def roll(path, prefix, threshold, fallback_header):
         if not os.path.exists(path):
             return
+        d = os.path.dirname(path) or "."
         fd = os.open(path, os.O_RDWR)
         with os.fdopen(fd, "r+", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
@@ -100,39 +109,46 @@ try:
                     return
                 f.seek(0)
                 text = f.read()
-                lines = text.splitlines(True)  # keepends: whole-line moves
+                lines = text.splitlines(True)  # keepends: the seal is byte-exact
                 mark = None
                 for i, l in enumerate(lines):
                     if l.strip() == MARKER:
                         mark = i
                 if mark is None:
                     return  # no ledger section: hand-damaged/foreign file, leave it
-                body = lines[mark + 1:]
-                idx = [i for i, l in enumerate(body) if l.startswith("- ")]
-                if len(idx) <= threshold:
+                if len([l for l in lines[mark + 1:]
+                        if l.startswith("- ")]) <= threshold:
                     return
-                move = set(idx[:len(idx) - keep])
-                moved = [body[i] if body[i].endswith("\n") else body[i] + "\n"
-                         for i in sorted(move)]
-                kept = [l for i, l in enumerate(body) if i not in move]
 
-                afd = os.open(apath, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o644)
-                with os.fdopen(afd, "a+", encoding="utf-8") as af:
-                    fcntl.flock(af, fcntl.LOCK_EX)
-                    try:
-                        af.seek(0)
-                        existing = af.read()
-                        if "## ARCHIVE" not in existing and not existing.strip():
-                            af.write(header)
-                        af.write("".join(moved))
-                        af.flush()
-                        os.fsync(af.fileno())
-                    finally:
-                        fcntl.flock(af, fcntl.LOCK_UN)
+                n = 1
+                while os.path.exists(os.path.join(d, "%s-%03d.md" % (prefix, n))):
+                    n += 1
+                sealed_name = "%s-%03d.md" % (prefix, n)
 
+                # 1. SEAL: the whole active file, byte-identical, fsync'd.
+                with open(os.path.join(d, sealed_name), "w",
+                          encoding="utf-8", newline="") as sf:
+                    sf.write(text)
+                    sf.flush()
+                    os.fsync(sf.fileno())
+
+                # 2. FRESH ACTIVE VOLUME: this file's own header block (any prior
+                # continues-line dropped so it never accumulates), the new
+                # continues-line, the ledger marker, and the roll's own line.
+                head = [l for l in lines[:mark] if not l.startswith("> Continues ")]
+                while head and not head[-1].strip():
+                    head.pop()
+                if not [l for l in head if l.strip()]:
+                    head = [fallback_header]
+                ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+                fresh = ("".join(head).rstrip("\n") + "\n"
+                         + "\n> Continues %s · volume %d\n\n" % (sealed_name, n + 1)
+                         + MARKER + "\n"
+                         + "- [%s] [hook] volume rolled — previous volume sealed "
+                           "as %s\n" % (ts, sealed_name))
                 tmp = path + ".sessionend.tmp"
                 with open(tmp, "w", encoding="utf-8") as tf:
-                    tf.write("".join(lines[:mark + 1] + kept))
+                    tf.write(fresh)
                     tf.flush()
                     os.fsync(tf.fileno())
                 os.replace(tmp, path)
@@ -142,34 +158,32 @@ try:
                 except Exception:
                     pass
 
-    COORD_HEADER = (
-        "# COORD-ARCHIVE.md — archived COORD ledger lines "
-        "(auto-written by the notrest SessionEnd hook)\n"
+    # Fallback headers — used only when the rolled file had no header block of
+    # its own (a file that starts straight at `## LEDGER`).
+    COORD_FALLBACK = (
+        "# COORD.md — session coordination ledger (active volume)\n"
         "\n"
-        "Machine-written — never hand-edit. Archived oldest ledger lines — moved whole, never\n"
-        "edited, never summarized. Append-only, oldest at the top; COORD.md keeps the newest\n"
-        "lines. Read this when a resume needs history older than the live ledger's tail.\n"
-        "\n"
-        "## ARCHIVE\n"
+        "Append-only, newest at the bottom, one line per substantive prompt when its work\n"
+        "lands. Never compacted: past ~500 ledger lines this file is SEALED WHOLE as the next\n"
+        "COORD-<NNN>.md and a fresh active volume starts. Sealed volumes are immutable —\n"
+        "sessions read this tail; /recap, /compile and /archivist read every volume.\n"
     )
-    AGENTS_HEADER = (
-        "# COORD-AGENTS-ARCHIVE.md — archived agent ledger lines "
-        "(auto-written by the notrest SessionEnd hook)\n"
+    AGENTS_FALLBACK = (
+        "# COORD-AGENTS.md — agent activity ledger (active volume)\n"
         "\n"
-        "Machine-written — never hand-edit. Archived oldest COORD-AGENTS.md lines — moved whole,\n"
-        "never edited. Append-only, oldest at the top; the transcript path on each line is still\n"
-        "the full record. COORD-AGENTS.md keeps the newest lines.\n"
-        "\n"
-        "## ARCHIVE\n"
+        "Machine-written — never hand-edit. Never compacted: past ~1000 ledger lines this file\n"
+        "is SEALED WHOLE as the next COORD-AGENTS-<NNN>.md and a fresh active volume starts.\n"
+        "Sealed volumes are immutable and complete; the transcript path on each line is still\n"
+        "the full record.\n"
     )
 
     try:
-        compact(COORD, os.path.join(git_root, "COORD-ARCHIVE.md"), 40, 30, COORD_HEADER)
+        roll(COORD, "COORD", 500, COORD_FALLBACK)
     except Exception:
         pass
     try:
-        compact(os.path.join(git_root, "COORD-AGENTS.md"),
-                os.path.join(git_root, "COORD-AGENTS-ARCHIVE.md"), 100, 60, AGENTS_HEADER)
+        roll(os.path.join(git_root, "COORD-AGENTS.md"),
+             "COORD-AGENTS", 1000, AGENTS_FALLBACK)
     except Exception:
         pass
 except Exception:
