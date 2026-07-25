@@ -1,6 +1,6 @@
 ---
 name: draft
-description: "The suite's outbound verb — turns a dossier, decision, or recap into the thing you actually send (email · exec memo · slack/chat update · one-pager · status update), under one law: every factual sentence traces to a line in the source and keeps its honesty label, framing choices are listed as choices, and persuasion never upgrades a label — [estimate] stays hedged, [unverified] drops or carries its hedge, never becomes fact. Produces a background file (source inventory · audience brief · framing decisions · source-map) + the sendable draft; --quick for a rougher chat-only version. Use on /draft, \"write the email\", \"draft the memo\", \"turn this into an update\", \"make this sendable\", \"write it up for <audience>\". A draft is never sent — sending is the owner's act, in the owner's client. Not for legal or regulatory notices, and not before the decision exists."
+description: "The suite's outbound verb — turns a dossier, decision, or recap into the thing you actually send (email · memo · slack update · one-pager), every factual sentence traced to its source line, honesty label kept. Use on /draft, \"write the email\", \"draft the memo\", \"turn this into an update\", \"make this sendable\", \"write it up for <audience>\"; --quick for chat-only. A draft is never sent — sending is the owner's act. Not for legal or regulatory notices, nor before the decision exists."
 ---
 
 # draft — the dossier, turned into the thing you send

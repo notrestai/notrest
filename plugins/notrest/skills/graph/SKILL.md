@@ -1,6 +1,6 @@
 ---
 name: graph
-description: An Obsidian-style file graph for any project — a script walks the repo and renders a self-contained, force-directed HTML graph of every file and the references between them (wikilinks, markdown links, imports, requires, sourced scripts, estate pointers), at ZERO model tokens, then OPENS IT. Use on /graph, "file graph", "project graph", "map the files", "show me the graph", "open the graph", "what links to this file", "connect the projects", "all projects graph". Default behaviour is scan-then-open with no questions asked; also registers projects into a cross-project registry so one PM session can hold the merged map of every project at once. The scanner reads the files; the model never has to.
+description: "An Obsidian-style file graph for any project — a script walks the repo and renders a self-contained, force-directed HTML graph of every file and the references between them (wikilinks, links, imports, requires, sourced scripts) at zero model tokens, then OPENS it. Use on /graph, \"file graph\", \"project graph\", \"map the files\", \"show me the graph\", \"open the graph\", \"what links to this file\", \"all projects graph\". Scan-then-open, no questions asked."
 ---
 
 # graph — how this project connects

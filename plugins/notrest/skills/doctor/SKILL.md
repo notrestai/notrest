@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: "The harness's own self-check — one read-only pass that reports PASS/WARN/FAIL per check with the exact fix command: SKILL.md front-matter a real YAML load would reject (the unquoted colon-space that silently makes a skill invisible), manifest + tombstone version pins, skill-count drift across the four places the number is spelled, hook scripts that exist and parse plus rename residue in the SessionStart echo, estate integrity (COORD, agent ledger, spend ledger, compile candidates), installed-vs-repo-vs-clone drift, unanchored gitignore rules that swallow skill directories, and stale version stamps on rendered surfaces. Use on \"/doctor\", \"health check\", \"is the harness healthy\", \"check the install\", \"why isn't X triggering\", after any release, or when a skill stops firing. Reads only — never repairs, never bumps, never commits."
+description: "The harness's own self-check — one read-only pass reporting PASS/WARN/FAIL per check with the exact fix: front-matter YAML would reject (the unquoted colon-space that makes a skill invisible), manifest + tombstone pins, skill-count drift, hooks that exist and parse, estate integrity, installed-vs-repo drift, gitignore rules that swallow skill dirs, stale version stamps. Use on \"/doctor\", \"health check\", \"check the install\", \"why isn't X triggering\", after any release. Reads only."
 ---
 
 # doctor — the harness's self-check

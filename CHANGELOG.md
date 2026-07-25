@@ -1,5 +1,32 @@
 # Changelog — the notrest harness
 
+## 3.6.0 — 2026-07-25
+
+**The rightsizing pass — the harness stops reciting its own laws.**
+
+- **Standing per-session injection cut ~29%, measured** (true chars; tokens estimated at
+  chars ÷ 3.8): 26,386 → 18,657 chars (≈6,944 → ≈4,910 tok) from the repo-side changes
+  alone; ≈4,614 tok once the companion machine-side global-CLAUDE.md slim is applied.
+  Every cut removes a restatement, not a rule — no law dropped, no trigger dropped.
+- **Hook echoes become standing orders, not essays.** SessionStart discipline echo
+  1,225 → 283 chars; offload-policy echo 1,805 → 397 and still operative standalone
+  (explicit `model "opus"`, the fork ban and why, omission = violation, agentswarm,
+  the persistent-builder-lane ritual, no seat `/model`-switch). The per-prompt COORD
+  nudge went 177 → 96 chars — and its stale "compact at ~40 lines" instruction, which
+  contradicted the ROLLS-at-500 law, is gone.
+- **Sixteen skill descriptions dieted to ≤500 chars** (the always-on listing:
+  18,253 → 13,816 chars, −24%). A description is a trigger-router, not a manifesto —
+  rationale prose belongs to the on-invoke body. All 28 front-matters re-verified with
+  a real YAML load; every `/slash` trigger kept; agentswarm's description still carries
+  the explicit-opus + fork-ban fingerprint that eval checks for.
+- **Foundation dedupe:** repo CLAUDE.md 2,422 → 1,480 chars — Protocol is three pointer
+  lines; every Project fact (manifest pair, tombstone pin, release ritual, ledger laws,
+  ship gate) kept. Each law now has one authoritative home plus pointers instead of
+  4–5 always-on recitals.
+- Disclosed residual: the 12 already-lean descriptions were left alone (six sit just
+  above 500 chars; dieting them buys ~160 tok more). Measurement and build receipts
+  are in `spend/ledger.md`.
+
 ## 3.5.0 — 2026-07-25
 
 **The maiden compile lands, the ledger becomes permanent, and the scanner learns to distrust its own vocabulary.**

@@ -1,20 +1,6 @@
 ---
 name: game-forge
-description: >-
-  Build a complete, polished, playable game from a short request — on the fly.
-  Use on "/game-forge" or any ask to make, build, prototype, or vibe-code a game.
-  Use this skill whenever the user wants to make, build, generate, prototype, or
-  "vibe-code" a game of any kind: an arcade game, platformer, shooter, puzzle,
-  tower defense, snake/breakout/tetris-style classic, an idle/clicker, a roguelike,
-  a physics toy, a "game like X but Y", a browser game, or a Python/pygame game.
-  Trigger even when the user is casual ("make me something fun to play", "build a
-  little game about a cat dodging rain") or doesn't say the word "game" explicitly
-  but clearly wants something interactive and playable. Do NOT trigger for game
-  *reviews*, buying advice, lore/story questions, or non-interactive animations.
-  This skill encodes what separates a real game from a throwaway demo — a correct
-  game loop, responsive input, game feel/juice, self-contained assets, and an
-  automated playtest — so every generation clears a quality bar instead of being
-  hit-or-miss.
+description: "Build a complete, playable game from a short request — real game loop, game feel, self-contained assets, automated playtest. Use on \"/game-forge\" or any ask to make, build, generate, prototype, or vibe-code a game: arcade, platformer, shooter, puzzle, tower defense, snake/breakout/tetris, idle/clicker, roguelike, \"a game like X but Y\", browser or pygame. Fires on casual asks (\"something fun to play\"). NOT for game reviews, buying advice, lore, or non-interactive animations."
 ---
 
 # Game Forge

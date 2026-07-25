@@ -1,6 +1,6 @@
 ---
 name: eval
-description: "The harness's law-conformance suite — one static pass over the SHIPPED files asking whether every law the suite claims actually left a fingerprint in the text: the offload policy (explicit opus, no sonnet/haiku, fork ban), honesty labels on claim-making skills, scripts that exist and compile behind every zero-token claim, append-only estate ledgers, the worker contract (self-check + finishing up), front-matter YAML would accept with a real /slash trigger, the named safety laws (a draft is never sent, a dead source is never a refutation, a compiled runtime never auto-installs), and hooks that are silent-on-failure. Use on \"/eval\", \"check the laws\", \"does the harness obey its own rules\", \"conformance check\", or before any release. Deterministic-first: zero model tokens, under two seconds, exits 0/5/6. Reads only — never repairs, never bumps, never commits. Distinct from doctor, which checks the INSTALL; eval checks the LAWS."
+description: "The harness's law-conformance suite — one static pass over the shipped files asking whether every law left a fingerprint: offload policy, honesty labels, scripts that compile, append-only ledgers, the worker contract, front-matter YAML accepts, safety laws, silent-on-failure hooks. Use on \"/eval\", \"check the laws\", \"conformance check\", \"does the harness obey its own rules\", or before any release. Zero model tokens, seconds, exits 0/5/6. doctor checks the INSTALL; eval checks the LAWS."
 ---
 
 # eval — does the harness obey its own laws?

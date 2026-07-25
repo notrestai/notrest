@@ -1,6 +1,6 @@
 ---
 name: fable-mode
-description: Operate this session under the Fable discipline (Oracle family) — verification-first, empirical-first, checkpointed, honest, and unstoppable-by-outage. Use when the user says "/fable-mode", "fable mode", "work like fable", "be fable", "fable discipline", or asks for "2x reliability" / "prove it like fable". Loads the full process contract that makes any model (esp. Opus) work the way Fable 5 works — probe before believing, prove at the consumer before claiming, bank before stopping, reroute instead of stalling when tools degrade — with the outage playbook, tool-graph craft, and situational profiles. Not a capability upgrade — a discipline contract. Not for ordinary single-question turns.
+description: "Operate this session under the Fable discipline — probe before believing, prove at the consumer before claiming, bank before stopping, reroute instead of stalling when tools degrade. Use when the user says \"/fable-mode\", \"fable mode\", \"work like fable\", \"be fable\", \"fable discipline\", or asks for \"2x reliability\" / \"prove it like fable\". A discipline contract, not a capability upgrade. Not for ordinary single-question turns."
 ---
 
 # fable-mode — the Fable discipline contract

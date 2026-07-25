@@ -1,6 +1,6 @@
 ---
 name: spend
-description: The token receipt — an append-only spend/ledger.md logging every observed model spend (subagent fan-outs, gpt-lane calls, workflow runs) so the suite's subagent model-routing hard rule ("Fable never rides in a subagent") is CHECKABLE instead of merely asserted. Use on /spend, "log the spend", "spend report", "token report", "how much fable did we burn", "audit the model routing", or at the close of any session that spawned agents. Logs what the harness exposes (subagent token counts, codex tokens-used echoes, workflow budgets) — each entry graded observed or estimate; main-loop totals aren't exposed to the model and the ledger says so.
+description: "The token receipt — an append-only spend/ledger.md logging every observed model spend (subagent fan-outs, gpt-lane calls, workflow runs) so the offload routing rule is CHECKABLE instead of merely asserted. Use on /spend, \"log the spend\", \"spend report\", \"token report\", \"how much fable did we burn\", \"audit the model routing\", or at the close of any session that spawned agents. Each entry graded observed or estimate; main-loop totals aren't exposed to the model and the ledger says so."
 ---
 
 # spend — the receipt behind the routing rule

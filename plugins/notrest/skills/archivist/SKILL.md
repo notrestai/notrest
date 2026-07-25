@@ -1,6 +1,6 @@
 ---
 name: archivist
-description: The suite's content-continuity index — scan every ORACLE output folder (research/, market-research/, understanding/, decision/, factcheck/, critique/, action-plan/, runbook/, pipeline/, introspection/) into one greppable oracle-index.md, so no skill re-spends a search budget on a question this project already answered. Use on /archivist, "what do we already know about X", "have we researched/decided this before", "index the dossiers", "build/refresh the oracle index", or before starting a new researcher/factcheck/decider run in a repo with prior dossiers. Reads dossiers, writes only the index. oracle/sessionend keep SESSIONS continuous; this keeps the CONTENT continuous.
+description: "The suite's content-continuity index — scans every ORACLE output folder (research/, decision/, factcheck/, critique/, action-plan/, …) into one greppable oracle-index.md, so no skill re-spends a budget on a question this project already answered. Use on /archivist, \"what do we already know about X\", \"have we researched this before\", \"index the dossiers\", \"refresh the oracle index\", or before a researcher/factcheck/decider run. Reads dossiers, writes only the index."
 ---
 
 # archivist — what does this project already know?

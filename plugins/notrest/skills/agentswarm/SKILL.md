@@ -1,6 +1,6 @@
 ---
 name: agentswarm
-description: "The fast delegation arrangement (Oracle family) — the seat (the main session's model) keeps decompose/judge/apply/gate and instantly offloads everything else to in-session background Opus agents and Workflow pipelines; the harness is the wire (no blackboards, no watches, no rotation choreography). Applies to ANY seat — a Fable session or an Opus session alike. Use on \"/agentswarm\", \"agent swarm\", \"swarm this\", \"offload this\", or BY DEFAULT whenever a session delegates substantial work on this machine; the legacy \"/fable-swarm\" and \"fable swarm\" still mean this skill. MODEL POLICY (owner-set 2026-07-15) — every offloaded job runs on explicit OPUS: no sonnet, no haiku, never an inherited seat model. For multi-day / multi-machine / owner-watchable arrangements, use fable-director instead."
+description: "The default delegation arrangement — the seat keeps decompose/judge/apply/gate, background lanes do the rest. MODEL POLICY: every offloaded job sets model \"opus\" explicitly — no sonnet, no haiku, never subagent_type \"fork\" (forks inherit the seat). Builds run ONE persistent lane, resumed for feedback. Use on \"/agentswarm\", \"swarm this\", \"offload this\", legacy \"/fable-swarm\", or BY DEFAULT whenever a session delegates substantial work. Multi-day arrangements: fable-director."
 ---
 
 # agentswarm — the seat and the swarm

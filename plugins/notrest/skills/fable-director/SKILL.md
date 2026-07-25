@@ -1,6 +1,6 @@
 ---
 name: fable-director
-description: Seat and operate the "3 DEVS AND A RELAY" Fable-director arrangement (Oracle family) — a metered director session orchestrating flat dev/QC lanes through per-lane blackboard files with token-watch wakes. Use when the user says "/fable-director", "fable director", "3 devs and a relay", "stand up / duplicate the fable arrangement (on this project)", says the rotation trigger ("context getting full — rotate; new sessions ..."), when this session receives a ROTATION HANDOFF / FABLE KICKOFF message, or when the repo contains COORD*.md blackboards needing a director. Distinct from the suite's `director` skill (that one chains sibling SKILLS into a pipeline; this one runs a multi-SESSION dev arrangement). Not for ordinary tasks.
+description: "Seat the \"3 DEVS AND A RELAY\" arrangement — a metered director session running flat dev/QC lanes through per-lane blackboard files with token-watch wakes. Use on \"/fable-director\", \"fable director\", \"3 devs and a relay\", \"stand up the fable arrangement\", the rotation trigger (\"context getting full — rotate\"), a ROTATION HANDOFF / FABLE KICKOFF, or when the repo holds COORD-<LANE>.md blackboards. Not `director` (that chains SKILLS; this runs SESSIONS). Not for ordinary tasks."
 ---
 
 # fable-director — the "3 DEVS AND A RELAY" seat

@@ -1,6 +1,6 @@
 ---
 name: refuter
-description: The harness's adversarial reviewer for executable and load-bearing artifacts — a lane other than the builder attacks ONE narrow target under a written brief (artifact inline, isolated scratch dir, hard prohibitions, numbered attack priorities, ~12 tool calls) and returns CONFIRMED findings with a reproduction, PLAUSIBLE ones with a concrete failure scenario, and what survived by name. Use on /refuter, "refute this", "attack this before we ship", "review the fix", "QC that lane's work", "red-team this script", or as agentswarm gate step 4 before the seat accepts code that pushes, installs, or writes the estate. It finds — it never fixes, and never grades its own prior findings. `critic` is the document-side sibling.
+description: "The adversarial reviewer for code and load-bearing artifacts — a lane other than the builder attacks ONE narrow target under a brief: CONFIRMED findings with a reproduction, PLAUSIBLE ones with a failure scenario, and what survived. Use on /refuter, \"refute this\", \"attack this before we ship\", \"QC that lane's work\", \"red-team this\", or as the agentswarm gate before shipping code that pushes, installs, or writes the estate. It finds, never fixes; `critic` is the document-side sibling."
 ---
 
 # Refuter
