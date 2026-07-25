@@ -23,7 +23,7 @@ claude plugin uninstall oracle-suite
 **The session harness** — the scaffolding a working session runs inside: discipline auto-anchored into
 every session, delegation as an arrangement (agentswarm) with a spend ledger that makes the model-routing
 policy checkable, an append-only estate that records every prompt and every agent, continuity + successor
-escort across sessions, and an eval suite the harness runs against its own rules. Twenty-three skills ride
+escort across sessions, and an eval suite the harness runs against its own rules. Twenty-six skills ride
 on it — structured thinking from intake to handoff, built on three principles: **token-lean** (progressive disclosure, `--quick` modes, built-in search budgets), **verified** (real tiered sources, disconfirmation passes, honesty labels on every claim), and **model-agnostic** (the discipline lives in the skills, so any model runs them reliably):
 
 | Skill | What it does |

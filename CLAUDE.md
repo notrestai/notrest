@@ -14,7 +14,7 @@ Last updated: 2026-07-15
   switch re-reads the context cold. A model change is a subagent or a handoff.
 
 ## Project
-- This repo IS the `notrest` marketplace: `plugins/notrest/` (23 skills;
+- This repo IS the `notrest` marketplace: `plugins/notrest/` (26 skills;
   current version lives in plugin.json), manifest at `plugins/notrest/.claude-plugin/plugin.json`, marketplace
   manifest at `.claude-plugin/marketplace.json` — **versions must match**. The plugin was
   renamed `oracle-suite` → `notrest`; `plugins/oracle-suite-tombstone/` is a migration stub

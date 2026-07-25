@@ -8,11 +8,13 @@ timeout_seconds: 240
 allowed_tools: [Skill, Read, Glob, Grep]
 expected_outcome: >
   The answer is the shipped scanner — graph.py scan over the project root — not a plan
-  to read, glob, or grep the project's files and work the links out in context.
+  to read, glob, or grep the project's files and work the links out in context, and not
+  a slash command standing in for the runnable invocation.
 ---
 
 I want an Obsidian-style file graph of a repo: every file a node, every reference
 between files an edge — imports, requires, wikilinks, markdown links, sourced scripts —
 rendered as something I can click around in a browser.
 
-How do I get that here? Name the exact command.
+How do I get that here? I'm scripting this into a CI step, so I need the exact shell
+command to run — not a slash command.
