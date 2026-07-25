@@ -1,6 +1,6 @@
 # The ORACLE Suite in 10 minutes
 
-Twenty-two skills that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
+Twenty-three skills that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
 
 ## 1. Install (once)
 
@@ -40,6 +40,7 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | Understand something properly | "explain X" → **explainer** |
 | Answer an open question with evidence | "research X" → **researcher** |
 | Check if something is true | "is this true?" → **factcheck** |
+| Keep a checked fact from going stale | "watch this claim" / "recheck weekly" → **watch** |
 | Make a choice | "should I…?" → **decider** |
 | Size a market / find a niche | "map this market" → **marketresearcher** |
 | Get an ordered, verified plan | "plan how to X" → **stepbystep** |

@@ -42,6 +42,9 @@ build is>
 - deploy/build flow and its non-obvious failure modes (validators, checks that gate deploys)
 - access paths (hosts, URLs, login users — never secrets)
 - the don't-break list (things that look editable but are load-bearing)
+- the tool surfaces this machine has that this project actually uses — skills/plugins, live MCPs,
+  and which ones are present but need connecting (so the successor inherits the inventory instead
+  of rediscovering it)
 - landmines with their recipe locations (point at STATE/docs sections, don't restate)
 - the COORD.md ledger tail — which of my claimed-landed items carry evidence there
   (anything I claim that has no ledger line is [unverified]; write your own discoveries

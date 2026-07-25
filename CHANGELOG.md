@@ -1,5 +1,39 @@
 # Changelog — ORACLE Suite
 
+## 2.17.0 — 2026-07-25
+
+**The integration release — oracle notices what's installed, facts get shelf lives, and the suite grades itself. Twenty-three skills.**
+
+Three Opus lanes in one batch, each seat-gated:
+
+- **Leverage auto-inventory (oracle):** the Leverage question is never asked blind again —
+  the session inventories its own environment first (context skill listing at zero tool
+  calls; installed_plugins.json at most one read; MCP surfaces sorted live vs
+  needs-connecting) and asks as a 2-5 item proposal filtered by the Objective. Domain
+  packs route outward with the receipts kept inward: "domain packs are workbenches; the
+  estate is the workshop." The inventory is a report, not a guess — auth-gated connectors
+  are never counted as usable; an empty machine gets one honest line. The inventory seeds
+  the scaffolded CLAUDE.md and rides the handoff template so successors inherit it.
+- **New skill: `watch`** — factcheck's calendar-time sibling. `/watch add` pulls a
+  dossier's load-bearing [cited] claims (verbatim, ~10 cap) into watch/watchlist.md;
+  `/watch run` re-verifies the due ones (~2 searches/claim) into a dated drift log —
+  HOLDS / DRIFTED / DEAD-SOURCE / UNVERIFIABLE, every run stamping what it actually
+  fetched; a dead source is never a refutation. Scheduling through the scheduled-tasks
+  MCP where present, always owner-confirmed, honestly manual where absent. 71-assertion
+  fixture incl. a 17-case negative battery; the SKILL's own examples are validated by the
+  same validator so doc and contract cannot drift.
+- **Suite evals (release-gate):** 5 cases + 13 graders for Claude Code's plugin eval
+  runner (format extracted from the runner itself and proven empirically — bad keys
+  rejected at $0.00; early-access gate documented). First gated run, verbatim:
+  graph-zero-tokens **with 1.00 / without 0.25 / Δ +0.75** — the plugin measurably causes
+  the right behavior; offload-policy 0.20/0.00; coord-discipline 0.00/0.00;
+  routing-intake 0.00/0.00; honesty-labels errored (exit 1). Mean Δ +0.19, $4.58, 792s.
+  SEAT RULING, stated not smoothed: ship — day-one calibration findings, not regressions.
+  The bare eval sandbox (no git root, no hooks, no session context) is far from a real
+  session, so the three sub-threshold cases need --keep-temp diagnosis to split
+  case-miscalibration from genuine gaps — that is the evals lane's standing round-2
+  backlog, and the numbers stay in this changelog either way.
+
 ## 2.16.1 — 2026-07-25
 
 **`/graph` now means "show me the graph" — scan, then open, no questions.**

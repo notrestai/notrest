@@ -140,7 +140,7 @@ Before declaring done, verify the dossier and fix any miss:
 
 ## Finishing up
 
-Write `{topic}background.md` first (all four passes), then `{topic}Dossier.md`. Give the user a short chat summary: the headline count, whether the core point stands, the single most important verdict, and the paths to both files. Don't paste the files into chat. Offer to go exhaustive beyond the claim cap — or to chain onward: `/critic` if what needs attacking is the argument rather than the facts, `/researcher` if a refuted claim opens a real question.
+Write `{topic}background.md` first (all four passes), then `{topic}Dossier.md`. Give the user a short chat summary: the headline count, whether the core point stands, the single most important verdict, and the paths to both files. Don't paste the files into chat. Offer to go exhaustive beyond the claim cap — or to chain onward: `/critic` if what needs attacking is the argument rather than the facts, `/researcher` if a refuted claim opens a real question, `/watch add` on the confirmed load-bearing claims if the answer has to stay true past today (verdicts have shelf lives).
 
 ## Notes on tone and rigor
 

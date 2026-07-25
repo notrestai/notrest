@@ -63,15 +63,65 @@ If there's **no `CLAUDE.md`**, you'll **always** scaffold one after the intake (
 2. **Role** — "Who should I be while I help? (e.g., blunt reviewer, patient teacher, expert in ___). Skip and I'll just be direct and helpful."
 3. **Architecture** — "How should I work, and what should the output look like? Any rules (ask before assuming, cite sources, no fluff) or format (length, bullets vs prose)?"
 4. **Content** — "What should I work from? Paste or attach any documents, the key facts about your situation, and 2–5 examples of what 'good' looks like. *This one matters most — paste real material if you have it.*"
-5. **Leverage** — "Any tools or skills I should use or avoid? (web search, a specific Skill, work offline, etc.)"
+5. **Leverage** — **never asked blind: inventory first, then propose** (see *Leverage: the auto-inventory*, below).
 6. **Evaluation** — "How will you judge a good result, and how should I check my own work? (e.g., cite every claim, flag anything unverified, end with the one thing most likely to be wrong.)"
+
+### Leverage: the auto-inventory (probe first, then propose)
+
+**Never ask this one blind.** "Any tools or skills I should use?" hands the user the job of
+inventorying their own machine. Invert it: **probe, then propose.** After the Content answer and
+before you ask, take stock of what this environment actually carries — cheaply, asking the user
+nothing:
+
+1. **This session's own skills/plugins listing — zero tool calls.** In Claude Code and the desktop
+   app, every session already carries the list of installed skills and plugins in its context.
+   Read it from there. Don't shell out to enumerate them, and don't ask the user what they installed.
+2. **`~/.claude/plugins/installed_plugins.json` — at most one Read, degrade silently.** Where
+   readable it names the CLI-installed plugins with versions and install paths. It does *not* cover
+   app-side packs, so the context listing above stays the wider source. Missing or unreadable: skip
+   it without comment.
+3. **MCP surfaces visible in context** — scheduled tasks, a browser pane, session management, a PDF
+   viewer, data/observability/warehouse connectors. Sort them into **live** and **present but needs
+   connecting** (auth-gated servers announce themselves as unauthenticated).
+
+Then filter by the **Objective** and ask the question as a shortlist — **2–5 named items, one line
+of why each, five is the cap** — never a dump of everything installed:
+
+> **Leverage** — "Here's what this machine has that fits <objective>: **<item>** — <why it fits> ·
+> **<item>** — <why> · **<item>** — <why> *(needs connecting first: <where>)*. Anything to add, or
+> anything to keep me away from?"
+> — with **[Skip]** and **[Skip the rest]** alongside, as on every other question.
+
+One question, one at a time, still skippable — the only change is that the user edits a shortlist
+instead of writing an inventory.
+
+**Nothing else installed?** Say so in one line — "nothing here beyond the ORACLE suite and the
+built-in tools, so that's what I'll use" — and move on. The suite works standalone; the inventory
+is an accelerator, never a dependency.
+
+**Honesty guard — the inventory is a report, not a guess.** Name only what you actually saw in this
+session's listing, in `installed_plugins.json`, or among the visible MCP surfaces. Nothing from
+memory of what a machine like this usually runs; no "you probably have". An auth-gated connector is
+offered as **present, needs connecting first** — with where (claude.ai connector settings for
+claude.ai connectors; `claude mcp`, or `/mcp` in an interactive session, for the rest) — never
+silently counted as a capability you can use this session. A thin honest inventory beats a padded
+one: the user finds out either way, and the first way is cheaper.
 
 ## When done (all answered, or "skip rest")
 - Reflect back a one-line summary per slot, "—" for anything skipped:
   > **O:** … **R:** … **A:** … **C:** … **L:** … **E:** …
 - Ask: "Ready to go, or want to change anything?"
 - **Route to the right tool:** from the Objective, name the suite skill (or chain) that fits and why, in one line — research a question → `/researcher` · understand a topic → `/explainer` · make a choice → `/decider` · verify claims → `/factcheck` · size a market → `/marketresearcher` · build a plan → `/stepbystep` (then `/actionplan` for commands) · red-team something → `/critic` · "what do we already know?" → `/archivist` · "how does this project connect?" / map the files → `/graph` · audit model spend/routing → `/spend` · several in sequence → `/director` — or say "no skill needed, working directly." The user can take the route or ignore it.
-- **Foundation file — always create on a new session:** if no `CLAUDE.md` exists, **always scaffold one** from the bundled **`references/claude-foundation-template.md`** — no matter how many slots were answered or skipped (even an all-skipped/test intake still gets the file). Seed it with whatever answers you have (Architecture → protocol, Leverage → tooling, Content → the project section) and keep the template's placeholders for anything unanswered, so the structure is ready for `sessionend` to fill from real work. Keep it a *base*, not comprehensive. Write it where it persists: repo root in Claude Code (so it's auto-read), the working dir in Cowork, or the outputs area in a chat (present it for download). If `CLAUDE.md` already exists, leave it untouched — you loaded it; updates happen at session end.
+- **Domain packs: route outward, keep the receipts inward.** When the Objective is domain-shaped —
+  contract review, sales forecast, SEO audit, month-end close, incident response — and the
+  auto-inventory turned up an installed pack whose skill covers exactly that (`/review-contract`,
+  `/forecast`, `/seo-audit`, `/close-month`, `/incident-response`, …), **route to that pack's skill**
+  and name it in one line. Never absorb, wrap, or reimplement a domain pack: it knows its domain
+  better than the intake does. What oracle keeps is the estate discipline *around* it — the COORD
+  line still gets appended when the work lands, `/spend` still receipts any lanes it spawns, and
+  `recap` / `graph` still see the output. **Domain packs are workbenches; the estate is the
+  workshop.** If nothing installed fits the domain, route to the suite skill as above.
+- **Foundation file — always create on a new session:** if no `CLAUDE.md` exists, **always scaffold one** from the bundled **`references/claude-foundation-template.md`** — no matter how many slots were answered or skipped (even an all-skipped/test intake still gets the file). Seed it with whatever answers you have (Architecture → protocol, Leverage → tooling — the auto-inventory's live vs needs-connecting list included, Content → the project section) and keep the template's placeholders for anything unanswered, so the structure is ready for `sessionend` to fill from real work. Keep it a *base*, not comprehensive. Write it where it persists: repo root in Claude Code (so it's auto-read), the working dir in Cowork, or the outputs area in a chat (present it for download). If `CLAUDE.md` already exists, leave it untouched — you loaded it; updates happen at session end.
 - Then do the work, applying the answers. Internally follow the loading rule: **use their Content first and keep their actual ask last; put the most important facts at the start or end, never buried in the middle.**
 - For any skipped slot, pick a sensible default and note in one line what you assumed. For a skipped **Evaluation**, default to the suite's reliability standard: label non-obvious claims, flag anything unverified plainly, and end substantial answers with the one thing most likely to be wrong.
 

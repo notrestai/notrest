@@ -60,6 +60,9 @@ Two one-command closes, run after the files are written:
 Skip silently only when the skills aren't installed.
 - A **recap** was produced this session → put its map/dossier paths in `HANDOFF.md` (the
   decision track is part of the handoff).
+- **watch** installed and `watch/watchlist.md` exists → note which rows are **due** (last
+  checked + cadence ≤ today) in `HANDOFF.md`, so the next session inherits the calendar and
+  not just the conclusions. Don't run the cycle here; just say what's due.
 - **COORD.md** present (the session coordination ledger) → append the closing line:
   `- [UTC] [sessionend] session closed: <one-line outcome> | handoff: START-HERE.md` —
   and if the ledger has grown past ~40 lines, compact the oldest entries into

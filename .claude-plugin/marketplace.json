@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Not Rest Inc.'s Claude Code plugin marketplace.",
-    "version": "2.16.1"
+    "version": "2.17.0"
   },
   "plugins": [
     {
       "name": "oracle-suite",
       "source": "./plugins/oracle-suite",
-      "description": "The working-session toolkit — token-lean, verified, model-agnostic, on any topic. Twenty-two natural-language-invocable skills from intake to handoff: ORACLE intake with skill routing, researcher / marketresearcher / explainer / decider / factcheck / introspect / game-forge / gpt / chatroom / archivist / spend / recap / graph / stepbystep / actionplan / critic, a director that chains skills into pipelines, a fable-director that runs the '3 devs and a relay' multi-session arrangement, an agentswarm that runs the fast same-machine delegation arrangement (any seat — Fable or Opus — plus concurrent in-session Opus lanes), a self-recording sessionend handoff with a live cross-session line, and fable-mode — a verification-first discipline auto-anchored into every session. Real tiered sources, honesty labels, search budgets, self-checks, --quick modes throughout.",
-      "version": "2.16.1",
+      "description": "The working-session toolkit — token-lean, verified, model-agnostic, on any topic. Twenty-three natural-language-invocable skills from intake to handoff: ORACLE intake with skill routing, researcher / marketresearcher / explainer / decider / factcheck / watch / introspect / game-forge / gpt / chatroom / archivist / spend / recap / graph / stepbystep / actionplan / critic, a director that chains skills into pipelines, a fable-director that runs the '3 devs and a relay' multi-session arrangement, an agentswarm that runs the fast same-machine delegation arrangement (any seat — Fable or Opus — plus concurrent in-session Opus lanes), a self-recording sessionend handoff with a live cross-session line, and fable-mode — a verification-first discipline auto-anchored into every session. Real tiered sources, honesty labels, search budgets, self-checks, --quick modes throughout.",
+      "version": "2.17.0",
       "license": "MIT",
       "homepage": "https://do.not.rest",
       "keywords": [

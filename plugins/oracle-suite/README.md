@@ -1,7 +1,7 @@
 # ORACLE Suite
 
 A working-session toolkit for Claude Code by [Not Rest Inc.](https://do.not.rest) — structured
-thinking from intake to handoff. Twenty-two skills that compose:
+thinking from intake to handoff. Twenty-three skills that compose:
 
 - **oracle** — session intake (the ORACLE six-question setup) + loads/scaffolds the `CLAUDE.md` foundation. Say "hey oracle" or `/oracle`.
 - **researcher** — multi-pass research → background + decision dossier.
@@ -12,6 +12,11 @@ thinking from intake to handoff. Twenty-two skills that compose:
 - **explainer** — a correct mental model + three depth layers + misconceptions + verify-it-yourself.
 - **decider** — weighted criteria, evidence, the hinge ("what flips the winner"), pre-mortem → a reversibility-aware recommendation.
 - **factcheck** — claim-by-claim verdicts (✅/🟡/🔴/🔵/⚪) against independent real sources.
+- **watch** — facts have shelf lives: a small watchlist of a dossier's load-bearing cited
+  claims, re-verified on a cadence with factcheck's rigor and grammar → a dated drift log
+  (HOLDS / DRIFTED / DEAD-SOURCE / UNVERIFIABLE) that stamps what it actually fetched; a dead
+  source is never a refutation, and scheduling (where the scheduled-tasks MCP exists) is always
+  owner-confirmed, never faked.
 - **introspect** — validated workspace self-reports (a black-box J-space instrument): two-layer
   sealed snapshots (scored token spine + readable glosses) scored against behavior, with a
   context-only control for predictive lift.
@@ -57,6 +62,12 @@ thinking from intake to handoff. Twenty-two skills that compose:
 
 Most skills also support `--quick` (chat-only, no files) and write a paired *background* +
 *Dossier* file for anything substantial.
+
+## Evals
+`evals/` holds the suite's release-gate eval cases (5 cases, 13 graders) for Claude Code's
+plugin eval runner — they guard the offload policy, COORD discipline, honesty labels,
+intake routing, and graph's zero-token rule. Run per `evals/README.md`; eval runs cost
+real tokens, so they gate releases rather than run on hooks.
 
 ## Install
 ```
