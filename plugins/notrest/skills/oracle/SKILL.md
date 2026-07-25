@@ -47,6 +47,13 @@ project's **first** scan, offer *once* to register it for the cross-project PM v
 puts this project on someone else's map. Skip the offer if the project is already registered
 in `~/.claude/oracle-projects.txt`.
 
+**Repeated work (read-only, if present).** If the repo carries `compile/candidates.md`, read
+its **ripe rows** — the **compile** skill's record of jobs this estate has already done three
+or more times. Do not scan during intake (scanning belongs to `/sessionend`); just read what
+the last scan found. A ripe row that matches the stated Objective is worth one line to the
+user: this project keeps doing this, and `/compile <slug>` can move its stable parts into
+code. Say nothing when the file is absent or nothing is ripe.
+
 If there's **no `CLAUDE.md`**, you'll **always** scaffold one after the intake (see When done) — no matter how much was answered or skipped. The intake answers are foundation material: **Architecture** → how you work, **Leverage** → tooling, **Content** → the project/situation.
 
 ## How to run it
@@ -98,6 +105,12 @@ instead of writing an inventory.
 **Nothing else installed?** Say so in one line — "nothing here beyond the ORACLE suite and the
 built-in tools, so that's what I'll use" — and move on. The suite works standalone; the inventory
 is an accelerator, never a dependency.
+
+**Compiled runtimes are tooling too.** If the repo has `compile/<slug>/` directories, each one is
+a runtime this project already paid to build for a job it kept repeating. Name them in the
+Leverage shortlist like any other capability — *"this repo carries a compiled runtime for
+`<alias>` — prefer running it over re-deriving the workflow"* — with its one obvious run command
+from its README. Nothing there is a guess: the directory either exists or it doesn't.
 
 **Honesty guard — the inventory is a report, not a guess.** Name only what you actually saw in this
 session's listing, in `installed_plugins.json`, or among the visible MCP surfaces. Nothing from

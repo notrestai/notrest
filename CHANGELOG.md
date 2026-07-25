@@ -1,5 +1,47 @@
 # Changelog — ORACLE Suite → the notrest harness
 
+## 3.1.0 — 2026-07-25
+
+**/compile — the workflow compiler: the estate learns to optimize itself. Twenty-four skills. Plus the speed law.**
+
+Adopted from the owner's "Agent Workflow Compiler" contract — but rethought before a line
+was integrated, per the owner's explicit order. The original is a model-first mega-prompt;
+in this architecture it split into three parts with different owners:
+
+- **Detection is a script** (`compile.py scan` — stdlib, zero model tokens, graph.py
+  economics): mines COORD.md ask-shapes, agent-ledger purposes, and spend receipts for the
+  same job done ≥3 times; emits machine-written `compile/candidates.md` + `.json` with
+  occurrence counts, evidence pointers into the ledgers, ripeness, and statuses that
+  survive rescans (signature-matched carry-over, so a DECLINED ruling never resurfaces
+  under a renamed slug). Maiden scan on this very repo: the release ritual, #1, 9
+  occurrences, RIPE — found by df-weighted clustering with the threshold swept against
+  real data and cited in-code.
+- **Compilation is a ritual run**, not a mega-prompt: /compile <candidate> reconstructs
+  the functional contract from the trail with recap-grade citations, one builder lane
+  emits the isolated runtime under compile/<slug>/, an independent refuter attacks it,
+  the seat gates multi-way and fair-benchmarks against the history it came from (the
+  estate IS Method A's historical side; equivalent raw inputs; judge calls excluded;
+  PROVEN/DIRECTIONAL/UNMEASURED evidence labels; one-time compilation cost receipted by
+  spend and NEVER amortized). Cheaper-but-worse is failure; the owner is final arbiter.
+- **Installation is a release**: compiled runtimes stay isolated until the owner ships
+  them through the normal ritual. DEMO / USE / INSTALL tiers preserved from the original.
+
+Known to every session, automatically: the SessionStart hook nudges when a ripe NEW
+candidate exists (one line, reads the last scan, silent otherwise — corrupt-JSON-proven);
+sessionend runs the scan at estate close and names the top candidate in the handoff;
+oracle's intake reads the candidates file and its Leverage inventory offers compiled
+runtimes as tooling; archivist indexes the candidates as the estate's third dimension;
+agentswarm points lanes at compile/ before they re-derive paid-for work.
+
+**The speed law (owner directive — 15-30 minute lanes are the arrangement failing its
+user):** receipts showed wall-clock tracks tool calls near-linearly (20-call lanes ≈ 3.5
+min; 72-77-call monoliths ≈ 22-24 min). Codified in agentswarm + the hook: greenfield
+builds DECOMPOSE into parallel narrow lanes along file boundaries (core lane persists for
+feedback rounds; docs rows are one-shots); builders get a ~20-line style capsule inline,
+never a reading list; one fixture run per lane, at the end (the seat re-runs at the gate
+anyway); and release slicing — gated work ships, never held hostage to an unrelated lane.
+Proof it works: the round that wrote the law ran 28 calls in 4.4 minutes.
+
 ## 3.0.0 — 2026-07-25
 
 **The harness gets the company's name: `oracle-suite` → `notrest`.**

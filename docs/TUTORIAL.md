@@ -60,6 +60,7 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | See how the files connect (or every project at once) | "map the files" / "/graph" → **graph** |
 | Audit token spend / model routing | "spend report" → **spend** |
 | How did we get here? | "recap the project" / "/recap" → **recap** |
+| Make repeated work cheaper | "what should we compile" / "/compile" → **compile** |
 | Get a GPT second opinion | "/gpt" → **gpt** |
 | Let Claude sessions + GPT work in one room | "open a chatroom" → **chatroom** |
 | Snapshot what the model is thinking (scored) | "/introspect" → **introspect** |

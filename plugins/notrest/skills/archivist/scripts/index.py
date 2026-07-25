@@ -8,13 +8,15 @@ Subcommands:
 The index is a finding aid, never a source — cite the dossier it points to.
 Never hand-edit oracle-index.md; re-run scan.
 """
-import argparse, pathlib, re, sys
+import argparse, json, pathlib, re, sys
 from datetime import datetime, timezone
 
 DIRS = ["research", "market-research", "understanding", "decision", "factcheck",
         "critique", "action-plan", "runbook", "pipeline", "introspection", "recap"]
 INDEX = "oracle-index.md"
 LEDGER = "COORD-AGENTS.md"  # the SubagentStop hook's agent activity ledger
+CANDIDATES = "compile/candidates.md"       # compile.py's repeated-work table
+CANDIDATES_DATA = "compile/candidates.json"
 
 
 def entries(root):
@@ -60,6 +62,25 @@ def agent_ledger(root):
     return (p.relative_to(root).as_posix(), count)
 
 
+def compile_candidates(root):
+    """One index entry for compile.py's repeated-work table, if present. Returns
+    (rel_path, ripe_count, total_count) or None; degrades silently when the table
+    or its data file is missing or unreadable. Counts come from the JSON the same
+    scan wrote — the markdown beside it is the reading copy."""
+    p = root / CANDIDATES
+    if not p.is_file():
+        return None
+    ripe = total = 0
+    try:
+        data = json.loads((root / CANDIDATES_DATA).read_text(encoding="utf-8"))
+        cands = data.get("candidates", [])
+        total = len(cands)
+        ripe = sum(1 for c in cands if c.get("ripe"))
+    except Exception:
+        pass
+    return (p.relative_to(root).as_posix(), ripe, total)
+
+
 def cmd_scan(a):
     root = pathlib.Path(a.root).resolve()
     es = entries(root)
@@ -81,6 +102,15 @@ def cmd_scan(a):
                    "entries point at full transcripts")
         buf.append("")
         suffix = f" + agent ledger ({count})"
+    cc = compile_candidates(root)
+    if cc is not None:
+        rel, ripe, total = cc
+        buf.append(f"### compile candidates — {ripe} ripe of {total}")
+        buf.append(f"folder: compile · path: {rel}")
+        buf.append("compile candidates — repeated work the estate has recorded; "
+                   "ripe rows are ready to compile")
+        buf.append("")
+        suffix += f" + compile candidates ({ripe}/{total} ripe)"
     (root / INDEX).write_text("\n".join(buf) + "\n", encoding="utf-8")
     print(f"{root / INDEX}: {len(es)} entries{suffix}")
 

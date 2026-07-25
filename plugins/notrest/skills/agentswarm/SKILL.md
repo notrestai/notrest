@@ -127,6 +127,17 @@ The seat never hand-builds a feature; it specs, gates, and ships:
    a diagram, a UI) opens it and looks — screenshot both themes, console clean —
    before accepting (the game-forge no-unrun-ships ethos). A gate that only reads the
    lane's report is not a gate.
+7. **Decompose greenfield builds — the DOMAIN is the unit, not the deliverable.** A new
+   skill or feature is not one lane's job just because it ships as one thing. Split it
+   along **file boundaries** into parallel narrow lanes — the core script/artifact lane
+   ∥ the contract/SKILL lane ∥ a docs-rows one-shot — and hand each one a tight
+   **interface spec inline** (exact filenames, exact command signatures, exact table
+   columns) so they compose without ever talking to each other. The **core artifact's
+   lane is the persistent one** for feedback rounds; the rest are one-shots that finish
+   and are discarded. Wall-clock is the slowest lane, not the sum, and the arithmetic is
+   measured on this machine: **~20-tool-call lanes land in ≈3.5 min; 72–77-call monolith
+   lanes take ≈22–24 min** — near-linear in tool calls. One lane doing three domains is
+   therefore three times the wall-clock for the same tokens.
 
 ## Trail-walk — how the seat judges
 
@@ -157,7 +168,11 @@ NARROW lane; a seat that idles waiting on one broad lane is the arrangement fail
    six-surface refuter (same tokens, same policy).
 2. **Hand the lane its material inline** — paste the artifact and the exact contract into
    the prompt; every read round-trip saved is wall-clock saved; a lane should attack at
-   call 1, not forage.
+   call 1, not forage. **This applies hardest to builders: never send a builder a reading
+   list.** "Read these five skills first to absorb the house voice" costs 5–10 round trips
+   before the first written line; the seat pastes a ~20-line **style capsule** inline
+   instead — the voice, the frontmatter shape, the honesty-rules pattern, the self-check
+   pattern — and the lane writes at call 1.
 3. **Budget empirical lanes** — ~10 tool calls; past budget, PLAUSIBLE-with-scenario beats
    a third reproduction (root-cause-with-a-budget, applied to QC).
 4. **Tier the gate by blast radius** — full multi-way gate + refuter for executable /
@@ -166,6 +181,15 @@ NARROW lane; a seat that idles waiting on one broad lane is the arrangement fail
    refutation costs the delta.
 6. **Never idle the seat** — only ship-blocking lanes are worth waiting for; everything
    else lands async and is read next turn.
+7. **One fixture run per lane, at the end.** The seat re-runs the whole suite at the gate
+   anyway, so a mid-build full-suite rerun is duplicate spend *and* duplicate minutes.
+   Targeted spot-checks while building are fine and encouraged — it is the full suite,
+   run repeatedly by the lane, that buys nothing.
+8. **Release slicing — gated work ships.** Work that has passed the gate is never held
+   hostage to an unrelated lane that is still running; batch a release only when the
+   pieces are genuinely **file-coupled** (shared counts, shared manifests, one CHANGELOG
+   entry that must be true). The owner waiting on the slowest lane of an *uncoupled*
+   batch is the arrangement failing its user.
 
 ## QC — the refuter, as code
 
@@ -194,6 +218,8 @@ while other lanes still work; no barrier unless dedup genuinely needs one.
   with `spend.py report`; exit 4 is surfaced verbatim, never smoothed.
 - **archivist** — before any research fan-out, consult `oracle-index.md`; a question
   the estate already answered costs one grep, not a lane.
+- **compile** — before spawning a lane for a job, check `compile/` — a compiled runtime
+  the estate already paid for beats re-deriving it at model prices.
 - **Agent activity records itself.** Every completed lane is auto-written to
   `COORD-AGENTS.md` by the SubagentStop hook — id · model · last conclusion · transcript
   path — at zero prompt overhead. Never instruct a lane to write a process/summary file;

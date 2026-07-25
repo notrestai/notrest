@@ -57,6 +57,12 @@ Two one-command closes, run after the files are written:
 - **spend** installed and this session spawned agents / workflows / gpt calls → run its
   `report` and paste the verdict line into `HANDOFF.md` — and any ROUTING VIOLATIONS
   verbatim, never smoothed.
+- **compile** installed → run its scan, `python3 <compile-skill>/scripts/compile.py scan
+  --root .` (script-only, zero model tokens — the same spirit as the archivist re-scan). If
+  it reports ripe NEW candidates, **name the top one in `HANDOFF.md`** ("repeated work worth
+  compiling: `<slug>`, seen N×") so the next session inherits the finding instead of
+  rediscovering it — the SessionStart hook will surface it too, but the handoff is what a
+  cold reader reads first.
 Skip silently only when the skills aren't installed.
 - A **recap** was produced this session → put its map/dossier paths in `HANDOFF.md` (the
   decision track is part of the handoff).

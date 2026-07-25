@@ -50,6 +50,14 @@ line, the scan writes the pointer. Same honesty rule as the index — `COORD-AGE
 machine-written and a finding aid; read the transcript it points to before citing what an
 agent concluded.
 
+**Repeated work is the third dimension.** Where `COORD-AGENTS.md` records *who was consulted*,
+`compile/candidates.md` records *what this project keeps doing* — the **compile** skill's
+machine-written table of jobs the estate has recorded three or more times. When it exists,
+`scan` adds one entry to `oracle-index.md` the same way: its path plus its ripe/total counts,
+a pointer and not a copy. From the index you go to `candidates.md` for the evidence rows, and
+from a ripe row to `/compile <slug>`. Same honesty rule again — the counts measure repetition,
+never value, and a ripe row is a candidate, not a verdict.
+
 ## Honesty rules
 
 - **The index is a finding aid, never a source.** Cite the dossier it points to; never

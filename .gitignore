@@ -3,6 +3,10 @@
 # the file-graph scan output at the REPO ROOT only — anchored, or this would also
 # ignore plugins/notrest/skills/graph/ (gitignore matches any depth otherwise)
 /graph/
+# compile.py's repeated-work scan output at the REPO ROOT only — derived, regenerated
+# by every scan (same rationale as /graph/). Anchored, so the skill's own directory
+# (plugins/notrest/skills/compile/) stays tracked.
+/compile/
 # `claude plugin eval --output-dir evals/results` writes run artifacts here. Anchored,
 # so the plugin's own case files (plugins/notrest/evals/) stay tracked.
 /evals/results/

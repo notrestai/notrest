@@ -20,7 +20,7 @@ echo "[notrest] Fable discipline is active this session. Run substantive work (b
 # ── offload model policy: unconditional, so it reaches every fan-out surface
 # (Agent tool, Workflow/ultracode, deep-research, review panels) even when no
 # notrest skill is loaded. Owner-set 2026-07-15: opus-only offload.
-echo "[notrest] HARD RULE — offload model policy (owner-set 2026-07-15): Fable never rides in a subagent, and every job this session offloads runs on OPUS — whatever model holds the seat (Fable or Opus alike). Every spawned agent/subagent (Agent tool, Workflow agent() calls, deep-research and review fan-outs, panel lenses, pipeline stages) MUST set model 'opus' explicitly — not sonnet, not haiku, never fable, and NEVER subagent_type 'fork' (forks ignore the model parameter and silently inherit Fable). Omitting the model silently inherits Fable and bills Fable credit — that omission is a violation, not a default. The seat is the orchestrator (decompose, judge, apply edits, gate ships) and delegates everything else — the seat stays the seat regardless of model. agentswarm (notrest:agentswarm) is the default delegation arrangement: batch-spawn background Opus lanes, keep lanes NARROW and parallel (wall-clock is the slowest lane, not the sum — split broad jobs), hand each lane its material inline so it works at call 1, and never idle the seat waiting on a non-ship-blocking lane, demand tight returns (conclusions, not dumps), refuter-check findings before acting, log every completed lane to the spend ledger (notrest:spend), consult the archivist index before research fan-outs, and never /model-switch the seat (cache burn — delegate instead). SEAT-BUILDER RITUAL (owner-ratified): substantive builds run through ONE persistent Opus builder lane per domain — the seat specs, the lane builds, the seat gates (exit-code-checked, never piped through tail) — and feedback rounds RESUME THE SAME LANE via SendMessage, never a fresh spawn; diagnosis stays parallel one-shot lanes."
+echo "[notrest] HARD RULE — offload model policy (owner-set 2026-07-15): Fable never rides in a subagent, and every job this session offloads runs on OPUS — whatever model holds the seat (Fable or Opus alike). Every spawned agent/subagent (Agent tool, Workflow agent() calls, deep-research and review fan-outs, panel lenses, pipeline stages) MUST set model 'opus' explicitly — not sonnet, not haiku, never fable, and NEVER subagent_type 'fork' (forks ignore the model parameter and silently inherit Fable). Omitting the model silently inherits Fable and bills Fable credit — that omission is a violation, not a default. The seat is the orchestrator (decompose, judge, apply edits, gate ships) and delegates everything else — the seat stays the seat regardless of model. agentswarm (notrest:agentswarm) is the default delegation arrangement: batch-spawn background Opus lanes, keep lanes NARROW and parallel (wall-clock is the slowest lane, not the sum — split broad jobs), decompose greenfield builds into parallel narrow lanes (core lane persists for feedback rounds; docs rows are one-shots), hand each lane its material inline so it works at call 1, and never idle the seat waiting on a non-ship-blocking lane, demand tight returns (conclusions, not dumps), refuter-check findings before acting, log every completed lane to the spend ledger (notrest:spend), consult the archivist index before research fan-outs, and never /model-switch the seat (cache burn — delegate instead). SEAT-BUILDER RITUAL (owner-ratified): substantive builds run through ONE persistent Opus builder lane per domain — the seat specs, the lane builds, the seat gates (exit-code-checked, never piped through tail) — and feedback rounds RESUME THE SAME LANE via SendMessage, never a fresh spawn; diagnosis stays parallel one-shot lanes."
 
 # ── continuity nudge: stdout is injected as session context.
 if [ -f "START-HERE.md" ]; then
@@ -49,6 +49,21 @@ COORDEOF
   echo "[notrest] COORD.md created at the repo root — the session coordination ledger. Append one ledger line per substantive prompt when its work lands (ask -> landed | evidence)."
 elif [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/COORD.md" ]; then
   echo "[notrest] COORD.md is live in this repo — read its ledger tail before starting (prior sessions' trail), and append one line per substantive prompt's work (ask -> landed | evidence)."
+fi
+# ── compile: surface a ripe candidate the estate has already recorded three or
+# more times. This READS the last scan only — scanning belongs to /sessionend, and
+# a SessionStart hook must never do work. Silent when absent, unreadable, or when
+# every ripe candidate has already been ruled on.
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/compile/candidates.json" ]; then
+  COMPILE_TOP="$(python3 -c 'import json,sys
+try: c = json.load(open(sys.argv[1]))["candidates"]
+except Exception: sys.exit(0)
+r = [x for x in c if x.get("ripe") and x.get("status") == "NEW"]
+if r: print(r[0]["slug"], r[0]["occurrences"])' "$REPO_ROOT/compile/candidates.json" 2>/dev/null)"
+  if [ -n "$COMPILE_TOP" ]; then
+    read -r CSLUG CSEEN <<< "$COMPILE_TOP"
+    echo "[notrest] Ripe compile candidate: $CSLUG seen ${CSEEN}x — repeated work the estate already recorded. Say /compile $CSLUG to move its stable parts into code (or compile.py decide --status DECLINED to silence)."
+  fi
 fi
 # A lane blackboard is COORD-<LANE>.md — NOT the machine-written ledgers
 # (COORD-AGENTS.md, COORD-ARCHIVE.md, COORD-AGENTS-ARCHIVE.md), which exist in
