@@ -29,3 +29,5 @@
 [2026-07-25 06:39Z] lane=subagent model=claude-opus-5 tokens=65014 grade=observed purpose="draft lane (outbound verb, fact-vs-framing law, 21/21; 13 calls / 3.7 min under speed law)"
 [2026-07-25 06:41Z] lane=subagent model=claude-opus-5 tokens=75855 grade=observed purpose="crash-cushion lane (SessionEnd hook: auto-cushion + first proven compaction; 53/53; corrected seat's threshold arithmetic with evidence)"
 [2026-07-25 06:45Z] lane=subagent model=claude-opus-5 tokens=114782 grade=observed purpose="doctor lane (8-check self-check, 43/43 fixture; first live run caught the count drift it was built for)"
+[2026-07-25 06:48Z] lane=subagent model=claude-opus-5 tokens=108400 grade=observed purpose="compile release-ritual: builder round 1 (ship.py 572L, 19/19, 2-scenario parity)"
+[2026-07-25 06:48Z] lane=subagent model=claude-opus-5 tokens=125790 grade=observed purpose="compile release-ritual: builder round 2 (legacy vocabulary, 5/5 scenarios PARITY PASS, self-caught respell honesty fix)"
