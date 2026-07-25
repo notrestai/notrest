@@ -1,6 +1,6 @@
 Last updated: 2026-07-15
 
-# CLAUDE.md — oracle-suite-plugin foundation
+# CLAUDE.md — notrest harness foundation
 
 ## Protocol
 - Fable discipline every substantive session (the SessionStart hook anchors it;
@@ -14,12 +14,14 @@ Last updated: 2026-07-15
   switch re-reads the context cold. A model change is a subagent or a handoff.
 
 ## Project
-- This repo IS the ORACLE suite marketplace: `plugins/oracle-suite/` (20 skills;
-  current version lives in plugin.json), manifest at `plugins/oracle-suite/.claude-plugin/plugin.json`, marketplace
-  manifest at `.claude-plugin/marketplace.json` — **versions must match**.
+- This repo IS the `notrest` marketplace: `plugins/notrest/` (23 skills;
+  current version lives in plugin.json), manifest at `plugins/notrest/.claude-plugin/plugin.json`, marketplace
+  manifest at `.claude-plugin/marketplace.json` — **versions must match**. The plugin was
+  renamed `oracle-suite` → `notrest`; `plugins/oracle-suite-tombstone/` is a migration stub
+  pinned at 9.0.0 (one SessionStart line pointing at the new id) — **never bump it**.
 - Release ritual: bump both manifests + CHANGELOG.md + README table + the version stamps
   in docs/oracle-skill-flow.html (header + footer) → commit → push →
-  `claude plugin marketplace update notrest && claude plugin update oracle-suite@notrest`
+  `claude plugin marketplace update notrest && claude plugin update notrest@notrest`
   (restart applies). The hook's git self-update no-ops on marketplace-cache installs
   (`~/.claude/plugins/cache/...` is not a git clone) — the CLI path above is the real one.
 - Spend ledger: `spend/ledger.md` — append-only, via `spend.py` only, never hand-edited.

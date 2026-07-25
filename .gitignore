@@ -1,8 +1,8 @@
 **/.DS_Store
 .DS_Store
 # the file-graph scan output at the REPO ROOT only — anchored, or this would also
-# ignore plugins/oracle-suite/skills/graph/ (gitignore matches any depth otherwise)
+# ignore plugins/notrest/skills/graph/ (gitignore matches any depth otherwise)
 /graph/
 # `claude plugin eval --output-dir evals/results` writes run artifacts here. Anchored,
-# so the plugin's own case files (plugins/oracle-suite/evals/) stay tracked.
+# so the plugin's own case files (plugins/notrest/evals/) stay tracked.
 /evals/results/

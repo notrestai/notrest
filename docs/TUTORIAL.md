@@ -1,16 +1,20 @@
-# The ORACLE Suite in 10 minutes
+# The notrest harness in 10 minutes
 
-Twenty-three skills that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
+The session harness — plus twenty-three skills — that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
 
 ## 1. Install (once)
 
 ```
-/plugin marketplace add notrestai/ORACLE
-/plugin install oracle-suite@notrest
+/plugin marketplace add notrestai/notrest
+/plugin install notrest@notrest
 ```
 
+**Renaming from `oracle-suite`?** Same harness, new id (the marketplace is still `notrest`, so the
+install id is `notrest@notrest` and skills invoke as `/notrest:<name>`). Install `notrest` as above,
+then `claude plugin uninstall oracle-suite`.
+
 That's it. Four hooks come alive immediately:
-- **SessionStart** injects the fable-discipline anchor (verification-first working habits) AND the offload model policy (every job a Fable session delegates runs on explicit Opus) into every session, auto-creates `COORD.md` — the per-prompt session ledger — at any git-repo root, detects `START-HERE.md` / `HANDOFF.md` resume files, and self-updates the plugin from git (note: marketplace installs live in a version cache, not a git clone — there, update with `claude plugin update oracle-suite@notrest`).
+- **SessionStart** injects the fable-discipline anchor (verification-first working habits) AND the offload model policy (every job a Fable session delegates runs on explicit Opus) into every session, auto-creates `COORD.md` — the per-prompt session ledger — at any git-repo root, detects `START-HERE.md` / `HANDOFF.md` resume files, and self-updates the plugin from git (note: marketplace installs live in a version cache, not a git clone — there, update with `claude plugin update notrest@notrest`).
 - **UserPromptSubmit** — when `COORD.md` exists, every prompt carries a one-line reminder: append a ledger line when the work lands (ask → landed | evidence). The ledger survives crashes and compaction even if `/sessionend` never runs.
 - **PreCompact** reminds you to run `/sessionend` before context compaction eats your session state — or at minimum to append the COORD ledger line first.
 - **SubagentStop** — when a spawned agent finishes inside a git repo, auto-writes one line (id · model · last conclusion · transcript path) to `COORD-AGENTS.md`, so which agents were consulted and what each concluded lands in the repo automatically, at zero model-token cost.

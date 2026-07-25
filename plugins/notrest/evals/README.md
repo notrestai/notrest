@@ -13,7 +13,7 @@ commit. Run it before a version bump, read the delta, then ship.
 From the repo root:
 
 ```sh
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval plugins/oracle-suite \
+CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval plugins/notrest \
   --ablation with-without \
   --judge-model sonnet \
   --output-dir evals/results \
@@ -23,10 +23,10 @@ CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval plugins/oracle-suite \
 - `CLAUDE_CODE_WALNUT_SPIRE=1` — **required.** `claude plugin eval` is gated behind an
   early-access flag; without it the command exits with
   `` `plugin eval` is currently in early access ``.
-- `plugins/oracle-suite` — the target is a **path**, so the runner grades the working
+- `plugins/notrest` — the target is a **path**, so the runner grades the working
   tree, not the installed marketplace copy. Cases are discovered under
-  `plugins/oracle-suite/evals/`, and the plugin resolves by walking up from each case
-  dir to `plugins/oracle-suite/.claude-plugin/plugin.json`.
+  `plugins/notrest/evals/`, and the plugin resolves by walking up from each case
+  dir to `plugins/notrest/.claude-plugin/plugin.json`.
 - `--ablation with-without` — **must be explicit** for a path target (it only defaults
   on when you target a plugin *by name*). The headline number is Δ: the with-plugin
   score minus the without-plugin score. A case that scores 1.0 in both arms is not
@@ -41,11 +41,11 @@ Cheaper variants while iterating:
 
 ```sh
 # one case, one run, no baseline arm — smoke test after editing a grader
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval plugins/oracle-suite \
+CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval plugins/notrest \
   --case offload-policy --runs 1 --ablation none --judge-model sonnet
 
 # one tag's worth
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval plugins/oracle-suite --tag policy --runs 1
+CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval plugins/notrest --tag policy --runs 1
 
 # strict budget — aborts and reports partial results (exit 2) when the ceiling is hit
 ... --max-cost-usd 5

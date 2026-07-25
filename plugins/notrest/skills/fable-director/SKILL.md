@@ -10,7 +10,7 @@ protocol of record is `references/PLAN-FABLE-DIRECTOR-V4.md` (bundled) — **but
 per-project copy in the repo root is ALWAYS authoritative over the bundle** (projects evolve
 their own V4+). Battle-tested on tell.rest 2026-07-05/06 (5 shipped rounds, 6 bugs fixed,
 2 live rotations). Bundled paths below are relative to THIS skill's folder — resolve
-`${CLAUDE_PLUGIN_ROOT}/skills/fable-director/` when running as the installed oracle-suite
+`${CLAUDE_PLUGIN_ROOT}/skills/fable-director/` when running as the installed notrest
 plugin, `~/.claude/skills/fable-director/` when running as a loose global skill.
 
 ## Absolute rules (hold even before you read V4)

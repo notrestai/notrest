@@ -1,7 +1,7 @@
 ---
 name: oracle
 disable-model-invocation: false
-description: Session intake + resume — the suite's front door. On "hey oracle", /oracle, "start an oracle session", or "resume / pick up where we left off": load the CLAUDE.md foundation, offer to resume from START-HERE.md (in multi-session environments, open the live line back to the predecessor and fold its answers in), ask the six ORACLE questions one at a time (Objective, Role, Architecture, Content, Leverage, Evaluation — each skippable), recommend which suite skill fits the objective, then proceed — scaffolding a starter CLAUDE.md if none exists. Not for ordinary questions.
+description: "Session intake + resume — the suite's front door. On \"hey oracle\", /oracle, \"start an oracle session\", or \"resume / pick up where we left off\": load the CLAUDE.md foundation, offer to resume from START-HERE.md (in multi-session environments, open the live line back to the predecessor and fold its answers in), ask the six ORACLE questions one at a time (Objective, Role, Architecture, Content, Leverage, Evaluation — each skippable), recommend which suite skill fits the objective, then proceed — scaffolding a starter CLAUDE.md if none exists. Not for ordinary questions."
 ---
 
 # ORACLE — Session Intake

@@ -1,4 +1,32 @@
-# Changelog — ORACLE Suite
+# Changelog — ORACLE Suite → the notrest harness
+
+## 3.0.0 — 2026-07-25
+
+**The harness gets the company's name: `oracle-suite` → `notrest`.**
+
+It outgrew "a suite of skills." What ships now is a session HARNESS by Not Rest Inc. —
+discipline auto-anchored into every session, delegation through agentswarm's Opus lanes,
+an estate that writes itself (COORD per prompt, COORD-AGENTS per agent, spend per lane),
+continuity with a flown successor escort, and an eval suite that grades the whole thing.
+So it carries the company's name.
+
+- **Install identity changed** — `claude plugin install notrest@notrest`; skills invoke as
+  `/notrest:oracle`, `/notrest:agentswarm`, … The GitHub repo is now
+  `notrestai/notrest` (owner-renamed; verified live before ship). `git mv` moved
+  `plugins/oracle-suite/` → `plugins/notrest/` with history preserved — 77 entries staged
+  as renames. Hook echo prefixes are `[notrest]`; every `oracle-suite:<skill>` reference
+  swept. History files (CHANGELOG, COORD*, spend/ledger, evals/results) keep the old name
+  verbatim — receipts are never rewritten.
+- **Nobody strands:** a frozen `oracle-suite` tombstone entry ships at v9.0.0 whose only
+  behavior is one SessionStart line telling existing installs where the harness went and
+  how to move. Pinned forever — never bump it.
+- **Pre-existing bug caught by the rename gate and fixed:** three skills — `recap`,
+  `oracle`, `agentswarm` — had unquoted YAML `description:` scalars containing colon-space
+  (`track: a`, `off": load`, `OPUS: no`). Their frontmatter failed to parse, so at runtime
+  they loaded with EMPTY METADATA — natural-language triggering silently dead for all
+  three. Proven pre-existing (byte-identical to HEAD; reproduced from `git archive HEAD`),
+  now quoted and validating. The lane was renaming files and found a live defect on the
+  way past: exactly what gates are for.
 
 ## 2.17.0 — 2026-07-25
 

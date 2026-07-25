@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Not Rest Inc.'s Claude Code plugin marketplace.",
-    "version": "2.17.0"
+    "version": "3.0.0"
   },
   "plugins": [
     {
-      "name": "oracle-suite",
-      "source": "./plugins/oracle-suite",
-      "description": "The working-session toolkit — token-lean, verified, model-agnostic, on any topic. Twenty-three natural-language-invocable skills from intake to handoff: ORACLE intake with skill routing, researcher / marketresearcher / explainer / decider / factcheck / watch / introspect / game-forge / gpt / chatroom / archivist / spend / recap / graph / stepbystep / actionplan / critic, a director that chains skills into pipelines, a fable-director that runs the '3 devs and a relay' multi-session arrangement, an agentswarm that runs the fast same-machine delegation arrangement (any seat — Fable or Opus — plus concurrent in-session Opus lanes), a self-recording sessionend handoff with a live cross-session line, and fable-mode — a verification-first discipline auto-anchored into every session. Real tiered sources, honesty labels, search budgets, self-checks, --quick modes throughout.",
-      "version": "2.17.0",
+      "name": "notrest",
+      "source": "./plugins/notrest",
+      "description": "A session harness by Not Rest Inc. — the scaffolding a working Claude session runs inside, not a pile of skills. Discipline is auto-anchored into every session by the SessionStart hook: a verification-first contract (probe before believing, prove at the consumer, label the unverified, bank before stopping). Delegation is an arrangement rather than an afterthought — agentswarm keeps the seat on decompose/judge/gate and puts the work on explicit-Opus lanes, receipted by an append-only spend ledger that makes the model-routing policy checkable instead of merely asserted. The estate writes itself: COORD.md records what every prompt landed and COORD-AGENTS.md auto-indexes every agent that finishes, so the trail survives compaction, crashes and model changes. Continuity carries across sessions — handoff files, a live line back to the predecessor session, and a successor escort window. And the harness grades itself: a shipped eval suite runs the rules against real sessions. Riding on it, twenty-three natural-language-invocable skills from intake to handoff: ORACLE intake with skill routing, researcher / marketresearcher / explainer / decider / factcheck / watch / introspect / game-forge / gpt / chatroom / archivist / spend / recap / graph / stepbystep / actionplan / critic, a director that chains skills into pipelines, a fable-director that runs the '3 devs and a relay' multi-session arrangement, an agentswarm that runs the fast same-machine delegation arrangement (any seat — Fable or Opus — plus concurrent in-session Opus lanes), a self-recording sessionend handoff with a live cross-session line, and fable-mode — the full discipline contract, loadable on demand. Real tiered sources, honesty labels, search budgets, self-checks, --quick modes throughout.",
+      "version": "3.0.0",
       "license": "MIT",
       "homepage": "https://do.not.rest",
       "keywords": [
@@ -23,6 +23,18 @@
         "orchestration",
         "multi-agent",
         "sessions"
+      ]
+    },
+    {
+      "name": "oracle-suite",
+      "source": "./plugins/oracle-suite-tombstone",
+      "description": "RENAMED → install `notrest@notrest`. This entry exists only to tell existing installs where the harness went.",
+      "version": "9.0.0",
+      "license": "MIT",
+      "homepage": "https://do.not.rest",
+      "keywords": [
+        "deprecated",
+        "renamed"
       ]
     }
   ]

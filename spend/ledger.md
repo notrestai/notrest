@@ -23,3 +23,4 @@
 [2026-07-25 05:26Z] lane=subagent model=claude-opus-5 tokens=74456 grade=observed purpose="intake auto-inventory lane (Leverage probe-then-propose + routing law + handoff line) — 10/10 gate greps"
 [2026-07-25 05:26Z] lane=subagent model=claude-opus-5 tokens=145094 grade=observed purpose="watch lane (watchlist/drift-log contracts, 71/71 fixture, scheduling owner-gated)"
 [2026-07-25 05:26Z] lane=subagent model=claude-opus-5 tokens=112061 grade=observed purpose="evals lane (runner format extracted+proven, 5 cases 13 graders validated at $0)"
+[2026-07-25 05:42Z] lane=subagent model=claude-opus-5 tokens=121458 grade=observed purpose="rename lane: oracle-suite -> notrest (77 git renames, tombstone, full sweep) + caught pre-existing YAML frontmatter bug in 3 skills"

@@ -1,0 +1,18 @@
+{
+  "name": "oracle-suite",
+  "displayName": "ORACLE Suite (renamed → notrest)",
+  "version": "9.0.0",
+  "description": "RENAMED → install `notrest@notrest`. This entry exists only to tell existing installs where the harness went.",
+  "author": {
+    "name": "Not Rest Inc.",
+    "url": "https://do.not.rest"
+  },
+  "homepage": "https://do.not.rest",
+  "repository": "https://github.com/notrestai/notrest.git",
+  "license": "MIT",
+  "keywords": [
+    "deprecated",
+    "renamed"
+  ],
+  "hooks": "./hooks/hooks.json"
+}

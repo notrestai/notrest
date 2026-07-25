@@ -16,7 +16,7 @@ The prompt names (a) the **ordered sequence of skills** to run and (b) the **see
 ## Locating the skills
 
 Resolve each named skill's `SKILL.md` by checking these locations **in order**, and read the first that exists:
-1. **`${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md`** — when this suite runs as an **installed plugin** (`oracle-suite`), the director and its siblings ship together here. `CLAUDE_PLUGIN_ROOT` is set by Claude Code for plugin code; expand it and look here FIRST. (If your shell doesn't expose it, the plugin's skills sit alongside this `director/` folder — i.e. `../<name>/SKILL.md` relative to this file.)
+1. **`${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md`** — when this suite runs as an **installed plugin** (`notrest`), the director and its siblings ship together here. `CLAUDE_PLUGIN_ROOT` is set by Claude Code for plugin code; expand it and look here FIRST. (If your shell doesn't expose it, the plugin's skills sit alongside this `director/` folder — i.e. `../<name>/SKILL.md` relative to this file.)
 2. **`.claude/skills/<name>/SKILL.md`** — a project-level skill.
 3. **`~/.claude/skills/<name>/SKILL.md`** — a global/user skill.
 

@@ -5,14 +5,26 @@ The **`notrest`** plugin marketplace by [Not Rest Inc.](https://do.not.rest).
 ## Install
 
 ```
-/plugin marketplace add notrestai/ORACLE
-/plugin install oracle-suite@notrest
+/plugin marketplace add notrestai/notrest
+/plugin install notrest@notrest
+```
+
+**Renaming from `oracle-suite`?** Same harness, new id — the plugin was renamed `oracle-suite` → `notrest`
+(the marketplace is still `notrest`, so the install id is now `notrest@notrest` and skills invoke as
+`/notrest:<name>`). Install `notrest` as above, then drop the old entry:
+
+```
+claude plugin uninstall oracle-suite
 ```
 
 ## Plugins
 
-### ORACLE Suite (`oracle-suite`)
-A working-session toolkit — structured thinking from intake to handoff, built on three principles: **token-lean** (progressive disclosure, `--quick` modes, built-in search budgets), **verified** (real tiered sources, disconfirmation passes, honesty labels on every claim), and **model-agnostic** (the discipline lives in the skills, so any model runs them reliably):
+### notrest (`notrest`)
+**The session harness** — the scaffolding a working session runs inside: discipline auto-anchored into
+every session, delegation as an arrangement (agentswarm) with a spend ledger that makes the model-routing
+policy checkable, an append-only estate that records every prompt and every agent, continuity + successor
+escort across sessions, and an eval suite the harness runs against its own rules. Twenty-three skills ride
+on it — structured thinking from intake to handoff, built on three principles: **token-lean** (progressive disclosure, `--quick` modes, built-in search budgets), **verified** (real tiered sources, disconfirmation passes, honesty labels on every claim), and **model-agnostic** (the discipline lives in the skills, so any model runs them reliably):
 
 | Skill | What it does |
 |---|---|
@@ -43,7 +55,7 @@ A working-session toolkit — structured thinking from intake to handoff, built 
 `oracle` + `sessionend` are bookends: ORACLE loads the foundation at the start, sessionend updates it at the end — together they make sessions continuous. **fable-mode** is the posture in between: the SessionStart hook injects its discipline anchor every session, so reliable working habits are on by default without anyone typing `/fable-mode`.
 
 ## Continuity & discipline hooks
-- **SessionStart** — self-updates the plugin from git (fire-and-forget `--ff-only`; note: marketplace-cache installs aren't git clones — there the update path is `claude plugin update oracle-suite@notrest`); injects the **fable-discipline anchor** AND the **offload model policy hard rule** (Fable sessions offload every spawned job on explicit Opus — never sonnet/haiku, never inherited Fable — with agentswarm as the default delegation arrangement) every session; **auto-creates `COORD.md`** — the session coordination ledger (the fable-coord behavior, generalized) — at any git-repo root and nudges reading its tail when it exists; detects `START-HERE.md` / `HANDOFF.md` and adds a resume nudge; detects per-lane `COORD-<LANE>.md` (or legacy `FABLE-COORD*.md`) blackboards and nudges seating the fable-director.
+- **SessionStart** — self-updates the plugin from git (fire-and-forget `--ff-only`; note: marketplace-cache installs aren't git clones — there the update path is `claude plugin update notrest@notrest`); injects the **fable-discipline anchor** AND the **offload model policy hard rule** (Fable sessions offload every spawned job on explicit Opus — never sonnet/haiku, never inherited Fable — with agentswarm as the default delegation arrangement) every session; **auto-creates `COORD.md`** — the session coordination ledger (the fable-coord behavior, generalized) — at any git-repo root and nudges reading its tail when it exists; detects `START-HERE.md` / `HANDOFF.md` and adds a resume nudge; detects per-lane `COORD-<LANE>.md` (or legacy `FABLE-COORD*.md`) blackboards and nudges seating the fable-director.
 - **UserPromptSubmit** — when `COORD.md` exists, injects a one-line reminder on every prompt: append one honest ledger line when this prompt's work lands (ask → landed | evidence).
 - **PreCompact** — reminds that a deliberate `/sessionend` handoff preserves more than automatic compaction.
 - **SubagentStop** — when a spawned agent finishes inside a git repo, auto-writes one machine-written line (id · model · last conclusion · transcript path) to `COORD-AGENTS.md` at the repo root, so the session's decision pattern — which agents were consulted and what each concluded — lands in the repo at zero model-token cost (the archivist indexes it; entries point at the full transcripts).

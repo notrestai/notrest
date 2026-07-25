@@ -1,5 +1,5 @@
 #!/bin/bash
-# oracle-suite SubagentStop hook — auto-index every completed agent.
+# notrest SubagentStop hook — auto-index every completed agent.
 # The harness already writes each subagent's full transcript to disk; this hook
 # adds the zero-model-token index layer: one machine-written line per agent into
 # COORD-AGENTS.md at the git root, so the repo carries the session's decision
@@ -146,7 +146,7 @@ try:
                  f"| last: {snippet} | transcript: {tdisp}\n")
 
         header = (
-            "# COORD-AGENTS.md — agent activity ledger (auto-written by the oracle-suite SubagentStop hook)\n"
+            "# COORD-AGENTS.md — agent activity ledger (auto-written by the notrest SubagentStop hook)\n"
             "\n"
             "One line per completed agent, machine-written — never hand-edit (the COORD.md ledger is the\n"
             "human layer). The transcript path on each line is the full record: the entry is the index,\n"

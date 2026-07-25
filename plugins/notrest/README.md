@@ -71,11 +71,15 @@ real tokens, so they gate releases rather than run on hooks.
 
 ## Install
 ```
-/plugin marketplace add notrestai/ORACLE
-/plugin install oracle-suite@notrest
+/plugin marketplace add notrestai/notrest
+/plugin install notrest@notrest
 ```
-Then invoke any skill as `/oracle-suite:<name>` (e.g. `/oracle-suite:researcher`), or just
+Then invoke any skill as `/notrest:<name>` (e.g. `/notrest:researcher`), or just
 `/researcher` when unambiguous.
+
+**Renaming from `oracle-suite`?** Same harness, new id — the plugin was renamed
+`oracle-suite` → `notrest` (the marketplace name is unchanged, hence `notrest@notrest`).
+Install `notrest` as above, then remove the old entry with `claude plugin uninstall oracle-suite`.
 
 ## Note on `director`
 `director` orchestrates the sibling skills by reading their `SKILL.md` files directly. It resolves
