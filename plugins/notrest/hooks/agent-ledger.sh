@@ -175,7 +175,29 @@ try:
             "## LEDGER\n"
         )
 
-        # ── concurrency-safe append: O_APPEND + fcntl.flock serialize writers.
+        # ── duplicate-delivery guard (the COORD half).
+        # The harness can deliver the SAME SubagentStop more than once — observed in
+        # this repo's own COORD-AGENTS.md as byte-identical pairs (27 duplicate lines
+        # in 94), while spend/ledger.md held exactly one receipt per agent. Same
+        # process, same flock, same payload: the flock was never the problem. The
+        # spend receipt below CHECKED for its own prior line; this append did not
+        # check anything, so every redelivered stop landed a second time. (hooks.json
+        # registers this script once and one plugin is enabled, so the repeat is a
+        # redelivery, not a double registration — and the guard below is deliberately
+        # agnostic to how many times the event arrives.)
+        #
+        # The key is a STOP EVENT, not an agent: the entry with its timestamp stripped
+        # — agent id + model + transcript size + snippet + path. A resumed lane
+        # legitimately stops again with a GROWN transcript (real example in this
+        # ledger: one lane stopped at bytes=1050279, then 1243214, then 1420927) and
+        # must keep earning a line; a redelivered stop is identical and must not.
+        # Dropping the timestamp also collapses a pair that straddles a minute
+        # boundary, which an exact-line match would miss.
+        stop_rx = re.compile(r"^- \[[^\]]*\] ")
+        entry_sig = stop_rx.sub("", entry.rstrip("\n"))
+
+        # ── concurrency-safe append: O_APPEND + fcntl.flock serialize writers, and
+        # the guard runs INSIDE the lock so a racing pair cannot both pass it.
         # Header is written only when the file has no "## LEDGER" marker AND is
         # effectively blank (empty or whitespace-only) — so a whitespace-only file
         # still recovers its header, while a hand-damaged file with real content
@@ -190,7 +212,11 @@ try:
                     existing = lf.read()
                     if "## LEDGER" not in existing and not existing.strip():
                         lf.write(header)
-                    lf.write(entry)
+                    already = any(stop_rx.sub("", ln) == entry_sig
+                                  for ln in existing.splitlines()
+                                  if ln.startswith("- ["))
+                    if not already:
+                        lf.write(entry)
                     lf.flush()
                 finally:
                     fcntl.flock(lf, fcntl.LOCK_UN)
@@ -204,7 +230,15 @@ try:
         #     create it, never mkdir spend/: a repo without a ledger has opted out.
         #   · IDEMPOTENT — the line carries a trailing "agent=<id>" token and we
         #     skip entirely if that token is already in the ledger, so replayed
-        #     or duplicated SubagentStop events can never double-log.
+        #     or duplicated SubagentStop events can never double-log. This key is
+        #     deliberately COARSER than the COORD guard above (agent, not stop
+        #     event): tok_total is summed over the WHOLE transcript, so receipting
+        #     a resumed lane's later stops would re-bill every token of the earlier
+        #     ones. One receipt per agent under-counts a resumed lane's tail; a
+        #     per-stop receipt would over-count its head several times over. The
+        #     under-count is the honest error and the shipped behavior — do not
+        #     "align" this with the COORD key without also switching tok_total to a
+        #     delta against the previously receipted size.
         #   · Format is byte-compatible with spend.py's own log writer (same
         #     field order, same flock'd O_APPEND discipline, same "unknown"
         #     rendering for a missing count). Replicated rather than imported

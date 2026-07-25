@@ -98,6 +98,69 @@ chk "idempotence: line count unchanged ($LBEFORE)" "$LAFTER" "$LBEFORE"
 chk "idempotence: still exactly one agt_usage line" "$(grep -c 'agent=agt_usage$' "$LEDGER" || true)" "1"
 chk "idempotence: second run still exits 0" "$(cat "$TMP/hook.rc")" "0"
 
+# ── 2b. DUPLICATE DELIVERY: the harness can send the same SubagentStop twice ──
+# This is the defect that put 27 byte-identical duplicate lines into the real
+# COORD-AGENTS.md while spend/ledger.md stayed clean: the receipt block checked for
+# its own prior line, the COORD block checked nothing. Race the invocations rather
+# than running them in sequence, so the flock is actually exercised.
+C="$TMP/repo-c"; mkdir -p "$C"; git -C "$C" init -q 2>/dev/null
+python3 "$SPEND" log --model claude-opus-5 --tokens 1 --lane subagent \
+  --purpose "seed" --root "$C" >/dev/null 2>&1
+T4="$C/agent-agt_race.jsonl"; cp "$T1" "$T4"
+
+race() { # $1 agent id  $2 transcript  $3 how many racers
+  local i pids=()
+  for i in $(seq 1 "$3"); do
+    ( cd "$C" && printf '{"agent_id":"%s","transcript_path":"%s"}' "$1" "$2" \
+        | bash "$HOOK" ) >"$TMP/race.$i.out" 2>"$TMP/race.$i.err" &
+    pids+=($!)
+  done
+  for i in "${pids[@]}"; do wait "$i"; done
+}
+
+race agt_race "$T4" 5
+CA="$C/COORD-AGENTS.md"; CL="$C/spend/ledger.md"
+chk "race: 5 concurrent invocations → exactly ONE COORD-AGENTS line" \
+  "$(grep -c 'agent=agt_race ' "$CA" 2>/dev/null || true)" "1"
+chk "race: 5 concurrent invocations → exactly ONE spend receipt" \
+  "$(grep -c 'agent=agt_race$' "$CL" 2>/dev/null || true)" "1"
+chk "race: every racer still exited 0" \
+  "$(cat "$TMP/race.1.out" "$TMP/race.2.out" "$TMP/race.3.out" "$TMP/race.4.out" "$TMP/race.5.out" | wc -c | tr -d ' ')" "0"
+chk "race: COORD header written exactly once" \
+  "$(grep -c '^## LEDGER' "$CA" 2>/dev/null || true)" "1"
+
+# a sequential redelivery (the common case) is equally a no-op for both files
+run_hook "$C" agt_race "$T4"
+chk "redelivery: COORD still one line" "$(grep -c 'agent=agt_race ' "$CA" || true)" "1"
+chk "redelivery: spend still one receipt" "$(grep -c 'agent=agt_race$' "$CL" || true)" "1"
+
+# ── 2c. a RESUMED lane is a different stop event and must still earn its line ──
+# The real ledger shows one lane stopping at bytes=1050279, 1243214, 1420927 — the
+# guard keys on the stop event (transcript size + snippet), never on the agent id,
+# so growth is recorded and only redelivery is dropped.
+cat >> "$T4" <<'EOF'
+{"type":"assistant","message":{"role":"assistant","model":"claude-opus-5","usage":{"input_tokens":5,"output_tokens":5},"content":[{"type":"text","text":"Round two: same lane resumed, more work done, transcript grew."}]}}
+EOF
+run_hook "$C" agt_race "$T4"
+chk "resume: a grown transcript earns a SECOND COORD line" \
+  "$(grep -c 'agent=agt_race ' "$CA" || true)" "2"
+chk "resume: that second line is not a duplicate of the first" \
+  "$(grep 'agent=agt_race ' "$CA" | sort -u | wc -l | tr -d ' ')" "2"
+race agt_race "$T4" 3
+chk "resume: redelivering the RESUMED stop adds nothing" \
+  "$(grep -c 'agent=agt_race ' "$CA" || true)" "2"
+
+# ── 2d. the observed unknown-grade duplicate (model=? bytes=?) also collapses ──
+# Real case: agent=ae4b4eb43312b7208 landed twice at 08:03Z with model=? bytes=?.
+# An unreadable transcript still yields a known agent id, so the entry is written —
+# but only once.
+race agt_unknown "$C/does-not-exist.jsonl" 4
+chk "unknown-grade entry written once despite 4 racers" \
+  "$(grep -c 'agent=agt_unknown ' "$CA" || true)" "1"
+grep -q 'agent=agt_unknown model=? bytes=?' "$CA" \
+  && ok "unknown-grade entry keeps its honest '?' fields" \
+  || no "unknown-grade entry keeps its honest '?' fields" "$(grep 'agt_unknown' "$CA" || true)"
+
 # ── 3. no usage data → grade=estimate, no token count ────────────────────────
 run_hook "$A" agt_nousage "$T2"
 LINE2="$(grep 'agent=agt_nousage$' "$LEDGER" | head -1)"

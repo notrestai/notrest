@@ -16,14 +16,22 @@ Exit codes: 0 all pass · 5 warnings only · 6 any fail · 3 target unusable · 
 """
 
 import argparse
+import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
 PASS, WARN, FAIL, SKIP = "PASS", "WARN", "FAIL", "SKIP"
 EXIT_OK, EXIT_USAGE, EXIT_TARGET, EXIT_WARN, EXIT_FAIL = 0, 2, 3, 5, 6
+
+# The always-on context every session pays for this plugin. Above this, the harness is
+# taxing every session it rides in — the descriptions have to come back down.
+ALWAYS_ON_CEILING = 3600
+# How recent an estate write still counts as evidence a hook is firing.
+LIVENESS_HOURS = 48
 
 # The migration stub for the oracle-suite -> notrest rename. Pinned forever: bumping it
 # would re-offer the dead plugin to existing installs instead of pointing them at the new id.
@@ -87,6 +95,83 @@ def run(cmd, cwd=None, timeout=45):
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except Exception as exc:
         return None, str(exc)
+
+
+# ── runtime-surface helpers ───────────────────────────────────────────────────────────
+def config_dir():
+    """The Claude config root this machine is actually using ($CLAUDE_CONFIG_DIR wins)."""
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+
+
+def tilde(path):
+    home = os.path.expanduser("~")
+    return "~" + path[len(home):] if path.startswith(home + os.sep) else path
+
+
+def skills_dir_links():
+    """Every symlink under <config>/skills -> [(link_path, resolved_target)].
+
+    A symlink here is the in-place install: the CLI loads the linked directory as a
+    plugin with no cache copy anywhere, so the running build IS a working tree."""
+    base = os.path.join(config_dir(), "skills")
+    out = []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for n in names:
+        p = os.path.join(base, n)
+        if os.path.islink(p):
+            out.append((p, os.path.realpath(p)))
+    return out
+
+
+def installed_rows(name):
+    """[(install_id, version)] for every installed plugin whose id is '<name>@...'."""
+    inst, err = jload(os.path.join(config_dir(), "plugins", "installed_plugins.json"))
+    if err or not isinstance(inst, dict):
+        return []
+    rows = []
+    for key, entries in (inst.get("plugins") or {}).items():
+        if key.split("@")[0] != name:
+            continue
+        for e in entries or []:
+            if isinstance(e, dict):
+                rows.append((key, e.get("version")))
+    return rows
+
+
+def head_version(t, manifest_path):
+    """The plugin version as COMMITTED -> (version, note). Never guesses: if git cannot
+    produce the manifest at HEAD the comparison is reported unread, not assumed equal."""
+    rc, out = run(["git", "show", "HEAD:%s" % t.rel(manifest_path)], cwd=t.root)
+    if rc != 0:
+        first = (out or "").strip().split("\n")[0][:70]
+        return None, first or "git could not read the manifest at HEAD"
+    try:
+        return (json.loads(out) or {}).get("version"), None
+    except Exception as exc:
+        return None, "the manifest at HEAD is not valid JSON: %s" % exc
+
+
+STAMP_RE = re.compile(r"\[(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})Z\]")
+
+
+def latest_stamp(path):
+    """Newest '[YYYY-MM-DD HH:MMZ]' stamp in a file, as a naive-UTC datetime."""
+    latest = None
+    for m in STAMP_RE.finditer(read(path) or ""):
+        try:
+            dt = datetime.datetime(*[int(g) for g in m.groups()])
+        except ValueError:
+            continue
+        if latest is None or dt > latest:
+            latest = dt
+    return latest
+
+
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
 # ── minimal front-matter parse (check 1) ──────────────────────────────────────────────
@@ -542,14 +627,84 @@ def check_estate(t):
 
 
 def check_install_freshness(t):
+    """Which build is the session actually running — and is it this one?
+
+    Two worlds, two vocabularies, and doctor must never describe one in the other's
+    words. skills-dir mode symlinks a working tree straight into <config>/skills, so
+    there is no clone and no cache and the running build is whatever is on disk right
+    now; cache mode copies a published version and the question becomes version drift.
+    Naming the wrong surface was the original defect: the check read git state and
+    reported it as 'marketplace clone=...'."""
     man, _ = jload(t.manifest(t.primary))
     name = (man or {}).get("name")
-    repo_v = (man or {}).get("version")
+    tree_v = (man or {}).get("version")
     if not name:
         return SKIP, ["no plugin name in the manifest"], None
-    clone = os.path.expanduser("~/.claude/plugins/marketplaces/%s" % name)
+
+    primary_real = os.path.realpath(t.primary)
+    links = skills_dir_links()
+    in_place = [l for l in links if l[1] == primary_real]
+    if in_place:
+        return freshness_skills_dir(t, name, tree_v, in_place[0])
+
+    misdirected = [l for l in links if os.path.basename(l[0]) == name]
+    if misdirected:
+        link, target = misdirected[0]
+        return WARN, ["runtime=skills-dir(foreign tree) · tree=v%s · %s -> %s"
+                      % (tree_v, tilde(link), target),
+                      "the '%s' skills-dir link does NOT resolve to this repo (%s) — the session "
+                      "loads that other copy in place, so nothing checked here is what runs"
+                      % (name, primary_real)], \
+            ("repoint the link at this repo: ln -sfn %s %s   (then restart)"
+             % (primary_real, link))
+
+    return freshness_cache(t, name, tree_v)
+
+
+def freshness_skills_dir(t, name, tree_v, link):
+    """In-place mode: the runtime IS this tree, so the honest question is not 'is the
+    install current' but 'does anyone else see what this session is running'."""
+    link_path, target = link
+    head_v, note = head_version(t, t.manifest(t.primary))
+    status, fix = PASS, None
+    detail = ["runtime=skills-dir(in-place) · tree=v%s · HEAD=v%s"
+              % (tree_v, head_v or "unread"),
+              "link %s -> %s" % (tilde(link_path), target)]
+
+    shadow = installed_rows(name)
+    if not shadow:
+        detail.append("no installed plugin owns the name '%s' — the session loads this working "
+                      "tree itself; no marketplace clone and no cache copy is read" % name)
+    else:
+        status = WARN
+        detail.append("SHADOWED — %s is installed as %s, and an installed plugin outranks the "
+                      "skills-dir copy, so this tree is NOT the build the session loaded"
+                      % (", ".join("v%s" % v for _k, v in shadow),
+                         ", ".join(k for k, _v in shadow)))
+        fix = ("claude plugin uninstall %s   (an installed plugin takes the name; until it is "
+               "gone, %s is ignored) — then restart"
+               % (shadow[0][0], tilde(link_path)))
+
+    if head_v is None:
+        detail.append("tree-vs-HEAD comparison UNREAD: %s" % note)
+    elif head_v != tree_v:
+        status = WARN
+        detail.append("UNCOMMITTED RELEASE — the running tree says v%s, HEAD still says v%s"
+                      % (tree_v, head_v))
+        fix = fix or ("commit the release (git add -A && git commit) — in skills-dir mode the "
+                      "session runs the WORKING TREE, so every reader at HEAD sees a build that "
+                      "does not exist on this machine")
+    elif status == PASS:
+        detail.append("tree and HEAD agree at v%s — the in-place runtime is the committed build"
+                      % tree_v)
+    return status, detail, fix
+
+
+def freshness_cache(t, name, repo_v):
+    clone = os.path.join(config_dir(), "plugins", "marketplaces", name)
     if not os.path.isdir(clone):
-        return SKIP, ["no marketplace clone at ~/.claude/plugins/marketplaces/%s" % name], None
+        return SKIP, ["no skills-dir link and no marketplace clone at %s — nothing on this "
+                      "machine claims to run %s" % (tilde(clone), name)], None
 
     clone_v = None
     for cand in (os.path.join(clone, "plugins", name, ".claude-plugin", "plugin.json"),
@@ -560,14 +715,10 @@ def check_install_freshness(t):
             if clone_v:
                 break
 
-    installed_v = None
-    inst, err = jload(os.path.expanduser("~/.claude/plugins/installed_plugins.json"))
-    if not err and isinstance(inst, dict):
-        rows = (inst.get("plugins") or {}).get("%s@%s" % (name, name)) or []
-        if rows and isinstance(rows[0], dict):
-            installed_v = rows[0].get("version")
+    rows = installed_rows(name)
+    installed_v = rows[0][1] if rows else None
 
-    detail = ["repo=v%s · marketplace clone=v%s · installed=v%s"
+    detail = ["runtime=marketplace-cache · repo=v%s · marketplace clone=v%s · installed=v%s"
               % (repo_v, clone_v, installed_v)]
     seen = [v for v in (clone_v, installed_v) if v]
     if not seen:
@@ -578,6 +729,120 @@ def check_install_freshness(t):
     return WARN, detail + ["INSTALL DRIFT — the session is running a different build than this repo"], \
         ("claude plugin marketplace update %s && claude plugin update %s@%s   (then restart; the "
          "hook's git self-update no-ops on a marketplace-cache install)" % (name, name, name))
+
+
+ALWAYS_ON_RE = re.compile(r"Always-on:\s*~?\s*([\d,]+)\s*tok", re.I)
+SOURCE_RE = re.compile(r"^\s*Source:\s*(\S+)\s*$", re.M)
+
+
+def check_token_budget(t):
+    """The always-on context tax, read off the CLI that charges it.
+
+    Every skill description is loaded into every session whether the skill fires or not.
+    The number the CLI prints is the receipt; anything else is a guess, so when the CLI
+    cannot be asked this check SKIPs and says which ids it tried."""
+    man, _ = jload(t.manifest(t.primary))
+    name = (man or {}).get("name")
+    if not name:
+        return SKIP, ["no plugin name in the manifest"], None
+    if not shutil.which("claude"):
+        return SKIP, ["the `claude` CLI is not on PATH — the always-on cost is unmeasurable "
+                      "here (it is the CLI's number, never doctor's estimate)"], None
+
+    attempts = [
+        # The tree first: --plugin-dir loads THIS directory in place, so the number
+        # describes what is being checked rather than whatever build is installed.
+        (["claude", "--plugin-dir", t.primary, "plugin", "details", name],
+         "%s via --plugin-dir %s" % (name, t.rel(t.primary))),
+        (["claude", "plugin", "details", "%s@skills-dir" % name], "%s@skills-dir" % name),
+        (["claude", "plugin", "details", "%s@%s" % (name, name)], "%s@%s" % (name, name)),
+        (["claude", "plugin", "details", name], name),
+    ]
+    tried = []
+    for cmd, label in attempts:
+        tried.append(label)
+        _rc, out = run(cmd, cwd=t.root, timeout=60)
+        m = ALWAYS_ON_RE.search(out or "")
+        if not m:
+            continue
+        tokens = int(m.group(1).replace(",", ""))
+        src = SOURCE_RE.search(out or "")
+        detail = ["always-on ~%s tok · ceiling %s · read from %s"
+                  % ("{:,}".format(tokens), "{:,}".format(ALWAYS_ON_CEILING),
+                     src.group(1) if src else label)]
+        if tokens > ALWAYS_ON_CEILING:
+            return FAIL, detail + ["OVER BUDGET by %s tok — every session pays this before it "
+                                   "does anything" % "{:,}".format(tokens - ALWAYS_ON_CEILING)], \
+                "diet the fattest descriptions (see docs/CAPABILITIES.md)"
+        return PASS, detail + ["%s tok of headroom under the ceiling"
+                               % "{:,}".format(ALWAYS_ON_CEILING - tokens)], None
+
+    return SKIP, ["no plugin id answered `claude plugin details` (tried: %s) — the plugin is "
+                  "neither installed nor loadable from this tree" % "; ".join(tried)], None
+
+
+HOOK_TAGGED_RE = re.compile(r"^- \[[^\]]*\]\s*\[hook\]", re.M)
+
+
+def check_hooks_fired(t):
+    """Liveness, not syntax. HOOKS proves the scripts exist and parse; nothing there
+    proves one ever RAN. A hook that is wired, parses, and never fires is invisible —
+    it leaves no error, no log, and no gap anyone notices. This looks for the marks a
+    firing hook leaves on the estate. It is a heuristic and never FAILs: absence of a
+    mark is absence of evidence (a fresh repo has none), not proof of a dead hook."""
+    if not t.coord and not t.coord_agents:
+        return SKIP, ["no COORD.md / COORD-AGENTS.md here — nothing a hook would have "
+                      "written to look at"], None
+
+    detail, evidence = [], []
+
+    if t.coord:
+        tail = "\n".join((read(t.coord) or "").split("\n")[-200:])
+        tagged = HOOK_TAGGED_RE.findall(tail)
+        stamps = [m for m in STAMP_RE.finditer(tail)]
+        newest = None
+        for m in HOOK_TAGGED_RE.finditer(tail):
+            s = STAMP_RE.search(tail[m.start():m.end() + 30])
+            if s:
+                newest = s.group(0)
+        if tagged:
+            evidence.append("coord-tag")
+            detail.append("COORD.md tail(200 lines, %d stamped): %d [hook]-tagged line(s)%s"
+                          % (len(stamps), len(tagged), ", newest %s" % newest if newest else ""))
+        else:
+            detail.append("COORD.md tail(200 lines): no [hook]-tagged line — the SessionStart / "
+                          "SessionEnd writers have left no mark in the active volume")
+    else:
+        detail.append("no COORD.md — the [hook]-tag probe is SKIPPED")
+
+    now = utc_now()
+    pair = []
+    for label, path in (("COORD-AGENTS.md", t.coord_agents), ("spend/ledger.md", t.ledger)):
+        if not path:
+            pair.append("%s absent" % label)
+            continue
+        stamp = latest_stamp(path)
+        if stamp is None:
+            pair.append("%s unstamped" % label)
+            continue
+        age = (now - stamp).total_seconds() / 3600.0
+        pair.append("%s newest %sZ (%.1fh)" % (label, stamp.strftime("%Y-%m-%d %H:%M"), age))
+        if 0 <= age <= LIVENESS_HOURS:
+            pair[-1] += " FRESH"
+    fresh = sum(1 for p in pair if p.endswith("FRESH"))
+    if fresh >= 2:
+        evidence.append("fresh-agent+spend-pair")
+    detail.append(" · ".join(pair) + "  [window %dh]" % LIVENESS_HOURS)
+
+    if evidence:
+        return PASS, ["hooks look LIVE by heuristic (%s) — this is liveness evidence, not proof: "
+                      "a mark on the estate means something wrote it, not that every hook fires"
+                      % ", ".join(evidence)] + detail, None
+    return WARN, ["no evidence any hook has FIRED — heuristic only, never a failure: a fresh "
+                  "repo, a quiet 48h, or a hand-pruned COORD.md all look like this"] + detail, \
+        ("run a session in this repo and re-check — if the marks still never appear, the hooks "
+         "are wired but dead: check `claude plugin list` (a shadowed or unloaded plugin runs no "
+         "hooks at all) rather than the scripts, which HOOKS already proved parse")
 
 
 def check_gitignore(t):
@@ -658,8 +923,10 @@ CHECKS = [
     ("MANIFESTS", check_manifests),
     ("SKILL COUNT", check_skill_count),
     ("HOOKS", check_hooks),
+    ("HOOKS FIRED", check_hooks_fired),
     ("ESTATE", check_estate),
     ("INSTALL FRESHNESS", check_install_freshness),
+    ("TOKEN BUDGET", check_token_budget),
     ("GITIGNORE", check_gitignore),
     ("RENDER SURFACES", check_render_surfaces),
 ]

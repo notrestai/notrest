@@ -1,5 +1,55 @@
 # Changelog — the notrest harness
 
+## 3.8.0 — 2026-07-25
+
+**The estate learns to remember as records and be seen as a river — and every defect the register found is fixed.**
+
+- **The findings store** (`archive/findings.jsonl`, archivist-owned): skills emit compact
+  finding records — ask · statement · labeled evidence · relation to the goal · status —
+  validated at the door by 19 named rejection rules (one validator replacing a dozen
+  per-skill lint scripts). Append-only; supersede/refute are tombstone records resolved by
+  link-walking. researcher, decider, factcheck are rewired to the new sink (label and
+  verdict grammars intact); marketresearcher/critic/explainer/recap migrate next release.
+- **The river** (`graph.py river`): the session track drawn as a flow — main channel
+  toward the goal bank, side channels merging back or dead-ending, backtrack loops,
+  conflict rocks, a stone per finding, COORD milestones flying as flags on every render.
+  Retroactively proven on today's real ledger: 53 records, 6 channels, 12 rocks,
+  9 backtracks, 40 flags, 101KB self-contained, byte-identical re-renders. The
+  token-efficiency law is in graph/SKILL.md: renders are script-built at zero model
+  tokens — the model never hand-draws. Plus `links`/`orphans`/`stale` CLI queries.
+- **The spend gate enforces the live policy** (was: the retired fable-only rule — a
+  sonnet lane passed CLEAN): any post-2026-07-15 offload lane not on opus exits 4;
+  policy-day entries grandfathered (the ledger cannot prove intra-day order; the
+  day-after boundary is fixture-pinned); gpt/chatroom-gpt exempt-but-counted;
+  `--since`/`--json`. Real ledger re-verdicts CLEAN — 0 post-policy violations, 1
+  unverifiable `model=?` entry printed on its own line every run.
+- **Receipt dedup at the stop-event key:** the COORD-AGENTS.md append had NO idempotency
+  guard (the root cause of every duplicate — the flock was never the problem); 5 racing
+  deliveries now land 1 line (negative control: HEAD's hook lands 2); resumed lanes still
+  earn their new lines.
+- **doctor grows to ten checks:** skills-dir-honest INSTALL FRESHNESS (UNCOMMITTED
+  RELEASE / broken-link / SHADOWED — the third condition caught a live reinstall
+  shadowing the runtime within minutes of existing), TOKEN BUDGET via `plugin details`
+  (3,536 of the 3,600 ceiling — 64 headroom), HOOKS FIRED liveness heuristic. 73/73.
+- **eval grows to ten checks:** REFERENCES-CITED (citing a reference you don't ship now
+  fails, scoped to avoid cross-skill false positives) + `--baseline` diff mode. 18/18.
+- **The no-secrets law is now code:** chatroom's post and gpt-bridge paths refuse 7
+  secret classes (private keys, AWS/OpenAI/GitHub/Slack tokens, credential assignments,
+  .env lines — a sha256 line still posts, asserted as the false-positive control),
+  exit 5, class named, match never echoed. Plus `room.py join` and bridge spend receipts.
+- **watch gets its script:** `watch.py due|probe|append` — dead sources and unchanged
+  pages resolve at zero model tokens (strong-ETag conditional GETs; If-Modified-Since
+  dropped after a real same-second-rewrite bug silently lost drift in fixture);
+  `F-<id>` findings-store subjects work alongside legacy dossier paths.
+- **gpt.sh + refuter gets teeth:** codex invocation, token parsing, and spend
+  auto-receipt in one script (lane state persistent at `~/.claude/gpt-lane` — a
+  conversation meant to remember cannot live in scratch; ratified); refuter briefs are
+  minted by `brief.py` and returned reports lint-gated by `verdict_lint.py` (a CONFIRMED
+  without a fenced reproduction is exit 5).
+- Gate: 11 fixtures (500+ assertions) seat-re-run exit 0 · eval 10/10 exit 0 · doctor
+  10/10 exit 0 · validate 0 · the store's first two real records (F-1 the shadow
+  conflict, F-2 this release) rendered as river mode=findings+coord.
+
 ## 3.7.0 — 2026-07-25
 
 **The routing law gets an enforcement layer — and the harness gets its capability register.**

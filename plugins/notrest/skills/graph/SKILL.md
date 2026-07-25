@@ -1,21 +1,36 @@
 ---
 name: graph
-description: "An Obsidian-style file graph for any project — a script walks the repo and renders a self-contained, force-directed HTML graph of every file and the references between them (wikilinks, links, imports, requires, sourced scripts) at zero model tokens, then OPENS it. Use on /graph, \"file graph\", \"project graph\", \"map the files\", \"show me the graph\", \"open the graph\", \"what links to this file\", \"all projects graph\". Scan-then-open, no questions asked."
+description: "Two script-built views, self-contained HTML at zero model tokens, then OPENED: the FILE GRAPH (every file and reference — Obsidian for a codebase) and the RIVER (findings.jsonl + COORD volumes as a river toward the goal — side channels, backtrack loops, conflict rocks, milestone flags). Plus text queries over the last scan. Use on /graph, \"project graph\", \"/graph river\", \"how did we get here\", \"what links to this file\", \"orphans\", \"stale files\", \"all projects graph\"."
 ---
 
-# graph — how this project connects
+# graph — how this project connects, and how it got here
 
-`archivist` says what the estate *knows*. This says how it *connects*: one page, every file
-as a node, every reference the scanner can see as an edge — the Obsidian graph view, for a
-codebase, built by a script.
+`archivist` says what the estate *knows*. This skill draws two things it cannot:
 
-**The economics are the point.** The model never reads files to build this graph — `scan`
-does, and the model only reads a one-line summary (or opens the page). Same pattern as the
-SubagentStop hook and archivist's `index.py`: the machine writes, the session pays nothing.
+- **the file graph** — how the project *connects*: every file a node, every reference the
+  scanner can see an edge. The Obsidian graph view, for a codebase.
+- **the river** (`/graph river`) — how the work *moved*: the findings ledger and the COORD
+  volumes as a river flowing left→right into the goal, with the side routes, the
+  backtracks, the rocks it hit and the flags it passed.
 
-Script: `scripts/graph.py` (python3 stdlib only). Output: `<root>/graph/graph.json` (the
-data) and `<root>/graph/graph.html` (the viewer — regenerated on every scan, data inlined,
-opens over `file://` with zero network requests).
+**The economics are the point.** The model never reads files to build either view — the
+script does, and the model reads a one-line summary (or opens the page). Same pattern as
+the SubagentStop hook and archivist's `index.py`: the machine writes, the session pays
+nothing.
+
+> **Token-efficiency law (owner, 2026-07-25).** Renders are script-built at zero model
+> tokens — the model never hand-draws a diagram; a new visualization is a new script
+> subcommand (the compile doctrine applied to graphs).
+
+Its teeth: layout is deterministic, there are no external or vendored JS libraries (inline
+hand-rolled SVG/CSS only), and **identical inputs render a byte-identical page** — every
+list is sorted and nothing reads the clock, so the page is stamped with the newest *input*
+timestamp unless you pass `--now`. If a re-render produces a different file from the same
+ledger, that is a bug in this script, not noise.
+
+Script: `scripts/graph.py` (python3 stdlib only). Output: `<root>/graph/graph.json` +
+`graph.html` (the file graph) and `<root>/graph/river.json` + `river.html` (the river) —
+each regenerated on every run, data inlined, zero network requests.
 
 ## `/graph` — the default run: SCAN, then OPEN. No questions.
 
@@ -80,6 +95,54 @@ Report: **nodes · edges · the `generated` stamp · which viewer path you used*
 `127.0.0.1:<port>` / opened locally / path printed only). One line, then stop — the page
 is the deliverable, not a description of it.
 
+## `/graph river` — the journey, not the map
+
+`/graph river` (or "how did we get here", "show me the river") draws the *work*, not the
+files. Same three steps — build, open, one line — with `river` in place of `scan`:
+
+```bash
+python3 <graph-skill>/scripts/graph.py river --root "$ROOT"     # → graph/river.{json,html}
+```
+
+**What it reads.** `archive/findings.jsonl` (append-only, one JSON record per line:
+`id · ts · session · skill · kind · ask · statement · evidence[] · relation · links[] ·
+status`) — plus, **always**, the COORD ledger volumes and `COORD-AGENTS.md`. The COORD
+overlay is not a fallback: ships, gates and corrections fly as flags on the bank of every
+river, because the ledger is where this estate already records its milestones.
+
+**How the water is drawn.**
+
+| the shape | what it means |
+|---|---|
+| the wide main channel | `relation: toward` — the flow that got to the goal |
+| a side channel below | `relation: lateral` — a route taken off the main line |
+| an explicit fork | `kind: side-route` — always opens its own channel |
+| a channel that curves back in | a later `toward` record links it: **the side route rejoined** |
+| a channel that tapers and stops | nothing ever linked it again: **dead end**, marked as one |
+| an upstream loop arrow | `relation: back` — a backtrack to something already passed |
+| a red rock in the channel | `kind: conflict`, or any record whose effective status is `refuted` |
+| a stone | every record — every stone turned, whether or not it led anywhere |
+| a flag on the top bank | a COORD ledger line: ship · gate · correction |
+| a tick on the bottom bank | a `COORD-AGENTS.md` entry — which lane was running when |
+| the green bank on the right | the GOAL the river runs toward |
+
+**Effective status is link-walked, not declared.** A later record that links an older one
+and says it *supersedes* or *refutes* it overrides that record's own `status` (refuted
+outranks superseded). Superseded stones fade and strike through; refuted ones become rocks.
+Hover any glyph for its ask → statement → evidence refs with their honesty labels; click to
+pin the card.
+
+**No findings ledger? It degrades, and says so.** With no `archive/findings.jsonl` the river
+is built from the COORD lines themselves — every node marked `inferred: true`, its kind and
+relation read off the line's own words by heuristic, its links chronological rather than
+authored, and the legend saying exactly that on the page. In that mode the river never
+claims a supersession: synthesized links are not evidence of one.
+
+Flags: `--session <lane>` (one lane's river), `--cap N` (default 500 records, newest kept —
+the page says "showing the last N of M"), `--out <file.html>`, `--open` / `--no-open`
+(default: write only, then open with the environment-aware door above), `--now` (stamp with
+clock time instead of the newest input — breaks byte-identical re-renders).
+
 ## Commands
 
 Installed as a plugin the script lives at
@@ -101,8 +164,30 @@ or `~/.claude/skills/…`). `<graph-skill>` below means that path.
   in the summary, not silently dropped. `--per-project-cap` (default 300) keeps big projects
   legible: the estate is always kept, then the best-connected files.
 
+- **Draw the river:** `python3 <graph-skill>/scripts/graph.py river --root <project> [--session S] [--cap N] [--out graph/river.html] [--open|--no-open] [--now]`
+  Prints `…/river.html: N records · C channels (M merged, D dead-end) · R rocks · B backtracks · F milestones · mode=…`,
+  then one `note:` line per honesty note (degrade mode, cap, unparseable ledger lines).
+
+### Queries over the last scan
+
+These answer from `graph/graph.json` — the scan's own output. They never re-derive it and
+never pretend to be live: every answer ends with the `generated` stamp it came from. If
+there is no scan yet they say so and exit 2 (run `scan` first).
+
+- **`links <path>`** — what this file points at and what points at it, by edge kind. Takes
+  an id, a repo-relative path, an absolute path inside the root, or a unique basename; an
+  ambiguous name lists the candidates and exits 2 rather than guessing.
+- **`orphans`** — nodes with no edges either way. Ends with the honest reading: no edge
+  means nothing in *this repo's text* points at it — an entry point, a hook target and dead
+  code look identical from here.
+- **`stale [--days N]`** (default 90) — files untouched for N+ days, oldest first, with the
+  caveat that mtime is the filesystem's: a fresh clone rewrites every one of them.
+
+Both take `--limit N` (default 200, `0` for all).
+
 Exit codes: 0 with a one-line summary on success, 2 on bad arguments (missing root, unknown
-subcommand, empty registry). Unreadable files are skipped and counted, never fatal.
+subcommand, empty registry, no scan data, unresolvable path). Unreadable files are skipped
+and counted, never fatal.
 
 ## What becomes an edge
 
@@ -175,41 +260,66 @@ explicit `/graph` invocations only.
   conclusion from it.
 - **The scan is a snapshot.** Counts move as the repo moves (a lane writing files right now
   changes them). Quote the `generated` stamp with any count you report.
-- **Never hand-edit `graph/graph.json` or `graph/graph.html`.** Both are regenerated on
-  every scan; edits are lost. Fix the repo, re-scan.
+- **Never hand-edit `graph/graph.json`, `graph.html`, `river.json` or `river.html`.** All
+  four are regenerated on every run; edits are lost. Fix the source, re-run.
 - The graph sees what the listing sees: in a git repo, ignored files are absent by design;
   outside git, the skip list hides dependency directories. Say which listing mode ran (the
   summary line prints it) when the absence of a file matters.
+- **The river draws the ledgers, not the truth.** A record's evidence labels are the
+  labels its author wrote; the river displays them and verifies none of them. `[cited]` on
+  a node means someone claimed a citation, not that this skill checked it.
+- **Inferred is not authored.** In COORD-only mode kind, relation and links are heuristics
+  over the ledger's words — the shape is a reading of the trail, and every node says
+  `inferred`. Never quote a coord-only river's channel counts as if the sessions had
+  declared them.
+- **A dead end is a shape, not a judgement.** It says nothing later linked that route —
+  which is what an abandoned experiment and an unfinished-but-live one both look like.
 
 ## Render gate
 
-**Open the HTML before saying it works** — which is why opening is step (b), not an
-optional extra. A scan that writes a file is not a graph that draws. Confirm nodes actually
-render and the header counts match the summary line, then report. Two traps that have both
-bitten:
+**Open the HTML before saying it works.** A run that writes a file is not a page that
+draws. Confirm the glyphs actually render and the header counts match the summary line,
+then report. Two traps that have both bitten:
 - **A `file://` page in the browser pane is a static snapshot** — JS dead, canvas blank.
-  Serve over localhost there (step (b1)). A screenshot of a blank canvas is not a render.
-- **Check it at the size you're actually viewing**, not just the size it loaded at: the
-  viewer re-sizes its canvas (CSS box, backing store and dpr transform together) on every
-  viewport change, and that path is worth a glance when you change window size.
+  Verify by serving it, never by an `open file://`: `doctor/scripts/render-check.sh
+  <page.html>` binds 127.0.0.1 on a private port, curls the page, and only prints a URL
+  once it has proved **HTTP 200** (exit 0 · 4 = served but not 200; reap with
+  `render-check.sh --close <port>`). A screenshot of a blank canvas is not a render.
+- **Check it at the size you're actually viewing.** Both viewers re-fit on viewport change
+  — and the first fit runs before layout settles, which is why the river re-fits on the
+  next frame and on every stage resize. Glance at that path when you change window size.
 
 If you cannot open a browser, say the page was written but not rendered — never claim a
 view you did not see.
 
+## Fixtures
+
+- `scripts/river-fixture.sh` — a synthetic estate whose river shape is known exactly
+  (every kind, relation and status; a merge, two dead ends, a fork, a backtrack, a rock, a
+  supersede, a refute), asserting the counts, the channel outcomes, the edge-kind
+  breakdown, the degrade path, the cap, byte-identical re-render, both theme hooks, zero
+  external assets, a real render-check 200, and all three query verbs. Exit 0 = all held.
+
 ## Self-check before finishing
 
-- The scan was run by the script this turn, and its summary line (nodes, edges, listing
-  mode, skipped) is in the transcript.
+- The scan (or `river`) was run by the script this turn, and its summary line is in the
+  transcript.
 - The page was actually opened — no questions asked, no "want me to open it?" — or the
   report says plainly which environment case blocked it.
 - Any claim about what links to what came from the graph data or the file itself — not from
   a guess about how the project is probably organised.
 - If you called a node orphaned, you said where you looked and what wouldn't show up there.
+- If you reported a river, you said which mode it ran in — and if it was COORD-only, you
+  said the kinds and relations were inferred before quoting a single count.
+- You drew nothing by hand. A picture this skill can't produce is a missing subcommand.
 - If you registered a project, the owner said yes.
 
 ## Chains
 
 `archivist` = what the estate *says* (dossiers, the agent ledger) · **graph** = how it
-*connects* (files and references) · `recap` = what happened *over time*. Run the scan at
+*connects* (files and references) · **`graph river`** = how it *got here* (the ledgered
+journey, drawn) · `recap` = what happened *over time*, in prose. A river answers "where did
+we go sideways"; a recap answers "what happened"; feed a river's dead end to `/critic` and
+its rocks to `/refuter`. Run the scan at
 `/sessionend` so the next session's oracle opens on a current map; feed a suspicious cluster
 to `/critic`, a tangle to `/stepbystep`, and an unfamiliar corner to `/explainer`.

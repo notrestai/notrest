@@ -10,19 +10,45 @@ SessionStart hook and fable-mode Hard Rule 11; since v2.9.0 the owner policy (20
 routes every offloaded job to explicit Opus —
 but a rule without an instrument is an assertion. This skill is the instrument: every model
 spend the session can *observe* gets one append-only ledger line, and `report` computes the
-model split and flags any entry where Fable rode below the seat.
+model split and flags any offload lane that ran on anything but Opus.
 
 Script: `scripts/spend.py` (python3 stdlib; flock-atomic appends, same DNA as chatroom's
-room.py). Ledger: `<root>/spend/ledger.md`.
+room.py). Ledger: `<root>/spend/ledger.md`. Fixture: `scripts/fixture.sh` — 41 assertions
+over synthetic ledgers proving the gate both fires and stays quiet in the right cases
+(never touches the real ledger).
 
 ## Commands
 
 - **Log:** `python3 <skill>/scripts/spend.py log --model <id> [--tokens N] [--lane main|director|seat|subagent|workflow|gpt|<name>] [--grade observed|estimate] [--purpose "..."] [--root <project>]`
   — tokens optional (`unknown` is honest and allowed); grade defaults to `observed`.
-- **Report:** `python3 <skill>/scripts/spend.py report [--root <project>]` — entries and
-  token totals per model with share %, count of estimate-grade entries, and the routing
-  verdict. **Exits 4 on a violation** (an entry with a fable model on a non-seat lane), so
-  it can gate a script or a ship ritual.
+- **Report:** `python3 <skill>/scripts/spend.py report [--root <project>] [--since YYYY-MM-DD] [--json]`
+  — entries and token totals per model with share %, count of estimate-grade entries, and
+  the routing verdict. **Exits 4 on a violation**, so it can gate a script or a ship
+  ritual. `--since` narrows to entries dated on or after a day; `--json` emits the same
+  findings machine-readably with the same exit codes.
+
+## What counts as a violation
+
+The verdict line names the rule version it enforces — `policy 2026-07-15: opus-only
+offload` — so a gate log is greppable and a stale rule cannot hide behind the word
+"CLEAN". An **offload lane** is any lane that is not a seat lane (main/director/seat).
+
+- **Violation (exit 4)** — an offload lane on a known non-Opus model, dated after the
+  policy day.
+- **Policy-date guard** — an entry is judged by the law in force when it was logged.
+  Entries dated on or before 2026-07-15 fall under the rule that was live then ("Fable
+  never rides in a subagent"), so a pre-policy non-Opus lane is lawful-at-the-time and is
+  counted as `pre-policy`, while a pre-policy Fable subagent still exits 4 as a **legacy
+  violation**. The policy day itself is grandfathered — the ledger stamps minutes, but the
+  hour the policy was set is not recorded. A timestamp that will not parse gets no
+  exemption: it is judged by the live rule, so a garbled stamp cannot buy amnesty.
+- **Cross-vendor allowlist** — `lane=gpt` and `lane=chatroom-gpt` run another vendor's
+  models by design; exempt, and reported on their own count ("cross-vendor lanes: N,
+  exempt") rather than folded into "compliant".
+- **Unverifiable, not clean** — an offload entry whose model is `?` (the auto-receipt could
+  not read the transcript) is **not** called a violation, because absence of evidence is
+  not evidence of one. It gets its own reported line saying routing is not provable for it.
+  Chase it by reading the transcript the COORD-AGENTS.md entry points at.
 
 ## When to log (the whole discipline)
 

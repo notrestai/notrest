@@ -1,34 +1,37 @@
 ---
 name: researcher
-description: Rigorous multi-pass research on any question — baseline, ≥5 alternatives, tiered real sources, comparison, disconfirmation — producing a background doc + decision dossier (or --quick for chat-only). Use on /researcher or natural asks to research, deeply investigate, compare alternatives, find best practices, or "find the best X for my situation" — any open-ended question that deserves evidence over vibes. Not for simple lookups you can answer directly.
+description: "Rigorous multi-pass research on any question — baseline, ≥5 alternatives, tiered real sources, comparison, disconfirmation — landing validated FINDING RECORDS in the archivist store (or --quick for chat-only). Use on /researcher or natural asks to research, deeply investigate, compare alternatives, find best practices, or \"find the best X for my situation\" — any open-ended question that deserves evidence over vibes. Not for simple lookups you can answer directly."
 ---
 
 # Researcher
 
-A staged research workflow that takes a single prompt and drives it from a first-cut answer to a defended recommendation. The reasoning runs through five passes, but the output is just **two files**: a consolidated background document holding all the pass work, and a final dossier holding the decision.
+A staged research workflow that takes a single prompt and drives it from a first-cut answer to a defended recommendation. The reasoning runs through five passes; the output is a handful of **validated finding records** in the archivist store — the passes are the working-out, the records are what survives.
 
 ## The prompt
 
 The research question is everything the user passed when invoking the skill. Use `$ARGUMENTS` if it is populated; otherwise use the text the user typed after `/researcher`. If the prompt is empty or one ambiguous word, ask exactly one clarifying question before starting — otherwise begin immediately. Treat the original prompt as the fixed yardstick: every later pass is judged against *this* question, not whatever interesting tangents appear along the way.
 
-**Consult the index first (if present).** If the repo carries an `oracle-index.md` — or the **archivist** skill is installed and prior ORACLE output folders exist — run one `find` on the question's topic before Pass 1. On a hit, surface it (path, date, headline) and offer *reuse* / *extend* (this run, seeded with the old dossier) / *fresh* — never silently re-spend the search budget on a question this project already answered.
+**Consult the store first.** Run one `index.py find "<topic>"` before Pass 1 — it searches the findings store, the legacy index, and dossier bodies. On a hit, surface it (id or path, date, statement) and offer *reuse* / *extend* (this run, seeded with the prior records) / *fresh* — never silently re-spend the search budget on a question this project already answered.
 
 ## Quick mode (`--quick`)
 If the invocation includes `--quick` (or a clear equivalent — "quick", "brief", "no files", "just the summary"), run lightweight instead of the full workflow:
-- **No files.** Write nothing to disk — no background, no dossier. Skip the "Setup & output files" step entirely.
-- **Reason, compressed.** Still work through this skill's core logic and search where it normally would, but skip the full multi-pass write-up.
+- **No records.** Write nothing to the store. Skip the "Setup & output" step entirely.
+- **Reason, compressed.** Still work through this skill's core logic and search where it normally would, but skip the full multi-pass depth.
 - **Output in chat only:** the **Read Me First** block this skill defines (the plain-language gist), then a short summary (a few sentences or bullets). No sources/reference list.
-- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not fully sourced or saved; run again without `--quick` for the verifiable two-file version."*
+- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not sourced into the store; run again without `--quick` for the recorded, verifiable version."*
 Quick mode is for fast exploration, not deliverables.
 
-## Setup & output files
+## Setup & output — the findings store
 
-Derive a `{topic}` slug from the prompt: lowercase, words joined by hyphens, stripped of punctuation, max ~50 chars (e.g. "best CRM for early-stage startups" → `best-crm-for-early-stage-startups`). Create a `research/` directory in the current working directory and write exactly two files into it:
+**No dossier folder. No two-file write.** This skill's output is **finding records** appended to the archivist store (`archive/findings.jsonl`, append-only, validated at the door). One record per key result as you earn it, plus one `kind=result` summary record at the end. The prose passes below still run in full — they are what earns a statement; they just do not land as files.
 
-- **`research/{topic}background.md`** — all five passes, as sections within this one document.
-- **`research/{topic}Dossier.md`** — the final consolidated decision document.
+The sink:
 
-If those files already exist from a prior run, suffix the topic with `-2` (then `-3`, etc.) so you never overwrite previous work.
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{…}'
+```
+
+(Loose install: `../archivist/scripts/index.py` relative to this skill folder.) It prints the assigned `F-<n>` on success and **exits 2 naming the rule** on rejection — an unlabeled claim, an empty evidence list, or a `[cited]` url that is not a URL does not enter the store. Fix the record, re-run; never hand-append to the JSONL.
 
 This workflow depends on web search and fetch tools. If they're unavailable, tell the user the research will be limited to your own knowledge (clearly labeled as such) and ask whether to proceed.
 
@@ -45,19 +48,16 @@ These are non-negotiable because a research tool that fabricates is worse than n
 - **Cite real links.** Every `[cited]` claim must carry the URL you pulled it from.
 - **Tier your sources, and prefer primary from Pass 1 on.** Tier 1 = primary (peer-reviewed papers, official docs/specs, standards bodies, government/regulator data, the maker's own documentation). Tier 2 = reputable secondary (named analysts, established outlets, recognized practitioners). Tier 3 = SEO/content-marketing blogs repeating others — treat as a *lead*, chase the primary it cites, and never let a Tier-3 claim stand alone. Note each source's tier and date inline; when a Tier-1 source is reachable, don't settle for a Tier-3 restatement of it.
 
-## The five passes — all written into `research/{topic}background.md`
+## The five passes — the reasoning that earns the records
 
-Run all five passes in order and record each as a section of the single background document, using this top-level skeleton:
+Run all five passes in order, in full, as working prose in the session. Depth is not optional: a statement worth storing is one a pass argued for. Emit a record the moment a pass produces a key result — do not batch them at the end.
 
-```markdown
-# <Prompt, as a title> — Research Background
-> Working document. All five passes. The decision lives in {topic}Dossier.md.
-
-## Pass 1 — Baseline
-## Pass 2 — Alternatives
-## Pass 3 — Evidence
-## Pass 4 — Comparison & critique
-## Pass 5 — Deep dive & disconfirmation
+```
+Pass 1 — Baseline                    → records: the mainstream answer
+Pass 2 — Alternatives                → records: each genuinely distinct option
+Pass 3 — Evidence & best practices   → records: findings + any kind=conflict
+Pass 4 — Comparison & critique       → records: corrections (supersede what Pass 1-3 got wrong)
+Pass 5 — Deep dive & disconfirmation → records: the survivor, then one kind=result summary
 ```
 
 ### Pass 1 — Baseline
@@ -86,76 +86,62 @@ Build a comparison across the alternatives on the dimensions that matter *for th
 ### Pass 5 — Deep dive & disconfirmation
 Go deep on the chosen answer: implementation detail, edge cases, failure modes, and **actively try to find reasons the Pass 4 pick is wrong**. If you find strong disconfirming evidence, revise the decision and say so explicitly. Record what you tried to use to kill the pick and what held up, plus any residual uncertainty.
 
-## The dossier — `research/{topic}Dossier.md`
+## The output — finding records
 
-Write this **after** the background doc is complete, so it reflects any revision the Pass 5 deep dive forced. This is the self-contained decision document — a reader should absorb the whole conclusion from this file alone. Synthesize; don't paste the passes in. Keep labels and confidence levels intact. **State Summary first, Solution Space second.**
+**One record per key result, plus one `kind=result` summary.** A record is not a note: the `statement` must read alone in 1–3 sentences, carry its own honesty label on every evidence item, and survive being read a month from now without the passes beside it. Keep confidence and tier *inside the statement* — the store validates shape, not judgment.
 
-```markdown
-# <Prompt, as a title> — Dossier
+- **Per key result** (a Pass-2 alternative that earned its place, a Pass-3 finding, the Pass-4/5 survivor): `kind=finding`, `relation=toward`.
+- **A source conflict Pass 3 surfaced:** `kind=conflict`, `relation=lateral` — both positions in the statement, never averaged.
+- **An earlier pass you corrected:** write the better record, then `index.py supersede F-<old> --by F-<new>` — the store is append-only; corrections are new lines.
+- **A route you abandoned:** `kind=backtrack`, `relation=back` — dead ends are findings.
+- **The recommendation, last:** `kind=result`, `relation=toward`, `links` naming the records it rests on.
 
-## 📌 Read Me First
-Plain-language, no jargon. 3–5 bullets a busy person can skim in 20 seconds.
-- **What you asked:** <the question in one short line>
-- **What I found:** <the answer in one plain sentence — what to do>
-- **How sure I am:** <high / medium / low, in plain words>
-- **The catch:** <the single biggest caveat, if any>
+### The snippet, filled
 
-**How this research is laid out — two files:**
-- **`{topic}background.md`** — all the working-out: the passes (baseline → alternatives → evidence → comparison → deep dive). Read this if you want to see *how* I got here.
-- **`{topic}Dossier.md`** (this file) — the answer. Sections below: **State Summary** (the gist), **Solution Space** (every option, rated), **Decision & Reasoning** (the pick and why), **Sources**.
+*(For the question "best Python framework for a small REST API".)*
 
----
-
-## State Summary
-- **Question:** <the original prompt, verbatim>
-- **Bottom line:** <1–3 sentences: the recommendation + confidence level>
-- **Key findings at a glance:** <3–6 bullets, each with its [label] + confidence>
-- **Open tensions:** <unresolved conflicts or gaps, 1–2 bullets — don't hide these>
-
-## Solution Space
-One compact card per option considered (every alternative from Pass 2). Lead each with a verdict tag: ✅ Recommended / 🟡 Conditional / 🔴 Not advised.
-
-### <Option> — <one-line verdict> [✅ / 🟡 / 🔴]
-- What it is: <1–2 lines>
-- Evidence: <what supports or undercuts it, with [label] + confidence>
-- Wins when: <the conditions under which this is the right pick>
-- Caveats / why it lost: <honest weaknesses>
-
-## Decision & Reasoning
-- **Chosen:** <option(s)>
-- **Why, traced to evidence:** <reasoning that points back to specific findings, not vibes>
-- **Decision trail:** <how the conclusion evolved across passes — note where earlier passes were corrected>
-- **What would change this:** <the evidence that would flip the call>
-
-## Sources
-<numbered, de-duplicated, real URLs actually used>
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "session":"researcher-2026-07-25",
+  "skill":"researcher",
+  "kind":"finding",
+  "ask":"best Python framework for a small REST API",
+  "statement":"FastAPI ships native async plus Pydantic request validation and auto-generated OpenAPI docs — the official docs confirm both. Tier 1 source, 2025; confidence high for new async services, lower for server-rendered apps.",
+  "evidence":[{"type":"url","ref":"https://fastapi.tiangolo.com/features/","label":"cited"},
+              {"type":"url","ref":"https://survey.stackoverflow.co/2025/","label":"cited"}],
+  "relation":"toward",
+  "links":[]}'
 ```
 
-### Example — what a good Solution Space card looks like
-*(Illustrative, for the question "best Python framework for a small REST API". Note how it leans on a primary source and labels tiers.)*
+Then the summary record, linking what it rests on:
 
-> ### FastAPI — Recommended for new async REST APIs [✅]
-> - What it is: modern ASGI framework with built-in request validation and auto-generated OpenAPI docs.
-> - Evidence: official docs confirm native async support and Pydantic-based validation [cited, Tier 1 — fastapi.tiangolo.com, 2025]; broad recent adoption in ecosystem surveys [cited, Tier 2]. Confidence: high.
-> - Wins when: a new service with async I/O where you want typed request/response and free API docs.
-> - Caveats / why it might lose: smaller batteries-included ecosystem than Django; overkill for a server-rendered app.
+```bash
+… add --root . --json '{"session":"researcher-2026-07-25","skill":"researcher","kind":"result",
+  "ask":"best Python framework for a small REST API",
+  "statement":"Recommend FastAPI for a new async REST API; Flask remains the pick for a small sync service with an existing extension stack. Confidence high — flips if the team needs Django-level batteries included.",
+  "evidence":[{"type":"url","ref":"https://fastapi.tiangolo.com/features/","label":"cited"},
+              {"type":"command","ref":"pip index versions fastapi","label":"estimate"}],
+  "relation":"toward","links":["F-12","F-13","F-14"]}'
+```
+
+Each `add` prints its `F-<n>`. A non-zero exit means the record was turned away with its rule named — fix it and re-run.
 
 ## Self-check before finishing
-Before declaring done, verify the dossier against this list and fix any miss:
+Before declaring done, verify the records and fix any miss:
+- **Records validated at the door (`add` exited 0)** — every id was printed by the script, nothing hand-appended.
 - Every factual claim carries a label; every `[cited]` has a real URL, a date where it matters, and a tier.
 - No invented sources, figures, or quotes; nothing presented more confidently than the evidence supports.
-- Each Pass-2 alternative appears in the Solution Space with a verdict.
-- The recommendation states a confidence level and what would change it.
-- Source conflicts are shown, not averaged away; no lone Tier-3 claim carries a key conclusion.
-- The Read Me First is genuinely plain-language and skimmable in ~20 seconds.
+- Each Pass-2 alternative that survived has a record; abandoned ones landed as `backtrack`.
+- The `kind=result` summary states a confidence level and what would change it, and links its supporting ids.
+- Source conflicts landed as `kind=conflict`, shown not averaged; no lone Tier-3 claim carries a key conclusion.
 
 ## Finishing up
 
-Write `{topic}background.md` first (all five passes), then `{topic}Dossier.md`. Give the user a short chat summary: the recommendation, its confidence level, and the paths to both files — point them to the dossier as the main read. Don't paste the files into chat. Offer to dig deeper on any single pass — or to run `/critic` on the dossier to red-team the recommendation, or `/factcheck` to verify its load-bearing claims, before acting on it.
+Run the five passes, emitting records as they land, and write the `kind=result` summary last. Give the user a short chat summary: the recommendation, its confidence level, and the record ids — plus `index.py track --status live` as the one command that shows the whole trail. Don't paste the records into chat. Offer to dig deeper on any single pass — or to run `/critic` to red-team the recommendation, `/refuter` to attack the load-bearing records, or `/factcheck` to verify their claims, before acting on it.
 
 ## Notes on tone and rigor
 
 - Prefer paraphrase over quotation; keep any quote short and attributed.
 - Quality of sources matters: favor primary sources, peer-reviewed work, official docs, and reputable outlets over content farms and SEO filler.
 - It's fine — good, even — to conclude "there is no single best answer; it depends on X" when that's the truth. Say so plainly rather than forcing a winner.
-- If a pass produces nothing useful, say so honestly in the background doc instead of padding it.
+- If a pass produces nothing useful, say so plainly and write no record for it — padding the store is worse than a thin track.

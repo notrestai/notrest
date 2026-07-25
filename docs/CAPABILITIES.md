@@ -6,6 +6,17 @@ capable* — every upgrade buildable (a script, a hook, an MCP, a flag), none va
 Skill entries come from a three-lane Opus analyst pass over every SKILL.md and shipped
 script; toolset entries are seat-written from the day's live work.
 
+> **v3.8.0 shipped from this register (2026-07-25):** the findings-store architecture
+> (archivist owns `archive/findings.jsonl`; researcher/decider/factcheck rewired; the
+> door validator absorbs the dossier-lint family), the river (`graph.py river` +
+> `links`/`orphans`/`stale`), the live-policy spend gate + stop-event receipt dedup,
+> doctor→10 checks (SHADOWED · TOKEN BUDGET · HOOKS FIRED), eval→10 checks
+> (REFERENCES-CITED · `--baseline`), chatroom's enforced no-secrets screen + `join` +
+> bridge receipts, `watch.py`, `gpt.sh`, refuter's `brief.py`+`verdict_lint.py`.
+> Entries below describe the pre-3.8.0 state where they conflict with this note;
+> still-open upgrades remain accurate. Remaining dossier writers (marketresearcher,
+> critic, explainer, recap) migrate to the findings sink next.
+
 ## The law this register serves
 
 Sessions must use the suite's verbs for matching work — research-shaped asks run
@@ -137,7 +148,7 @@ gap: The instrument's data layer is hand-written markdown — scoring is determi
 
 ### decider
 does: Six-pass decision structuring — options incl. do-nothing, weighted criteria, evidence, scored matrix, sensitivity hinge, pre-mortem.
-how: Model-only, zero scripts. Writes `decision/{topic}background.md` + `Dossier.md`; labels [cited]/[estimate]/[recall]; ~10-search budget; `--quick`; optional archivist index consult.
+how: Model-only. Since v3.8.0 emits `kind=decision` finding records (hinge in the statement) via archivist's validated `add`; labels [cited]/[estimate]/[recall]; ~10-search budget; `--quick`; archivist index consult.
 upgrades: 1) `scripts/matrix.py` — weights+scores as TSV/JSON, computes weighted totals and auto-sweeps every ±10% weight perturbation, printing which flip the winner. 2) One background Opus lane per option for Pass 3 evidence, refuter-check the front-runner before Pass 6. 3) Zero-token dossier lint: weights sum to 100, every cell has a reason, do-nothing present, hinge section non-empty.
 gap: The hinge/sensitivity claim — its whole value — is hand arithmetic nothing verifies.
 

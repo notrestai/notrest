@@ -18,7 +18,11 @@ Last updated: 2026-07-25
   copies): SKILL.md edits apply live, hook/manifest changes need `/reload-plugins` or a
   restart, and the SessionStart hook's `git pull --ff-only` genuinely self-updates.
   Consumers still install via the marketplace (`claude plugin marketplace update notrest
-  && claude plugin update notrest@notrest`).
+  && claude plugin update notrest@notrest`) — but NEVER run that flow on THIS machine:
+  an installed notrest@notrest takes the name and silently SHADOWS the skills-dir
+  runtime (live-proven 2026-07-25, reinstall at 20:13Z shadowed the tree until doctor
+  caught it; remedy = `claude plugin uninstall notrest@notrest && claude plugin
+  marketplace remove notrest` + cache purge).
 - `spend/ledger.md` is append-only; the SubagentStop hook auto-receipts each finished lane
   (idempotent) — hand-logging double-counts.
 - COORD never compacts, it ROLLS: at 500 lines the active file seals as `COORD-<NNN>.md`

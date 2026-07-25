@@ -30,6 +30,50 @@ dossier and hands the full re-run to `/factcheck` when one breaks.
 There is no `--quick`. The log **is** the deliverable — a recheck that writes nothing is a
 recheck nobody can audit next month. `/watch list` is the free, chat-only mode.
 
+## The script does the clock, the fetch, and the write
+
+`scripts/watch.py` (python3, stdlib only) owns every part of the cycle that never needed a
+model. **Run it; don't re-improvise it.**
+
+| Call | Does | Exit |
+|---|---|---|
+| `watch.py due --root .` | parses the table, computes what the cadence has made due | **3** = something is due · 0 = nothing (a hook can branch on this) |
+| `watch.py probe <ID> --root .` | HEAD, then a conditional GET of that row's source; sha256 of the body against the row's stored `Hash` cell | **0** UNCHANGED · **3** CHANGED (body path printed) · **4** DEAD-SOURCE |
+| `watch.py append --json <file> --root .` | writes the dated block and updates Last checked/Status/Hash | 0 written · **5** refused (see below) |
+
+**What this buys:** two of the three outcomes cost zero model tokens. A source that 404s,
+times out, or DNS-fails resolves to DEAD-SOURCE without a model reading anything; a page
+whose bytes are identical to last run resolves to UNCHANGED the same way. **The model is
+spent only on exit 3** — a page that genuinely moved — where it reads the body file the
+probe wrote and decides whether the *claim* moved with it. That is the judgment call; the
+rest is arithmetic and HTTP.
+
+**Conditional on a strong `ETag` only.** `probe` never sends `If-Modified-Since`: HTTP
+dates are second-granular, so a page edited within the same second as the last check
+answers `304 Not Modified` while its bytes have moved — the one failure mode a watch
+must not have. A weak `ETag` (`W/"…"`) promises only semantic equivalence and is refused
+for the same reason. The saving was bandwidth; the cost would have been findings.
+
+The `Hash` column is added automatically to a watchlist that predates it (one cell per
+row, existing rows untouched otherwise). A **CHANGED** probe deliberately does *not*
+overwrite the stored hash — retiring the drift before a model judged it would make the
+next run report UNCHANGED and lose the finding. `append` banks the new hash for the rows
+it records, because that is the moment the verdict exists. Validators (`ETag` /
+`Last-Modified`) are cached in `watch/.probe-cache.json` — derived, machine-written,
+safe to delete.
+
+`append` **refuses (exit 5)** rather than write a block that lies: a `HOLDS` whose URL is
+not on the `Fetched this run:` line, a `DRIFTED` with no contradicting evidence, a status
+outside the four-word grammar, or a due count the findings do not account for. The
+`**Result:**` counts are computed from the findings, so they cannot disagree with the
+one-liners beneath them. Both files are prepared in full before either lands, and each
+lands by rename — a reader never sees a half-written log, and re-running the same append
+is a no-op instead of a duplicate block.
+
+Fixture: `bash plugins/notrest/skills/watch/scripts/fixture.sh` — exit 0 = every assertion
+held. It runs the probe paths against a real local HTTP server (ephemeral port, no
+network), so 404, unchanged, and changed are exercised as HTTP rather than mocked.
+
 **Files** (created on first `add`, in the working directory):
 - `watch/watchlist.md` — what is being watched. Rows are appended; only `Last checked` and
   `Status` are ever edited in place (the history of those edits lives in the drift log, so
@@ -38,9 +82,21 @@ recheck nobody can audit next month. `/watch list` is the free, chat-only mode.
 
 ## `/watch add` — building the watchlist
 
-The subject is a dossier path (`factcheck/…Dossier.md`, `research/…Dossier.md`, any file with
-cited claims), a natural ask ("watch the pricing claims in the market dossier"), or claims
-pasted inline. If the dossier isn't in context, read it first.
+The subject is a **findings-store id** (`F-12` — the archivist's `archive/findings.jsonl`
+record, and the direction this estate is heading), a dossier path (`factcheck/…Dossier.md`,
+any file with cited claims — legacy, still fully supported), a natural ask ("watch the
+pricing claims in the market dossier"), or claims pasted inline. If the dossier isn't in
+context, read it first.
+
+**Findings-store rows** put `F-<id>` in the `Source` cell (or name it in the `##` section
+heading) instead of a URL, and `watch.py` resolves it through
+`archivist/scripts/index.py track --json`: the record's `url` evidence refs are what gets
+fetched, so the watchlist stops carrying a second copy of a URL the store already owns.
+A record with no `url` evidence cannot be watched, and the script says so by name rather
+than silently skipping the row; a record the store no longer calls live (superseded,
+refuted) is still probed, but the resolution line says which, because watching a retired
+finding is a fact the reader needs. An id with no record fails loudly (exit 2) — never as
+a quiet pass.
 
 1. **Extract verbatim.** Pull each candidate claim exactly as written — same rule as factcheck
    Pass 1. A paraphrase you wrote is not the claim the project is leaning on.
@@ -91,16 +147,20 @@ it was added. Claims stay in double quotes, verbatim.
 
 Runs **now**, in this session. It is the same work factcheck does, scoped to one claim each.
 
-**Due:** a row is due when `Last checked + cadence ≤ today`. Compute it from the table; check
-only what is due (`--all` overrides). Rows with cadence `retired` are never due.
+**Due:** `watch.py due --root .` — it computes `Last checked + cadence ≤ today` from the table
+so nobody does date arithmetic by eye. Check only what is due (`--all` overrides). Rows with
+cadence `retired` are never due.
 **Budget:** ~2 searches/fetches per due claim, ~15 per run. Spend the depth on the load-bearing
 ones; if the budget runs out, stop and say which rows went unchecked — an unchecked row keeps
 its old `Last checked` date. Never move a date you didn't earn.
 
 For each due claim:
-1. **Re-read the recorded source first.** Fetch the URL in the row. What does it say *now*?
+1. **Re-read the recorded source first** — `watch.py probe <ID>`. Exit 4 is DEAD-SOURCE and
+   exit 0 is UNCHANGED: both are already resolved, and reading the page yourself adds nothing.
+   Only on exit 3 do you open the body file it wrote and ask what the source says *now*.
 2. **Then look for movement** — one search, aimed at whether the fact changed (a newer figure,
-   a superseding standard, a retraction), not at re-confirming what you already believe.
+   a superseding standard, a retraction), not at re-confirming what you already believe. Skip
+   it for a row the probe resolved UNCHANGED; spend it where the bytes moved.
 3. **Verdict in factcheck's grammar**, then map it to the watch status:
 
 | Re-verification verdict | Watch status | When |
@@ -111,9 +171,14 @@ For each due claim:
 | ⚪ UNVERIFIABLE — the source is gone (404, removed, paywalled, redirected to nothing) | **DEAD-SOURCE** ⚫ | the source died, the claim did not |
 | ⚪ UNVERIFIABLE — source alive, answer no longer checkable there | **UNVERIFIABLE** ⚪ | scope/definition changed, page no longer reports it |
 
-4. **Update the row** — `Last checked` = today, `Status` = the mapped status. Nothing else.
-5. **Write the block** (below), then one COORD line:
+4. **Update the row and write the block in one call** — hand `watch.py append` the findings
+   as JSON (`{"date","due","searches","findings":[{"id","status","note","url","http","hash",
+   "chain"}],"not_due","unchecked"}`) and it renders the block, sets `Last checked` = today
+   and `Status` = the mapped status on exactly those rows, and prints the COORD line for you
+   to bank:
    `- [YYYY-MM-DD HH:MMZ] [watch] recheck: N due -> X holds / Y drifted / Z dead | evidence: watch/drift-log.md <date>`
+   Hand-writing either file is how the counts drift out of step with the one-liners — the
+   script exists so that cannot happen.
 
 **Drift is never smoothed.** A drifted load-bearing claim goes at the top of the report, in the
 chat summary, and carries its chain suggestion. "Mostly unchanged" is not a finding — name the
@@ -207,6 +272,8 @@ running. Watch works perfectly well as a manual ritual; the schedule is a conven
 
 - Every watched row has a re-readable source URL and a verbatim claim; unwatchable claims were
   named, not silently dropped.
+- The cycle went through `watch.py` — `due` for the calendar, `probe` per row, `append` for
+  the write. A block composed by hand is a block whose counts nothing checked.
 - Every claim reported HOLDS was actually fetched this run, and its URL is on the
   `**Fetched this run:**` line.
 - Every DRIFTED verdict has contradicting evidence read this run — not a failed fetch.

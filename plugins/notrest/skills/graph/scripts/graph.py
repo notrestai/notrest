@@ -12,12 +12,23 @@ Subcommands:
   unregister --root DIR [--registry F]   remove it (both idempotent)
   all [--registry F] [--out DIR]      merge every registered project's graph.json
                                       into one cross-project PM view
+  river [--session S] [--out F]       the journey, not the map: findings.jsonl +
+                                      the COORD volumes drawn as a river flowing
+                                      left→right into the GOAL bank (graph/river.
+                                      {json,html}, self-contained)
+  links <path> | orphans | stale      plain-text queries over the last scan
 
 Honesty: the graph shows REFERENCES that a text scan can see — not importance.
 A disconnected node is information (nothing in the repo points at it), not garbage.
+
+Renders are script-built at zero model tokens, and deterministic: identical
+inputs produce a byte-identical page (everything sorted, no clock read unless
+--now is passed). A new visualization is a new subcommand here, never a diagram
+the model draws by hand.
 """
 import argparse
 import json
+import math
 import os
 import pathlib
 import posixpath
@@ -1056,6 +1067,1239 @@ readColors(); legend(); sizeCanvas(); fitView(); frame();
 """
 
 
+# ============================================================== river: the data
+#
+# The river answers a different question than the file graph. The file graph is
+# SPACE (what points at what); the river is TIME (how the work moved toward the
+# goal, where it went sideways, where it doubled back, what it hit on the way).
+# Input is the append-only findings ledger; the COORD volumes supply the
+# milestone flags and COORD-AGENTS.md the lane activity along the banks.
+
+RIVER_KINDS = ("finding", "result", "decision", "conflict", "backtrack", "side-route")
+RIVER_RELS = ("toward", "lateral", "back")
+RIVER_STATUS = ("live", "superseded", "refuted")
+RIVER_CAP = 500            # nodes drawn; older ones are dropped, never silently
+RIVER_LANE_CAP = 300       # agent-ledger ticks drawn along the bottom bank
+FINDINGS_REL = "archive/findings.jsonl"
+
+# layout constants — every coordinate below is a pure function of these and the
+# record order, so two runs over the same ledger produce byte-identical geometry.
+RX0 = 190.0          # x of the first record
+RXSTEP = 150.0       # x per time index
+RCH_GAP = 158.0      # y between channel centrelines (side channels run BELOW)
+RMEANDER_A = 24.0    # meander amplitude
+RMEANDER_W = 0.55    # meander frequency (radians per time index)
+RTOP_BANK = 215.0    # milestone bank above the main channel
+RBOT_BANK = 195.0    # lane bank below the lowest channel
+RGOAL_PAD = 300.0    # river mouth → goal bank
+
+RIVER_COORD_RE = re.compile(
+    r"^-\s*\[(?P<ts>\d{4}-\d{2}-\d{2}[^\]]*)\]\s*(?:\[(?P<lane>[^\]]*)\]\s*)?(?P<body>.+)$")
+RIVER_AGENT_RE = re.compile(
+    r"^-\s*\[(?P<ts>\d{4}-\d{2}-\d{2}[^\]]*)\]\s*agent=(?P<agent>\S+)(?P<rest>.*)$")
+# COORD lines are overlaid on EVERY river, not only the degraded one: the flags
+# are the milestones the ledger already records — what shipped, what was gated,
+# what was taken back. Ship outranks gate outranks correction on one line.
+RIVER_SHIP_RE = re.compile(
+    r"(\bship(?:s|ped|ping)?\b|\brelease[ds]?\b|\bv\d+\.\d+\.\d+\b)", re.I)
+RIVER_GATE_RE = re.compile(r"(\bgat(?:e|es|ed|ing)\b)", re.I)
+RIVER_CORR_RE = re.compile(
+    r"(\bcorrection\b|\bcorrected\b|\brevert\w*\b|\brolled back\b|\brollback\b|"
+    r"\bwithdraw\w*\b|\bstopped\b|\bdisproven\b|\bnot landed\b)", re.I)
+RIVER_VER_RE = re.compile(r"\bv\d+\.\d+\.\d+\b")
+RE_SUPERSEDE = re.compile(r"supersed", re.I)
+RE_REFUTE = re.compile(r"\brefut", re.I)
+
+# COORD-only degrade mode: the ledger has no relation/kind fields, so these
+# HEURISTICS read the line's own words. They are declared as heuristics in the
+# JSON (`inferred: true` on every node), in the legend, and in SKILL.md — the
+# river never presents an inference as an authored record.
+RE_CO_CONFLICT = re.compile(
+    r"\b(conflict|refut\w*|disproven|defect|blocker|violation|root cause|regression|"
+    r"broke\w*|bug|fail\w*)\b", re.I)
+RE_CO_BACK = re.compile(
+    r"\b(correction|corrected|revert\w*|rollback|rolled back|withdraw\w*|stopped|"
+    r"abandon\w*|not landed|misread|undone|disproven)\b", re.I)
+RE_CO_DECISION = re.compile(
+    r"\b(ruling|owner order|owner design|decision|decided|verdict|policy|law)\b", re.I)
+RE_CO_LATERAL = re.compile(
+    r"\b(side-?finding|papercut|parked|deferred|backlog|assessment|analysis|inventor\w+|"
+    r"explor\w+|diagnos\w+|audit|cross-check|delivered|scope|probe)\b", re.I)
+
+
+def _slurp(path):
+    """Whole-file text, uncapped and never binary-sniffed — the ledgers are text
+    by contract, and read_text() deliberately refuses .jsonl for the file graph."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def tskey(s):
+    """A sortable, comparable key from either timestamp dialect the estate uses:
+    findings ISO8601Z (2026-07-25T14:55:00Z) and COORD (2026-07-25 14:55Z)."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})[T ]?(\d{2})?:?(\d{2})?:?(\d{2})?", str(s or "").strip())
+    if not m:
+        return ""
+    y, mo, d, h, mi, sec = m.groups()
+    return f"{y}-{mo}-{d}T{h or '00'}:{mi or '00'}:{sec or '00'}"
+
+
+def id_key(i):
+    m = re.match(r"^(.*?)(\d+)$", str(i))
+    return (m.group(1), int(m.group(2))) if m else (str(i), 0)
+
+
+def _clip(s, n):
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+def normalize_record(o, ref):
+    """One findings.jsonl object → the river's record shape. Every field is
+    coerced, never trusted: a malformed ledger degrades the drawing, not the run."""
+    kind = str(o.get("kind") or "").strip().lower()
+    if kind not in RIVER_KINDS:
+        kind = "finding"
+    rel = str(o.get("relation") or "").strip().lower()
+    if rel not in RIVER_RELS:
+        # a missing relation is inferable from the kind, and only from the kind
+        rel = {"backtrack": "back", "side-route": "lateral"}.get(kind, "toward")
+    status = str(o.get("status") or "").strip().lower()
+    if status not in RIVER_STATUS:
+        status = "live"
+    ev = []
+    raw_ev = o.get("evidence")
+    if isinstance(raw_ev, list):
+        for e in raw_ev:
+            if isinstance(e, dict):
+                ev.append({"type": str(e.get("type") or ""),
+                           "ref": str(e.get("ref") or ""),
+                           "label": str(e.get("label") or "unverified")})
+            elif e:
+                ev.append({"type": "", "ref": str(e), "label": "unverified"})
+    links = [str(x) for x in (o.get("links") or []) if x] if isinstance(o.get("links"), list) else []
+    return {"id": str(o.get("id")), "ts": str(o.get("ts") or ""),
+            "session": str(o.get("session") or ""), "skill": str(o.get("skill") or ""),
+            "kind": kind, "relation": rel, "ask": str(o.get("ask") or ""),
+            "statement": str(o.get("statement") or ""), "evidence": ev,
+            "links": links, "status": status, "inferred": False, "ref": ref}
+
+
+def read_findings(path, rel_name, session=None):
+    """archive/findings.jsonl → records. Bad lines are counted, never fatal."""
+    text = _slurp(path)
+    if text is None:
+        return [], 0, 0
+    recs, bad, total = [], 0, 0
+    for i, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            o = json.loads(line)
+        except ValueError:
+            bad += 1
+            continue
+        if not isinstance(o, dict) or not o.get("id"):
+            bad += 1
+            continue
+        total += 1
+        if session and str(o.get("session") or "") != session:
+            continue
+        recs.append(normalize_record(o, f"{rel_name}:{i}"))
+    return recs, bad, total
+
+
+def coord_volumes(root):
+    """Sealed volumes oldest-first, then the retired archive, then the active one
+    — the same order compile.py reads them in."""
+    sealed = sorted(p.name for p in root.glob("COORD-*.md")
+                    if p.stem.split("-")[-1].isdigit() and p.stem.count("-") == 1)
+    return sealed + ["COORD-ARCHIVE.md", "COORD.md"]
+
+
+def read_coord_lines(root, session=None):
+    """COORD ledger lines: `- [ts] [lane] ask -> landed | evidence: …`."""
+    items = []
+    for fn in coord_volumes(root):
+        text = _slurp(root / fn)
+        if text is None:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            m = RIVER_COORD_RE.match(line.strip())
+            if not m:
+                continue
+            lane = (m.group("lane") or "").strip()
+            if session and lane != session:
+                continue
+            body = m.group("body").strip()
+            head, _, ev = body.partition("| evidence:")
+            ask, _, landed = head.partition(" -> ")
+            flag = ("ship" if RIVER_SHIP_RE.search(body) else
+                    "gate" if RIVER_GATE_RE.search(body) else
+                    "correction" if RIVER_CORR_RE.search(body) else None)
+            items.append({"ts": m.group("ts").strip(), "lane": lane,
+                          "ask": ask.strip(), "landed": landed.strip(),
+                          "evidence": ev.strip(), "body": body,
+                          "ref": f"{fn}:{i}", "flag": flag, "ship": flag == "ship",
+                          "_k": tskey(m.group("ts"))})
+    return items
+
+
+def read_agent_lines(root, session=None):
+    """COORD-AGENTS.md → lane activity ticks. The hook writes `model=?` when the
+    transcript wasn't on disk yet; that stays a `?`, it is not guessed."""
+    items = []
+    text = _slurp(root / "COORD-AGENTS.md")
+    if text is None:
+        return items
+    for i, line in enumerate(text.splitlines(), 1):
+        m = RIVER_AGENT_RE.match(line.strip())
+        if not m:
+            continue
+        rest = m.group("rest")
+        mm = re.search(r"model=(\S+)", rest)
+        model = mm.group(1) if mm else "?"
+        last = re.search(r"\|\s*last:\s*(.*?)\s*\|\s*transcript:", rest)
+        items.append({"ts": m.group("ts").strip(), "agent": m.group("agent"),
+                      "model": model, "last": _clip(last.group(1) if last else "", 160),
+                      "ref": f"COORD-AGENTS.md:{i}", "_k": tskey(m.group("ts"))})
+    if session:
+        items = [x for x in items if session in x["last"]]
+    return items
+
+
+def records_from_coord(coord_items):
+    """DEGRADE PATH — no findings ledger, so the ledger lines themselves become
+    the river. Kind and relation are read off the line's words by heuristic and
+    every node carries `inferred: true`; links are chronological, not authored
+    (a lateral line rejoins at the next toward line because that is when the work
+    came back, not because anything in the ledger says so)."""
+    recs = []
+    last_toward = None
+    open_side = []          # ids of the lateral run still off the main channel
+    for n, c in enumerate(coord_items, 1):
+        body = c["body"]
+        # relation first, and the RARER signal wins: "correction / stopped /
+        # withdrawn" is always a return upstream, while ship words are on most
+        # lines of a release day and mean nothing on their own.
+        if RE_CO_BACK.search(body):
+            rel = "back"
+        elif c["flag"] in ("ship", "gate"):
+            rel = "toward"                      # a release or a gate is the main channel
+        elif RE_CO_LATERAL.search(body):
+            rel = "lateral"
+        else:
+            rel = "toward"
+        if rel == "back":
+            kind = "backtrack"
+        elif RE_CO_CONFLICT.search(body):
+            kind = "conflict"
+        elif RE_CO_DECISION.search(body):
+            kind = "decision"
+        elif c["evidence"]:
+            kind = "result"
+        else:
+            kind = "finding"
+        rid = f"C-{n}"
+        links = []
+        if rel == "toward":
+            if open_side:
+                links.append(open_side[-1])     # the side run rejoins here
+                open_side = []
+            elif last_toward:
+                links.append(last_toward)
+            last_toward = rid
+        else:
+            links = [open_side[-1] if open_side else last_toward] if (open_side or last_toward) else []
+            if rel == "lateral":
+                open_side.append(rid)
+        ev = [{"type": "coord-line", "ref": c["evidence"] or c["ref"],
+               "label": "cited" if c["evidence"] else "unverified"}]
+        recs.append({"id": rid, "ts": c["ts"], "session": c["lane"], "skill": "coord",
+                     "kind": kind, "relation": rel, "ask": c["ask"] or c["body"],
+                     "statement": c["landed"], "evidence": ev,
+                     "links": [x for x in links if x], "status": "live",
+                     "inferred": True, "ref": c["ref"]})
+    return recs
+
+
+def resolve_status(recs):
+    """Effective status by link-walking: a LATER record that links an older one
+    and says it supersedes/refutes it overrides that record's declared status.
+    Refuted outranks superseded; a record's own declared status is the floor."""
+    rank = {"live": 0, "superseded": 1, "refuted": 2}
+    eff = {r["id"]: r["status"] for r in recs}
+    by, over, pairs = {}, {}, set()
+    for i, r in enumerate(recs):
+        by[r["id"]] = i
+    for i, r in enumerate(recs):
+        if r.get("inferred"):
+            # COORD-only nodes carry SYNTHESIZED links (chronology, not authorship).
+            # Reading "refuter verdict…" on such a record and marking the previous
+            # ledger line refuted would be the river inventing a claim. It doesn't.
+            continue
+        st = r["statement"] or ""
+        verb = "refuted" if RE_REFUTE.search(st) else ("superseded" if RE_SUPERSEDE.search(st) else None)
+        if not verb:
+            continue
+        for l in r["links"]:
+            if l in by and by[l] < i:
+                pairs.add((r["id"], l))
+                over.setdefault(l, []).append(r["id"])
+                if rank[verb] > rank[eff[l]]:
+                    eff[l] = verb
+    return eff, over, pairs
+
+
+def assign_channels(recs):
+    """One deterministic pass in time order.
+
+    channel 0 is the main channel (relation `toward`). A `lateral` record joins
+    the side channel of a node it links, or opens a new one; `side-route` ALWAYS
+    forks a new channel (that is what the kind means). A `back` record stays in
+    the flow it interrupts — the channel of the record before it."""
+    chan, chans = {}, {0: {"id": 0, "kind": "main", "origin": None, "nodes": []}}
+    prev = None
+    for r in recs:
+        rel, kind = r["relation"], r["kind"]
+        known = [l for l in r["links"] if l in chan]
+        if kind == "side-route" or (rel == "lateral" and not any(chan[l] for l in known)):
+            # a fork: new channel, mouth at the linked node (else the last node)
+            cid = max(chans) + 1
+            origin = known[0] if known else prev
+            chans[cid] = {"id": cid, "kind": "side", "origin": origin, "nodes": []}
+            c = cid
+        elif rel == "lateral":
+            c = min(chan[l] for l in known if chan[l])
+        elif rel == "back":
+            c = chan.get(prev, 0)
+        else:
+            c = 0
+        chan[r["id"]] = c
+        chans[c]["nodes"].append(r["id"])
+        prev = r["id"]
+    return chan, chans
+
+
+def river_stamp(keys, use_now):
+    """REPRODUCIBILITY LAW: identical inputs must render byte-identical output, so
+    the page is stamped with the newest INPUT timestamp — not the wall clock.
+    `--now` opts back into clock time when you actually want run time."""
+    if use_now:
+        return now_stamp(), "wall-clock"
+    keys = [k for k in keys if k]
+    if not keys:
+        return "(no dated input)", "newest-input"
+    return max(keys).replace("T", " ")[:16] + "Z", "newest-input"
+
+
+def build_river(root, session=None, cap=RIVER_CAP, use_now=False):
+    notes = []
+    fpath = root / "archive" / "findings.jsonl"
+    recs, bad, total_recs = [], 0, 0
+    if fpath.is_file():
+        recs, bad, total_recs = read_findings(fpath, FINDINGS_REL, session)
+        if bad:
+            notes.append(f"{bad} unparseable line(s) in {FINDINGS_REL} skipped")
+    coord_all = read_coord_lines(root, session)
+    mode = "findings+coord"
+    if not recs:
+        mode = "coord-only"
+        if not fpath.is_file():
+            notes.append(f"{FINDINGS_REL} absent — COORD-only river: every node is a "
+                         "ledger line, its kind and relation inferred by heuristic")
+        elif session and total_recs:
+            notes.append(f"{FINDINGS_REL} holds {total_recs} record(s) but none for "
+                         f"session '{session}' — COORD-only river")
+        else:
+            notes.append(f"{FINDINGS_REL} holds no usable records — COORD-only river")
+        recs = records_from_coord(coord_all)
+    elif not coord_all:
+        notes.append("no COORD ledger lines found — no milestone flags on the bank")
+
+    recs.sort(key=lambda r: (tskey(r["ts"]), id_key(r["id"]), r["id"]))
+    total = len(recs)
+    capped = None
+    if cap and total > cap:
+        recs = recs[-cap:]
+        capped = {"shown": len(recs), "total": total}
+        notes.append(f"showing the last {len(recs)} of {total} records (--cap {cap})")
+    kept = {r["id"] for r in recs}
+    for r in recs:
+        r["links"] = [l for l in r["links"] if l in kept]
+
+    eff, over, override_pairs = resolve_status(recs)
+    chan, chans = assign_channels(recs)
+    idx = {r["id"]: i for i, r in enumerate(recs)}
+
+    # ---- geometry: x is the time index, y is the channel (+ a fixed meander)
+    nodes = []
+    for i, r in enumerate(recs):
+        c = chan[r["id"]]
+        x = RX0 + i * RXSTEP
+        y = c * RCH_GAP + RMEANDER_A * math.sin(i * RMEANDER_W + c * 1.31)
+        n = dict(r)
+        n.update({"i": i, "channel": c, "x": round(x, 2), "y": round(y, 2),
+                  "effective": eff[r["id"]], "superseded_by": over.get(r["id"], []),
+                  "rock": r["kind"] == "conflict" or eff[r["id"]] == "refuted",
+                  "_k": tskey(r["ts"])})
+        nodes.append(n)
+    pos = {n["id"]: n for n in nodes}
+
+    # ---- merges: the first MAIN-channel record that links into a side channel
+    # rejoins it. Supersede/refute links are excluded — a refutation is not a
+    # rejoining of the flow, and drawing it as one would be a lie about the shape.
+    merge_of = {}
+    for n in nodes:
+        if n["channel"] != 0:
+            continue
+        for l in n["links"]:
+            c = chan.get(l)
+            if not c or c in merge_of or (n["id"], l) in override_pairs:
+                continue
+            if idx[l] < n["i"]:
+                merge_of[c] = {"into": n["id"], "from": l}
+
+    # ---- channel geometry: the point list each band is drawn through
+    channels, edges = [], []
+    for cid in sorted(chans):
+        ch = chans[cid]
+        ids = ch["nodes"]
+        pts = [[pos[i_]["x"], pos[i_]["y"]] for i_ in ids]
+        outcome, merge = ("goal" if cid == 0 else "dead-end"), merge_of.get(cid)
+        if cid == 0:
+            if pts:
+                pts = [[pts[0][0] - 260.0, pts[0][1]]] + pts
+        else:
+            # a side channel leaves and rejoins the parent GRADUALLY — the lead-in
+            # and lead-out points are what make it read as water diverging rather
+            # than a spike dropped through the main flow.
+            org = ch["origin"]
+            if org in pos and pts:
+                o, f = [pos[org]["x"], pos[org]["y"]], pts[0]
+                pts = [o, [round(o[0] + (f[0] - o[0]) * 0.45, 2),
+                           round(o[1] + (f[1] - o[1]) * 0.74, 2)]] + pts
+            if merge:
+                outcome = "merged"
+                m, l = [pos[merge["into"]]["x"], pos[merge["into"]]["y"]], pts[-1]
+                pts = pts + [[round(m[0] - (m[0] - l[0]) * 0.45, 2),
+                              round(l[1] + (m[1] - l[1]) * 0.26, 2)], m]
+            elif pts:
+                pts = pts + [[round(pts[-1][0] + 95.0, 2), round(pts[-1][1] + 26.0, 2)]]
+        for a, b in zip(ids, ids[1:]):
+            edges.append({"from": a, "to": b, "kind": "flow"})
+        if cid and ch["origin"] in pos and ids:
+            edges.append({"from": ch["origin"], "to": ids[0], "kind": "branch"})
+        if merge:
+            edges.append({"from": merge["from"], "to": merge["into"], "kind": "merge"})
+        channels.append({"id": cid, "kind": ch["kind"], "origin": ch["origin"],
+                         "first": ids[0] if ids else None, "last": ids[-1] if ids else None,
+                         "outcome": outcome, "merge_into": merge["into"] if merge else None,
+                         "nodes": ids, "y": round(cid * RCH_GAP, 2),
+                         "points": [[round(p[0], 2), round(p[1], 2)] for p in pts]})
+
+    drawn = {(e["from"], e["to"]) for e in edges}
+    for n in nodes:
+        for l in n["links"]:
+            if (n["id"], l) in override_pairs:
+                kind = "refute" if eff.get(l) == "refuted" else "supersede"
+                edges.append({"from": n["id"], "to": l, "kind": kind})
+            elif n["relation"] == "back":
+                edges.append({"from": n["id"], "to": l, "kind": "back"})
+            elif (l, n["id"]) not in drawn and (n["id"], l) not in drawn:
+                edges.append({"from": n["id"], "to": l, "kind": "link"})
+    for n in nodes:                       # a backtrack with no link still loops
+        if n["relation"] == "back" and not n["links"]:
+            prevs = [m for m in nodes if m["i"] < n["i"] and m["channel"] == n["channel"]]
+            if prevs:
+                edges.append({"from": n["id"], "to": prevs[-1]["id"], "kind": "back"})
+
+    # ---- the banks: milestone flags (ship/gate COORD lines) and lane ticks
+    def x_for(key, ref=None):
+        if ref:
+            for n in nodes:
+                if n["ref"] == ref:
+                    return n["x"]
+        prev_x = None
+        for n in nodes:
+            if n["_k"] <= key:
+                prev_x = n["x"]
+            else:
+                return (prev_x + RXSTEP * 0.5) if prev_x is not None else RX0 - RXSTEP * 0.6
+        return (prev_x + RXSTEP * 0.4) if prev_x is not None else RX0
+
+    milestones = []
+    for m in [c for c in coord_all if c["flag"]]:
+        ver = RIVER_VER_RE.search(m["body"])
+        milestones.append({"ts": m["ts"], "lane": m["lane"], "flag": m["flag"],
+                           "ask": m["ask"], "landed": m["landed"], "evidence": m["evidence"],
+                           "ref": m["ref"], "label": ver.group(0) if ver else _clip(m["ask"], 22),
+                           "x": round(x_for(m["_k"], m["ref"] if mode == "coord-only" else None), 2)})
+    lanes_all = read_agent_lines(root)
+    lanes = lanes_all[-RIVER_LANE_CAP:]
+    if len(lanes_all) > len(lanes):
+        notes.append(f"lane ticks: last {len(lanes)} of {len(lanes_all)} agent entries")
+    stamp_keys = ([tskey(r["ts"]) for r in recs] + [c["_k"] for c in coord_all]
+                  + [l["_k"] for l in lanes])
+    for l in lanes:
+        l["x"] = round(x_for(l["_k"]), 2)
+        l.pop("_k", None)
+    for n in nodes:
+        n.pop("_k", None)
+
+    xs = [n["x"] for n in nodes] or [RX0]
+    ys = [n["y"] for n in nodes] or [0.0]
+    goal_x = max(xs) + RGOAL_PAD
+    extent = {"x0": round(min(xs) - 320.0, 2), "y0": round(min(ys) - RTOP_BANK, 2),
+              "x1": round(goal_x + 150.0, 2), "y1": round(max(ys) + RBOT_BANK, 2)}
+    if channels and channels[0]["points"]:
+        channels[0]["points"] = channels[0]["points"] + [[round(goal_x - 26.0, 2),
+                                                          channels[0]["points"][-1][1]]]
+
+    counts = {"records": len(nodes), "total_records": total,
+              "toward": sum(1 for n in nodes if n["relation"] == "toward"),
+              "lateral": sum(1 for n in nodes if n["relation"] == "lateral"),
+              "back": sum(1 for n in nodes if n["relation"] == "back"),
+              "side_route": sum(1 for n in nodes if n["kind"] == "side-route"),
+              "conflicts": sum(1 for n in nodes if n["kind"] == "conflict"),
+              "rocks": sum(1 for n in nodes if n["rock"]),
+              "live": sum(1 for n in nodes if n["effective"] == "live"),
+              "superseded": sum(1 for n in nodes if n["effective"] == "superseded"),
+              "refuted": sum(1 for n in nodes if n["effective"] == "refuted"),
+              "channels": len(channels),
+              "side_channels": sum(1 for c in channels if c["kind"] == "side"),
+              "merged": sum(1 for c in channels if c["outcome"] == "merged"),
+              "dead_end": sum(1 for c in channels if c["outcome"] == "dead-end"),
+              "edges": len(edges), "milestones": len(milestones),
+              "ships": sum(1 for m in milestones if m["flag"] == "ship"),
+              "gates": sum(1 for m in milestones if m["flag"] == "gate"),
+              "corrections": sum(1 for m in milestones if m["flag"] == "correction"),
+              "coord_lines": len(coord_all), "lanes": len(lanes)}
+    stamp, stamp_from = river_stamp(stamp_keys, use_now)
+    return {"generated": stamp, "stamp_from": stamp_from,
+            "root": str(root), "mode": mode, "session": session, "cap": cap,
+            "sources": {"findings": FINDINGS_REL if fpath.is_file() else None,
+                        "coord": coord_volumes(root), "agents": "COORD-AGENTS.md"},
+            "goal": {"x": round(goal_x, 2), "label": "GOAL"},
+            "extent": extent, "capped": capped, "notes": notes, "counts": counts,
+            "channels": channels, "nodes": nodes, "edges": edges,
+            "milestones": milestones, "lanes": lanes}
+
+
+# ============================================================ river: the viewer
+
+def render_river_html(r, title="project"):
+    data = json.dumps(r, separators=(",", ":")).replace("</", "<\\/")
+    c = r["counts"]
+    counts = (f"{c['records']} records · {c['channels']} channels · "
+              f"{c['rocks']} rocks · {c['milestones']} flags")
+    mode = ("findings + COORD" if r["mode"] == "findings+coord" else "COORD-only")
+    return (RIVER_TEMPLATE
+            .replace("__TITLE__", esc(title))
+            .replace("__ROOT__", esc(r.get("root", "")))
+            .replace("__GENERATED__", esc(r.get("generated", "")))
+            .replace("__STAMPFROM__", esc(r.get("stamp_from", "")))
+            .replace("__MODE__", esc(mode))
+            .replace("__COUNTS__", esc(counts))
+            .replace('"__RIVER_DATA__"', data))
+
+
+RIVER_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>river — __TITLE__</title>
+<style>
+:root{
+  --surface-0:#f7f6f2; --surface-1:#ffffff; --border:#e6e3da; --border-strong:#d2cfc4;
+  --text-primary:#20201d; --text-secondary:#57564f; --text-muted:#86857b;
+  --water:#5C98D6; --water-core:#9CC8F0; --water-side:#7FA8C4; --sheen:#ffffff;
+  --bank:#ddd7c6; --sand:#efeade; --rock:#C2554E; --dead:#B4633A;
+  --stone:#9a988c; --stone-edge:#6f6e64; --goal:#1D9E75;
+  --back:#D89A3A; --flag-ship:#7F77DD; --flag-gate:#1D9E75; --flag-corr:#D89A3A;
+  --lane:#a8a69a; --link:#b9b6aa;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --surface-0:#141413; --surface-1:#1f1f1d; --border:#37362e; --border-strong:#4b4a40;
+    --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+    --water:#2F6FA8; --water-core:#6FA9E6; --water-side:#44718c; --sheen:#cfe6ff;
+    --bank:#332f26; --sand:#1c1b18; --rock:#DD7F77; --dead:#d98a5e;
+    --stone:#6c6b62; --stone-edge:#a7a69b; --goal:#3fc79c;
+    --back:#e6b45c; --flag-ship:#9a92ea; --flag-gate:#3fc79c; --flag-corr:#e6b45c;
+    --lane:#5d5c53; --link:#4a493f;
+  }
+}
+:root[data-theme="dark"]{
+  --surface-0:#141413; --surface-1:#1f1f1d; --border:#37362e; --border-strong:#4b4a40;
+  --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+  --water:#2F6FA8; --water-core:#6FA9E6; --water-side:#44718c; --sheen:#cfe6ff;
+  --bank:#332f26; --sand:#1c1b18; --rock:#DD7F77; --dead:#d98a5e;
+  --stone:#6c6b62; --stone-edge:#a7a69b; --goal:#3fc79c;
+  --back:#e6b45c; --flag-ship:#9a92ea; --flag-gate:#3fc79c; --flag-corr:#e6b45c;
+  --lane:#5d5c53; --link:#4a493f;
+}
+*{box-sizing:border-box}
+html{height:100%;width:100%}
+body{margin:0;width:100vw;height:100vh;background:var(--surface-0);color:var(--text-primary);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center;padding:.6rem .9rem;
+  border-bottom:1px solid var(--border);background:var(--surface-1)}
+h1{font-size:14px;font-weight:500;margin:0}
+.sub{font-size:12px;color:var(--text-muted)}
+.path{max-width:52ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.grow{flex:1}
+input[type=search]{font:inherit;font-size:12px;padding:.3rem .55rem;border-radius:999px;
+  border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);width:190px}
+input[type=search]:focus{outline:none;border-color:var(--border-strong)}
+button{background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border);
+  border-radius:999px;padding:.3rem .7rem;font-size:12px;cursor:pointer;font-family:inherit}
+button:hover{border-color:var(--border-strong)}
+main{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+#stage{flex:1;position:relative;min-width:0;min-height:0;overflow:hidden}
+svg{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;
+  touch-action:none;background:var(--surface-0)}
+svg.drag{cursor:grabbing}
+/* --- the water --- */
+.sandband{fill:var(--sand)}
+.bankline{stroke:var(--bank);stroke-width:2;fill:none}
+.band{fill:none;stroke:var(--water);stroke-linecap:round;stroke-linejoin:round;opacity:.34}
+.band.side{stroke:var(--water-side);opacity:.30}
+.core{fill:none;stroke:var(--water-core);stroke-linecap:round;stroke-linejoin:round;opacity:.75}
+.flow{fill:none;stroke:var(--sheen);stroke-linecap:round;opacity:.30;
+  stroke-dasharray:16 190;animation:drift 11s linear infinite}
+@keyframes drift{to{stroke-dashoffset:-206}}
+@media (prefers-reduced-motion: reduce){.flow{animation:none;opacity:.14}}
+.goalbank{fill:var(--goal);opacity:.14;stroke:var(--goal);stroke-opacity:.5;stroke-width:1.5}
+.goaltext{fill:var(--goal);font-size:26px;font-weight:600;letter-spacing:.22em}
+.goalsub{fill:var(--text-muted);font-size:12px}
+/* --- stones and rocks --- */
+.stone{fill:var(--stone);stroke:var(--stone-edge);stroke-width:1.1}
+.rockglyph{fill:var(--rock);stroke:var(--rock);stroke-width:1.2;fill-opacity:.85}
+.node{cursor:pointer}
+/* the halo doubles as the hit area — fill:transparent, so a stone stays easy to
+   hover when the whole river is zoomed out to a hairline */
+.node .halo{fill:transparent;stroke:var(--text-primary);stroke-width:2;opacity:0}
+.node:hover .halo{opacity:.85}
+.node:hover .halo,.node.pin .halo{opacity:.85}
+.node.st-superseded .stone{fill-opacity:.28;stroke-dasharray:3 2.5}
+.node.st-superseded .nlabel{opacity:.5;text-decoration:line-through}
+.node.st-refuted .halo{stroke:var(--rock)}
+.node.dim{opacity:.16}
+.dot{fill:var(--surface-1);opacity:.75}
+.ring{fill:none;stroke:var(--stone-edge);stroke-width:1.2;opacity:.9}
+.forkmark{fill:none;stroke:var(--water-side);stroke-width:2;stroke-linecap:round}
+.nlabel{fill:var(--text-secondary);font-size:11.5px;text-anchor:middle}
+svg.far .nlabel,svg.far .flaglabel,svg.far .deadlabel,svg.far .arclabel{display:none}
+.wake{fill:none;stroke:var(--sheen);stroke-width:1.4;opacity:.5}
+/* --- arcs --- */
+.arc{fill:none;stroke-width:2;opacity:.85}
+.arc.back{stroke:var(--back);stroke-dasharray:7 4}
+.arc.supersede{stroke:var(--text-muted);stroke-dasharray:2 4}
+.arc.refute{stroke:var(--rock);stroke-dasharray:2 4}
+.arc.link{stroke:var(--link);stroke-width:1.2;opacity:.55;stroke-dasharray:1 5}
+.ah-back{fill:var(--back)}.ah-sup{fill:var(--text-muted)}.ah-ref{fill:var(--rock)}
+.arclabel{fill:var(--back);font-size:11px;text-anchor:middle}
+.deadmark{stroke:var(--dead);stroke-width:2.2;fill:none;stroke-linecap:round}
+.deadlabel{fill:var(--dead);font-size:11px}
+/* --- banks --- */
+.pole{stroke:var(--bank);stroke-width:1.6}
+.pennant.ship{fill:var(--flag-ship)}.pennant.gate{fill:var(--flag-gate)}
+.pennant.correction{fill:var(--flag-corr)}
+.flaglabel{font-size:11.5px;fill:var(--text-secondary)}
+.flag{cursor:pointer}.flag:hover .flaglabel{fill:var(--text-primary)}
+.lanetick{fill:var(--lane);opacity:.75;cursor:pointer}
+.lanetick:hover{opacity:1}
+.banklabel{fill:var(--text-muted);font-size:11px;letter-spacing:.08em}
+/* --- chrome --- */
+#legend{position:absolute;left:.7rem;bottom:.7rem;background:var(--surface-1);
+  border:1px solid var(--border);border-radius:10px;padding:.5rem .65rem;font-size:11.5px;
+  color:var(--text-secondary);max-width:min(680px,92%);max-height:42%;overflow:auto}
+#legend>summary{cursor:pointer;list-style:none;color:var(--text-muted);font-size:11px;
+  letter-spacing:.06em;margin:-.15rem 0 0}
+#legend>summary::-webkit-details-marker{display:none}
+#legend:not([open]){padding:.3rem .6rem}
+#legend:not([open])>summary{margin:0}
+#legend .row{display:flex;flex-wrap:wrap;gap:.25rem .8rem;align-items:center}
+#legend .row+.row{margin-top:.35rem;padding-top:.35rem;border-top:1px solid var(--border)}
+#legend span.it{display:inline-flex;align-items:center;gap:.32rem}
+#legend .n{color:var(--text-muted)}
+#legend .note{color:var(--text-muted);line-height:1.45}
+.sw{width:16px;height:9px;border-radius:3px;flex:none;display:inline-block}
+#card{position:absolute;display:none;max-width:min(430px,72vw);max-height:56vh;overflow:auto;
+  background:var(--surface-1);
+  border:1px solid var(--border-strong);border-radius:10px;padding:.55rem .7rem;font-size:12.5px;
+  box-shadow:0 6px 24px rgba(0,0,0,.18);pointer-events:none;z-index:6;line-height:1.45}
+#card.pinned{pointer-events:auto}
+#card .k{display:inline-block;font-size:10.5px;padding:.05rem .4rem;border-radius:999px;
+  border:1px solid var(--border);color:var(--text-secondary);margin-right:.25rem}
+#card .ask{font-weight:600;margin:.35rem 0 .15rem}
+#card .st{color:var(--text-secondary)}
+#card .lbl{font-size:10.5px;letter-spacing:.04em;color:var(--text-muted);margin:.5rem 0 .2rem}
+#card code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;
+  word-break:break-all;color:var(--text-secondary)}
+#card .evrow{display:flex;gap:.35rem;align-items:baseline;padding:.1rem 0}
+.ev{font-size:10px;padding:.03rem .35rem;border-radius:999px;flex:none;
+  border:1px solid var(--border-strong);color:var(--text-secondary)}
+.ev-cited{background:color-mix(in srgb,var(--goal) 22%,transparent);border-color:var(--goal)}
+.ev-estimate{background:color-mix(in srgb,var(--back) 22%,transparent);border-color:var(--back)}
+.ev-recall{background:color-mix(in srgb,var(--flag-ship) 20%,transparent);border-color:var(--flag-ship)}
+.ev-unverified{background:color-mix(in srgb,var(--rock) 18%,transparent);border-color:var(--rock)}
+.ev-model-opinion{background:color-mix(in srgb,var(--rock) 18%,transparent);border-color:var(--rock)}
+#card .foot{color:var(--text-muted);font-size:10.5px;margin-top:.45rem}
+#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:var(--text-muted);font-size:13px;text-align:center;padding:2rem}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>river — <span class="mono">__TITLE__</span></h1>
+    <div class="sub mono path" title="__ROOT__">__ROOT__</div>
+  </div>
+  <div class="sub">__COUNTS__ · __MODE__ · __GENERATED__ <span title="stamp source">(__STAMPFROM__)</span></div>
+  <span class="grow"></span>
+  <input id="q" type="search" placeholder="filter records…" autocomplete="off">
+  <span id="qn" class="sub"></span>
+  <button id="fit" type="button">fit</button>
+  <button id="zin" type="button">+</button>
+  <button id="zout" type="button">−</button>
+  <button id="theme" type="button">light / dark</button>
+</header>
+<main><div id="stage">
+  <svg id="sv" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ah-back" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6"
+              orient="auto-start-reverse"><path class="ah-back" d="M0,0 L10,4 L0,8 z"/></marker>
+      <marker id="ah-sup" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5"
+              orient="auto-start-reverse"><path class="ah-sup" d="M0,0 L10,4 L0,8 z"/></marker>
+      <marker id="ah-ref" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5"
+              orient="auto-start-reverse"><path class="ah-ref" d="M0,0 L10,4 L0,8 z"/></marker>
+    </defs>
+    <g id="scene"></g>
+  </svg>
+  <div id="card"></div>
+  <details id="legend" open><summary>LEGEND — click to fold</summary></details>
+  <div id="empty" hidden></div>
+</div></main>
+<script>
+(function(){
+var D = "__RIVER_DATA__";
+var NS = 'http://www.w3.org/2000/svg';
+var root = document.documentElement;
+var svg = document.getElementById('sv'), scene = document.getElementById('scene');
+var stage = document.getElementById('stage'), card = document.getElementById('card');
+var nodes = D.nodes || [], byId = {}, i;
+for (i = 0; i < nodes.length; i++) byId[nodes[i].id] = nodes[i];
+var groups = [], pinned = null, view = {x:0, y:0, k:1}, userMoved = false;
+var LABELS = nodes.length <= 60;
+
+function el(tag, attrs, cls){
+  var e = document.createElementNS(NS, tag);
+  if (cls) e.setAttribute('class', cls);
+  for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function esc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function clip(s, n){ s = String(s || ''); return s.length <= n ? s : s.slice(0, n - 1) + '…'; }
+function num(v){ return Math.round(v * 100) / 100; }
+
+/* Catmull-Rom → cubic bezier: a river bends, it does not zigzag. */
+function smooth(pts){
+  if (!pts.length) return '';
+  if (pts.length === 1) return 'M' + pts[0][0] + ',' + pts[0][1];
+  var d = 'M' + pts[0][0] + ',' + pts[0][1], j;
+  for (j = 0; j < pts.length - 1; j++){
+    var p0 = pts[j - 1] || pts[j], p1 = pts[j], p2 = pts[j + 1], p3 = pts[j + 2] || p2;
+    d += 'C' + num(p1[0] + (p2[0] - p0[0]) / 6) + ',' + num(p1[1] + (p2[1] - p0[1]) / 6) +
+         ' ' + num(p2[0] - (p3[0] - p1[0]) / 6) + ',' + num(p2[1] - (p3[1] - p1[1]) / 6) +
+         ' ' + p2[0] + ',' + p2[1];
+  }
+  return d;
+}
+/* deterministic stone shape: the id hashes to the same pebble every render */
+function hash(s){
+  var h = 2166136261, j;
+  for (j = 0; j < s.length; j++){ h ^= s.charCodeAt(j); h = (h * 16777619) >>> 0; }
+  return h;
+}
+function pebble(cx, cy, r, seed, sides, jag){
+  var h = seed || 1, pts = [], j;
+  for (j = 0; j < sides; j++){
+    h = (h * 1103515245 + 12345) >>> 0;
+    var f = 1 - jag + ((h >>> 9) % 100) / 100 * (jag * 2);
+    var a = j / sides * Math.PI * 2 + ((h >>> 17) % 100) / 100 * 0.22;
+    pts.push(num(cx + Math.cos(a) * r * f) + ',' + num(cy + Math.sin(a) * r * f * 0.84));
+  }
+  return pts.join(' ');
+}
+function loopPath(x1, y1, x0, y0){
+  var lift = 74 + Math.min(150, Math.abs(x1 - x0) * 0.15);
+  var top = Math.min(y0, y1) - lift;
+  return 'M' + x1 + ',' + y1 + ' C' + num(x1 - (x1 - x0) * 0.28) + ',' + num(top) +
+         ' ' + num(x0 + (x1 - x0) * 0.28) + ',' + num(top) + ' ' + x0 + ',' + y0;
+}
+function underPath(x1, y1, x0, y0){
+  var drop = 54 + Math.min(120, Math.abs(x1 - x0) * 0.10);
+  var bot = Math.max(y0, y1) + drop;
+  return 'M' + x1 + ',' + y1 + ' C' + num(x1 - (x1 - x0) * 0.3) + ',' + num(bot) +
+         ' ' + num(x0 + (x1 - x0) * 0.3) + ',' + num(bot) + ' ' + x0 + ',' + y0;
+}
+
+/* ---------------------------------------------------------------- the scene */
+var E = D.extent, TOPY = E.y0 + 66, BOTY = E.y1 - 66;
+var gBank = el('g'), gWater = el('g'), gArc = el('g'), gNode = el('g'),
+    gFlag = el('g'), gLane = el('g');
+[gBank, gWater, gArc, gNode, gFlag, gLane].forEach(function(g){ scene.appendChild(g); });
+
+/* banks: sand above and below, a hairline at each waterline */
+gBank.appendChild(el('rect', {x:E.x0, y:E.y0, width:E.x1 - E.x0, height:TOPY - E.y0}, 'sandband'));
+gBank.appendChild(el('rect', {x:E.x0, y:BOTY, width:E.x1 - E.x0, height:E.y1 - BOTY}, 'sandband'));
+gBank.appendChild(el('path', {d:'M' + (E.x0 + 30) + ',' + TOPY + ' H' + (E.x1 - 30)}, 'bankline'));
+gBank.appendChild(el('path', {d:'M' + (E.x0 + 30) + ',' + BOTY + ' H' + (E.x1 - 30)}, 'bankline'));
+function bankLabel(x, y, t){
+  var e = el('text', {x:x, y:y}, 'banklabel'); e.textContent = t; gBank.appendChild(e);
+}
+bankLabel(E.x0 + 34, TOPY - 16, 'COORD MILESTONES — ships · gates · corrections');
+bankLabel(E.x0 + 34, BOTY + 24, 'LANES — COORD-AGENTS.md activity');
+bankLabel(E.x0 + 34, (TOPY + BOTY) / 2, 'upstream — where we started');
+
+/* the goal bank on the right edge: the river empties into it */
+var gx = D.goal.x;
+gBank.appendChild(el('rect', {x:gx, y:TOPY - 10, width:64, height:BOTY - TOPY + 20, rx:14}, 'goalbank'));
+var gt = el('text', {x:gx + 40, y:(TOPY + BOTY) / 2,
+  transform:'rotate(-90 ' + (gx + 40) + ' ' + ((TOPY + BOTY) / 2) + ')', 'text-anchor':'middle'}, 'goaltext');
+gt.textContent = D.goal.label; gBank.appendChild(gt);
+
+/* channels: a wide band, a bright core, a drifting sheen */
+(D.channels || []).forEach(function(c){
+  if (!c.points || c.points.length < 2) return;
+  var main = c.kind === 'main', d = smooth(c.points);
+  gWater.appendChild(el('path', {d:d, 'stroke-width':main ? 46 : 19}, 'band' + (main ? '' : ' side')));
+  gWater.appendChild(el('path', {d:d, 'stroke-width':main ? 15 : 6}, 'core'));
+  gWater.appendChild(el('path', {d:d, 'stroke-width':main ? 5 : 2.5}, 'flow'));
+  if (c.outcome === 'dead-end'){
+    var p = c.points[c.points.length - 1];
+    gWater.appendChild(el('path', {d:'M' + (p[0] - 9) + ',' + (p[1] - 9) + ' l18,18 M' +
+      (p[0] + 9) + ',' + (p[1] - 9) + ' l-18,18'}, 'deadmark'));
+    var t = el('text', {x:p[0] + 16, y:p[1] + 5}, 'deadlabel');
+    t.textContent = 'dead end — never rejoined'; gWater.appendChild(t);
+  }
+});
+
+/* arcs the bands cannot carry: backtracks upstream, supersede/refute, stray links */
+(D.edges || []).forEach(function(e){
+  if (e.kind === 'flow' || e.kind === 'branch' || e.kind === 'merge') return;
+  var a = byId[e.from], b = byId[e.to];
+  if (!a || !b) return;
+  var back = e.kind === 'back';
+  var d = back ? loopPath(a.x, a.y, b.x, b.y) : underPath(a.x, a.y, b.x, b.y);
+  var mk = back ? 'ah-back' : (e.kind === 'refute' ? 'ah-ref' : 'ah-sup');
+  var at = {d:d};
+  if (e.kind !== 'link') at['marker-end'] = 'url(#' + mk + ')';
+  gArc.appendChild(el('path', at, 'arc ' + e.kind));
+  if (back){
+    var t = el('text', {x:num((a.x + b.x) / 2), y:num(Math.min(a.y, b.y) - 74 - Math.min(150, Math.abs(a.x - b.x) * 0.15) + 26)}, 'arclabel');
+    t.textContent = 'backtrack'; gArc.appendChild(t);
+  }
+});
+
+/* stones turned — one glyph per record, rocks where the flow hit something */
+nodes.forEach(function(n, idx){
+  var g = el('g', {'data-i':idx}, 'node st-' + n.effective + (n.rock ? ' rock' : ''));
+  var main = n.channel === 0, r = (main ? 12 : 9.5) + (n.kind === 'decision' ? 2 : 0);
+  var seed = hash(n.id);
+  if (n.rock){
+    g.appendChild(el('polygon', {points:pebble(n.x, n.y, r + 2.5, seed, 7, 0.34)}, 'rockglyph'));
+    g.appendChild(el('path', {d:'M' + (n.x - r - 10) + ',' + (n.y + r) + ' q' + (r + 10) +
+      ',' + (-r * 1.5) + ' ' + (2 * r + 20) + ',0'}, 'wake'));
+  } else {
+    g.appendChild(el('polygon', {points:pebble(n.x, n.y, r, seed, 6, 0.16)}, 'stone'));
+  }
+  if (n.kind === 'result') g.appendChild(el('circle', {cx:n.x, cy:n.y, r:3.2}, 'dot'));
+  if (n.kind === 'decision') g.appendChild(el('circle', {cx:n.x, cy:n.y, r:r + 5}, 'ring'));
+  if (n.kind === 'side-route')
+    g.appendChild(el('path', {d:'M' + (n.x - 9) + ',' + (n.y - r - 9) + ' l9,7 l9,-7'}, 'forkmark'));
+  g.appendChild(el('circle', {cx:n.x, cy:n.y, r:r + 6}, 'halo'));
+  if (LABELS || n.rock){
+    var t = el('text', {x:n.x, y:n.y + (main ? -r - 12 : r + 18)}, 'nlabel');
+    t.textContent = clip(n.ask || n.statement || n.id, 26);
+    g.appendChild(t);
+  }
+  gNode.appendChild(g); groups.push(g);
+});
+
+/* milestone flags along the top bank */
+(D.milestones || []).forEach(function(m, idx){
+  var g = el('g', {'data-m':idx}, 'flag'), y = TOPY - 30 - (idx % 3) * 30;
+  g.appendChild(el('path', {d:'M' + m.x + ',' + y + ' V' + (TOPY - 2)}, 'pole'));
+  g.appendChild(el('path', {d:'M' + m.x + ',' + y + ' l26,7 l-26,7 z'}, 'pennant ' + m.flag));
+  var t = el('text', {x:m.x + 31, y:y + 11}, 'flaglabel');
+  t.textContent = clip(m.label, 24); g.appendChild(t);
+  gFlag.appendChild(g);
+});
+
+/* lane ticks along the bottom bank */
+(D.lanes || []).forEach(function(l, idx){
+  var y = BOTY + 16 + (idx % 4) * 9;
+  var g = el('g', {'data-l':idx}, 'lanetick');
+  g.appendChild(el('path', {d:'M' + (l.x - 5) + ',' + (y + 5) + ' l5,-6 l5,6 z'}));
+  gLane.appendChild(g);
+});
+
+/* ------------------------------------------------------------------- cards */
+function evRows(ev){
+  if (!ev || !ev.length) return '<div class="evrow"><span class="ev">none</span>' +
+    '<span class="st">no evidence refs on this record</span></div>';
+  return ev.map(function(e){
+    return '<div class="evrow"><span class="ev ev-' + esc(e.label || 'unverified') + '">' +
+      esc(e.label || 'unverified') + '</span><span><code>' + esc(e.ref) + '</code>' +
+      (e.type ? ' <span class="st">' + esc(e.type) + '</span>' : '') + '</span></div>';
+  }).join('');
+}
+function nodeCard(n){
+  var sup = n.superseded_by && n.superseded_by.length
+    ? '<div class="foot">' + esc(n.effective) + ' by ' + esc(n.superseded_by.join(', ')) + '</div>' : '';
+  return '<div><span class="k">' + esc(n.kind) + '</span><span class="k">' + esc(n.relation) +
+    '</span><span class="k">' + esc(n.effective) + '</span>' +
+    (n.inferred ? '<span class="k">inferred</span>' : '') + '</div>' +
+    '<div class="ask">' + esc(clip(n.ask, 300) || '(no ask recorded)') + '</div>' +
+    (n.statement ? '<div class="st">' + esc(clip(n.statement, 420)) + '</div>' : '') +
+    '<div class="lbl">EVIDENCE</div>' + evRows(n.evidence) + sup +
+    '<div class="foot">' + esc(n.ts) + ' · ' + esc(n.session || '—') + ' · ' +
+    esc(n.skill || '—') + ' · channel ' + n.channel + ' · <code>' + esc(n.ref) + '</code>' +
+    (n.links && n.links.length ? ' · links: ' + esc(n.links.join(', ')) : '') + '</div>';
+}
+function flagCard(m){
+  return '<div><span class="k">COORD ' + esc(m.flag) + '</span><span class="k">' +
+    esc(m.lane || '—') + '</span></div>' +
+    '<div class="ask">' + esc(m.ask || '(no ask)') + '</div>' +
+    (m.landed ? '<div class="st">→ ' + esc(m.landed) + '</div>' : '') +
+    (m.evidence ? '<div class="lbl">EVIDENCE (the ledger\'s own claim)</div><div class="st"><code>' +
+      esc(m.evidence) + '</code></div>' : '') +
+    '<div class="foot">' + esc(m.ts) + ' · <code>' + esc(m.ref) + '</code></div>';
+}
+function laneCard(l){
+  return '<div><span class="k">lane</span><span class="k">' + esc(l.model) + '</span></div>' +
+    '<div class="ask">' + esc(l.agent) + '</div>' +
+    '<div class="st">' + esc(l.last || '(no last line recorded)') + '</div>' +
+    '<div class="foot">' + esc(l.ts) + ' · <code>' + esc(l.ref) + '</code></div>';
+}
+function showCard(html, ev){
+  card.innerHTML = html + (pinned ? '<div class="foot">pinned — click the background to release</div>' : '');
+  card.style.display = 'block';
+  var r = stage.getBoundingClientRect(), w = card.offsetWidth, h = card.offsetHeight;
+  var x = ev.clientX - r.left + 16, y = ev.clientY - r.top + 16;
+  if (x + w > r.width - 8) x = Math.max(8, ev.clientX - r.left - w - 16);
+  if (y + h > r.height - 8) y = Math.max(8, r.height - h - 8);
+  card.style.left = x + 'px'; card.style.top = y + 'px';
+}
+function hideCard(){ if (!pinned) card.style.display = 'none'; }
+function bodyFor(g){
+  if (g.hasAttribute('data-i')) return nodeCard(nodes[+g.getAttribute('data-i')]);
+  if (g.hasAttribute('data-m')) return flagCard(D.milestones[+g.getAttribute('data-m')]);
+  return laneCard(D.lanes[+g.getAttribute('data-l')]);
+}
+function hitTarget(t){
+  while (t && t !== scene){
+    if (t.hasAttribute && (t.hasAttribute('data-i') || t.hasAttribute('data-m') ||
+        t.hasAttribute('data-l'))) return t;
+    t = t.parentNode;
+  }
+  return null;
+}
+svg.addEventListener('mousemove', function(ev){
+  if (drag.on) return;
+  var g = hitTarget(ev.target);
+  if (g && !pinned){ showCard(bodyFor(g), ev); } else if (!pinned) hideCard();
+});
+svg.addEventListener('mouseleave', hideCard);
+function unpin(){
+  if (pinned) pinned.classList.remove('pin');
+  pinned = null; card.classList.remove('pinned'); card.style.display = 'none';
+}
+svg.addEventListener('click', function(ev){
+  if (drag.moved) return;
+  var g = hitTarget(ev.target);
+  if (!g){ unpin(); return; }
+  if (pinned === g){ unpin(); return; }
+  unpin(); pinned = g; g.classList.add('pin'); card.classList.add('pinned');
+  showCard(bodyFor(g), ev);
+});
+document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') unpin(); });
+
+/* ------------------------------------------------------- pan · zoom · fit */
+function apply(){
+  scene.setAttribute('transform', 'translate(' + num(view.x) + ',' + num(view.y) +
+                     ') scale(' + (Math.round(view.k * 1e4) / 1e4) + ')');
+  svg.classList.toggle('far', view.k < 0.34);      /* labels would be noise here */
+}
+/* A river is long. Fitting its whole length into the pane makes every stone a
+   hairline, so `fit` fits the HEIGHT (channels, banks, both shores legible) and
+   anchors upstream — you read it by panning downstream. Zoom out for the whole
+   course when you want the shape rather than the records. */
+function fit(){
+  var r = stage.getBoundingClientRect();
+  var w = Math.max(1, E.x1 - E.x0), h = Math.max(1, E.y1 - E.y0);
+  view.k = Math.max(0.02, Math.min(1.15, r.height / h));
+  view.x = (w * view.k <= r.width) ? (r.width - w * view.k) / 2 - E.x0 * view.k
+                                   : 24 - E.x0 * view.k;
+  view.y = (r.height - h * view.k) / 2 - E.y0 * view.k;
+  userMoved = false; apply();
+}
+function zoomAt(cx, cy, f){
+  var k = Math.max(0.02, Math.min(6, view.k * f));
+  view.x = cx - (cx - view.x) * (k / view.k);
+  view.y = cy - (cy - view.y) * (k / view.k);
+  view.k = k; userMoved = true; apply();
+}
+var drag = {on:false, moved:false, x:0, y:0};
+svg.addEventListener('mousedown', function(ev){
+  drag.on = true; drag.moved = false; drag.x = ev.clientX; drag.y = ev.clientY;
+  svg.classList.add('drag');
+});
+window.addEventListener('mousemove', function(ev){
+  if (!drag.on) return;
+  var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  view.x += dx; view.y += dy; drag.x = ev.clientX; drag.y = ev.clientY;
+  userMoved = true; apply();
+});
+window.addEventListener('mouseup', function(){
+  drag.on = false; svg.classList.remove('drag');
+  setTimeout(function(){ drag.moved = false; }, 0);
+});
+svg.addEventListener('wheel', function(ev){
+  ev.preventDefault();
+  var r = stage.getBoundingClientRect();
+  zoomAt(ev.clientX - r.left, ev.clientY - r.top, ev.deltaY < 0 ? 1.12 : 1 / 1.12);
+}, {passive:false});
+document.getElementById('fit').addEventListener('click', fit);
+document.getElementById('zin').addEventListener('click', function(){
+  var r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.25);
+});
+document.getElementById('zout').addEventListener('click', function(){
+  var r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.25);
+});
+document.getElementById('theme').addEventListener('click', function(){
+  var cur = root.getAttribute('data-theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+});
+window.addEventListener('resize', function(){ if (!userMoved) fit(); });
+/* the script runs before layout settles, so the first fit() can read a stage
+   that is not its final size — re-fit on the next frame and on every resize of
+   the stage itself (a wrapped header changes it without a window resize) */
+if (window.ResizeObserver) new ResizeObserver(function(){ if (!userMoved) fit(); }).observe(stage);
+window.requestAnimationFrame(function(){ if (!userMoved) fit(); });
+
+/* ------------------------------------------------------------ filter · legend */
+var q = document.getElementById('q'), qn = document.getElementById('qn');
+q.addEventListener('input', function(){
+  var s = q.value.trim().toLowerCase(), shown = 0;
+  nodes.forEach(function(n, idx){
+    var hay = (n.ask + ' ' + n.statement + ' ' + n.id + ' ' + n.kind + ' ' +
+               n.skill + ' ' + n.session).toLowerCase();
+    var on = !s || hay.indexOf(s) >= 0;
+    groups[idx].classList.toggle('dim', !on);
+    if (on) shown++;
+  });
+  qn.textContent = s ? shown + '/' + nodes.length : '';
+});
+(function legend(){
+  var c = D.counts, L = document.getElementById('legend');
+  function sw(v){ return '<i class="sw" style="background:' + v + '"></i>'; }
+  var glyphs = [
+    sw('var(--water)') + 'main channel — toward the goal <span class="n">' + c.toward + '</span>',
+    sw('var(--water-side)') + 'side channel <span class="n">' + c.lateral + '</span>',
+    sw('var(--back)') + 'backtrack loop <span class="n">' + c.back + '</span>',
+    sw('var(--rock)') + 'rock — conflict / refuted <span class="n">' + c.rocks + '</span>',
+    sw('var(--stone)') + 'stone turned <span class="n">' + c.records + '</span>',
+    sw('var(--flag-ship)') + 'COORD flag <span class="n">' + c.milestones + '</span>',
+    sw('var(--goal)') + 'goal bank'
+  ];
+  var tallies = [
+    'channels <span class="n">' + c.channels + '</span>',
+    'merged back <span class="n">' + c.merged + '</span>',
+    'dead ends <span class="n">' + c.dead_end + '</span>',
+    'forks <span class="n">' + c.side_route + '</span>',
+    'superseded <span class="n">' + c.superseded + '</span>',
+    'refuted <span class="n">' + c.refuted + '</span>',
+    'ships/gates/corrections <span class="n">' + c.ships + '/' + c.gates + '/' + c.corrections + '</span>',
+    'lanes <span class="n">' + c.lanes + '</span>'
+  ];
+  var notes = (D.notes || []).slice();
+  notes.push(D.mode === 'coord-only'
+    ? 'COORD-only river: findings.jsonl was absent, so every node is a ledger line and its kind/relation is INFERRED from the line\'s words — side channels rejoin at the next forward line by chronology, not because the ledger says so.'
+    : 'nodes come from ' + esc(D.sources.findings) + '; COORD flags and lane ticks are overlaid from the ledger volumes.');
+  notes.push('stamped ' + esc(D.generated) + ' from the ' + esc(D.stamp_from) +
+             ' — identical inputs render an identical page.');
+  L.innerHTML = '<summary>LEGEND — click to fold</summary>' +
+    '<div class="row">' + glyphs.map(function(g){ return '<span class="it">' + g + '</span>'; }).join('') + '</div>' +
+    '<div class="row">' + tallies.map(function(t){ return '<span class="it">' + t + '</span>'; }).join('') + '</div>' +
+    '<div class="row"><span class="note">' + notes.map(esc).join('<br>') + '</span></div>';
+})();
+
+if (!nodes.length){
+  var em = document.getElementById('empty');
+  em.hidden = false;
+  em.textContent = 'No records to draw — no archive/findings.jsonl and no COORD ledger ' +
+    'lines under this root. Run a session, or point --root at the repo that has them.';
+}
+fit();
+})();
+</script>
+</body>
+</html>
+"""
+
+
+def cmd_river(a):
+    root = pathlib.Path(a.root).expanduser().resolve()
+    if not root.is_dir():
+        die(f"not a directory: {root}")
+    out = pathlib.Path(a.out).expanduser()
+    out = out if out.is_absolute() else (root / a.out)
+    if out.suffix.lower() in (".html", ".htm"):
+        html_p, json_p = out, out.with_suffix(".json")
+    else:
+        html_p, json_p = out / "river.html", out / "river.json"
+    r = build_river(root, session=a.session, cap=a.cap, use_now=a.now)
+    html_p.parent.mkdir(parents=True, exist_ok=True)
+    json_p.write_text(json.dumps(r, indent=1), encoding="utf-8")
+    html_p.write_text(render_river_html(r, title=root.name), encoding="utf-8")
+    c = r["counts"]
+    print(f"{html_p}: {c['records']} records · {c['channels']} channels "
+          f"({c['merged']} merged, {c['dead_end']} dead-end) · {c['rocks']} rocks · "
+          f"{c['back']} backtracks · {c['milestones']} milestones · mode={r['mode']}")
+    for n in r["notes"]:
+        print(f"  note: {n}")
+    print(f"  data: {json_p}")
+    if a.open:
+        opener = "open" if sys.platform == "darwin" else "xdg-open"
+        try:
+            subprocess.run([opener, str(html_p)], check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"  opened with {opener}")
+        except OSError:
+            print(f"  could not run {opener} — open {html_p} in any browser")
+    return 0
+
+
+# ================================================== queries over the file graph
+
+def load_graph(a):
+    """The scan's own output — never re-derived here. A query answers from the
+    last scan and says when that was; it never pretends to be live."""
+    root = pathlib.Path(a.root).expanduser().resolve()
+    out = pathlib.Path(a.out).expanduser()
+    out = out if out.is_absolute() else (root / a.out)
+    p = out if out.suffix == ".json" else (out / "graph.json")
+    if not p.is_file():
+        die(f"no scan data at {p}\nrun the scan first:\n"
+            f"  python3 {pathlib.Path(__file__).name} scan --root {root}")
+    try:
+        return root, p, json.loads(p.read_text(encoding="utf-8"))
+    except ValueError as e:
+        die(f"{p}: not valid JSON ({e}) — re-run the scan")
+
+
+def resolve_target(g, arg, root):
+    """id, repo-relative path, absolute path inside the root, or a unique
+    basename/substring — in that order, first unambiguous match wins."""
+    ids = [n["id"] for n in g["nodes"]]
+    s = str(arg)
+    ap = pathlib.Path(s).expanduser()
+    if ap.is_absolute():
+        try:
+            s = ap.resolve().relative_to(root).as_posix()
+        except ValueError:
+            s = ap.as_posix()
+    s = s.lstrip("./")
+    if s in ids:
+        return s, []
+    for pick in (lambda i: i.endswith("/" + s), lambda i: i.split("/")[-1] == s,
+                 lambda i: s.lower() in i.lower()):
+        hits = [i for i in ids if pick(i)]
+        if len(hits) == 1:
+            return hits[0], []
+        if len(hits) > 1:
+            return None, hits
+    return None, []
+
+
+def cmd_links(a):
+    root, p, g = load_graph(a)
+    node, hits = resolve_target(g, a.path, root)
+    if not node:
+        if hits:
+            die(f"'{a.path}' matches {len(hits)} nodes — be more specific:\n  "
+                + "\n  ".join(sorted(hits)[:12]))
+        die(f"'{a.path}' is not in {p} (scanned {g.get('generated','?')}) — "
+            "check the path, or re-run the scan if the file is new")
+    meta = next(n for n in g["nodes"] if n["id"] == node)
+    out = sorted(((e["kind"], e["to"]) for e in g["edges"] if e["from"] == node))
+    inc = sorted(((e["kind"], e["from"]) for e in g["edges"] if e["to"] == node))
+    print(f"{node}  ({meta.get('type','?')} · {meta.get('size',0)} B · degree {meta.get('degree',0)})")
+    for title, rows in (("links out", out), ("links in", inc)):
+        print(f"\n{title} ({len(rows)})")
+        if not rows:
+            print("  (none)")
+        for kind, other in rows:
+            print(f"  {kind:<10} {other}")
+    print(f"\nfrom {p} · scanned {g.get('generated','?')} ({g.get('listing','?')} listing)")
+    return 0
+
+
+def cmd_orphans(a):
+    root, p, g = load_graph(a)
+    orph = [n for n in g["nodes"]
+            if not n.get("degree") and n.get("type") not in ("external", "project")]
+    orph.sort(key=lambda n: (n.get("type", ""), n["id"]))
+    shown = orph if a.limit <= 0 else orph[:a.limit]
+    print(f"{len(orph)} node(s) with no edges either way, of {len(g['nodes'])} scanned")
+    for n in shown:
+        print(f"  {n.get('type','?'):<9} {n['id']}")
+    if len(shown) < len(orph):
+        print(f"  … {len(orph) - len(shown)} more (--limit 0 for all)")
+    print(f"\nfrom {p} · scanned {g.get('generated','?')} ({g.get('listing','?')} listing)")
+    print("no edge means nothing in THIS repo's text points at it — an entry point, a "
+          "hook target,\nor a file referenced from outside the scan looks identical to "
+          "dead code here. Check before deleting.")
+    return 0
+
+
+def cmd_stale(a):
+    root, p, g = load_graph(a)
+    now = int(datetime.now(timezone.utc).timestamp())
+    cut = a.days * 86400
+    rows = [(now - n["mtime"], n) for n in g["nodes"]
+            if n.get("mtime") and (now - n["mtime"]) >= cut]
+    rows.sort(key=lambda r: (-r[0], r[1]["id"]))
+    shown = rows if a.limit <= 0 else rows[:a.limit]
+    print(f"{len(rows)} file(s) untouched for {a.days}+ days, of {len(g['nodes'])} scanned")
+    for age, n in shown:
+        stamp = datetime.fromtimestamp(n["mtime"], timezone.utc).strftime("%Y-%m-%d")
+        print(f"  {stamp}  {age // 86400:>5}d  {n['id']}  ({n.get('type','?')}, "
+              f"degree {n.get('degree', 0)})")
+    if len(shown) < len(rows):
+        print(f"  … {len(rows) - len(shown)} more (--limit 0 for all)")
+    print(f"\nfrom {p} · scanned {g.get('generated','?')} ({g.get('listing','?')} listing)")
+    print("mtime is the filesystem's, not the project's: a fresh clone or a checkout "
+          "rewrites every\nmtime to now, and an untouched file can still be load-bearing. "
+          "Age is a prompt, not a verdict.")
+    return 0
+
+
 # ------------------------------------------------------------------------ main
 
 def main():
@@ -1080,6 +2324,39 @@ def main():
     a.add_argument("--per-project-cap", type=int, default=300,
                    help="max nodes kept per project (estate always kept; 0 = no cap)")
     a.set_defaults(f=cmd_all)
+
+    rv = sub.add_parser("river", help="draw the journey: findings + COORD as a river")
+    rv.add_argument("--root", default=".")
+    rv.add_argument("--out", default="graph/river.html",
+                    help="output .html (json written beside it) or a directory")
+    rv.add_argument("--session", default=None, help="only this session/lane")
+    rv.add_argument("--cap", type=int, default=RIVER_CAP,
+                    help=f"max records drawn, newest kept (default {RIVER_CAP}; 0 = all)")
+    rv.add_argument("--now", action="store_true",
+                    help="stamp with wall-clock time instead of the newest input ts "
+                         "(breaks byte-identical re-renders)")
+    rv.add_argument("--open", dest="open", action="store_true", help="open the page after writing")
+    rv.add_argument("--no-open", dest="open", action="store_false")
+    rv.set_defaults(f=cmd_river, open=False)
+
+    q = sub.add_parser("links", help="what links to and from a file (last scan)")
+    q.add_argument("path")
+    q.add_argument("--root", default=".")
+    q.add_argument("--out", default="graph")
+    q.set_defaults(f=cmd_links)
+
+    o = sub.add_parser("orphans", help="files with no edges either way (last scan)")
+    o.add_argument("--root", default=".")
+    o.add_argument("--out", default="graph")
+    o.add_argument("--limit", type=int, default=200, help="0 = no limit")
+    o.set_defaults(f=cmd_orphans)
+
+    st = sub.add_parser("stale", help="files untouched for N+ days (last scan)")
+    st.add_argument("--root", default=".")
+    st.add_argument("--out", default="graph")
+    st.add_argument("--days", type=int, default=90)
+    st.add_argument("--limit", type=int, default=200, help="0 = no limit")
+    st.set_defaults(f=cmd_stale)
 
     args = ap.parse_args()
     raise SystemExit(args.f(args) or 0)

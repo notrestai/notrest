@@ -18,7 +18,7 @@ bad()  { FAILS=$((FAILS+1));  echo "FAIL  $1"; }
 # ---------------------------------------------------------------- base harness
 P="$BASE/plugins/notrest"
 mkdir -p "$P/skills/agentswarm" "$P/skills/researcher" "$P/skills/graph/scripts" \
-         "$P/skills/draft" "$P/hooks"
+         "$P/skills/draft/references" "$P/hooks"
 
 cat > "$P/skills/agentswarm/SKILL.md" <<'EOF'
 ---
@@ -64,11 +64,13 @@ description: "Turn a dossier into the thing you send. Use on /draft."
 # draft
 A draft is never sent — sending is the owner's act, in the owner's client.
 Labels survive: [estimate] stays hedged.
+Per-channel shapes live in `references/formats.md`.
 ## Self-check before finishing
 - Every sentence traces to the source.
 ## Finishing up
 - Hand the draft to the owner.
 EOF
+printf '# formats\nemail · memo · slack\n' > "$P/skills/draft/references/formats.md"
 
 cat > "$P/hooks/session-start.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -155,6 +157,49 @@ inject "router present but unregistered" ROUTER \
 
 inject "router verb with no skill dir" ROUTER \
   'sed -i.bak "s/SKILL=researcher/SKILL=nosuchskill/" "$P/hooks/router.sh" && rm -f "$P/hooks/router.sh.bak"'
+
+# A ghost reference is the .py case's blind spot: SCRIPT-OWNS-SCANNING only ever looked
+# at scripts/*.py, so a SKILL.md could promise a references/ file that was never shipped
+# and nothing said a word.
+inject "reference cited but never shipped" REFERENCES-CITED \
+  'printf "\nThe long form lives in \`references/ghost.md\`.\n" >> "$P/skills/draft/SKILL.md"'
+
+# and the boundary in the other direction: deleting a cited .py must stay SCRIPT-OWNS-
+# SCANNING's finding alone. Two checks firing on one defect is a report nobody can act on.
+inject "cited .py deleted stays one check" SCRIPT-OWNS-SCANNING \
+  'rm -f "$P/skills/graph/scripts/graph.py"'
+
+# ------------------------------------------------------- baseline: what MOVED
+# The baseline is a reporting mode, not a gate: it may add a section, never a verdict.
+python3 "$EVAL" check --root "$BASE" --baseline "$TMP/base.json" > "$TMP/same.out" 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && grep -q 'nothing moved' "$TMP/same.out"; then
+  ok "baseline vs an unchanged tree: nothing moved, exit still 0"
+else
+  bad "baseline vs unchanged tree -> exit $rc"; tail -3 "$TMP/same.out"
+fi
+
+WB="$TMP/wb"; rm -rf "$WB"; cp -R "$BASE" "$WB"
+printf '\nThe long form lives in `references/ghost.md`.\n' \
+  >> "$WB/plugins/notrest/skills/draft/SKILL.md"
+python3 "$EVAL" check --root "$WB" --baseline "$TMP/base.json" > "$TMP/moved.out" 2>&1
+rc=$?
+if [ "$rc" -eq 6 ] && grep -qE 'REFERENCES-CITED +PASS -> FAIL' "$TMP/moved.out"; then
+  ok "baseline names the check that flipped; the exit code stays the run's own (6)"
+else
+  bad "baseline vs a regressed tree -> exit $rc"; tail -6 "$TMP/moved.out"
+fi
+grep -qE '^  \+ FAIL +REFERENCES-CITED' "$TMP/moved.out" \
+  && ok "baseline lists the finding that appeared, with its address" \
+  || bad "baseline reported no added finding"
+
+python3 "$EVAL" check --root "$BASE" --baseline "$TMP/absent.json" > "$TMP/nob.out" 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && grep -q 'baseline unreadable' "$TMP/nob.out"; then
+  ok "a missing baseline is reported, never raised, and the verdict stands"
+else
+  bad "missing baseline -> exit $rc"; tail -3 "$TMP/nob.out"
+fi
 
 # ------------------------------------------------------------------- verdict
 echo "----"

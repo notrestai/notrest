@@ -1,6 +1,6 @@
 ---
 name: eval
-description: "The harness's law-conformance suite — one static pass over the shipped files asking whether every law left a fingerprint: offload policy, honesty labels, scripts that compile, append-only ledgers, the worker contract, front-matter YAML accepts, safety laws, silent-on-failure hooks, the routing law's enforcer. Use on \"/eval\", \"check the laws\", \"conformance check\", \"does the harness obey its own rules\", or before any release. Zero model tokens, seconds, exits 0/5/6. doctor checks the INSTALL; eval checks the LAWS."
+description: "The harness's law-conformance suite — one static pass over the shipped files asking whether every law left a fingerprint: offload policy, honesty labels, scripts that compile, cited files that exist, append-only ledgers, the worker contract, front-matter YAML accepts, safety laws, silent-on-failure hooks, the routing law's enforcer. Use on \"/eval\", \"check the laws\", \"conformance check\", \"what changed since the last run\", or before any release. Zero model tokens, seconds, exits 0/5/6. doctor checks the INSTALL; eval checks the LAWS."
 ---
 
 # eval — does the harness obey its own laws?
@@ -30,13 +30,14 @@ model-last — the model is the *last* instrument you reach for, not the first.
 Every check names the law it guards, cites the **file and line** it judged, and carries
 a fix hint. A finding you cannot act on is a bug in this skill.
 
-## The nine checks
+## The ten checks
 
 | Check | The law |
 |---|---|
 | `OFFLOAD-POLICY` | every documented spawn of a Claude subagent names explicit **opus**; no sonnet/haiku directive; the fork ban is present wherever `subagent_type` is written; the SessionStart hook carries the rule |
 | `HONESTY-LABELS` | every claim-making skill (researcher, factcheck, marketresearcher, explainer, decider, recap, watch, draft) defines or uses `[cited]/[recall]/[estimate]/[unverified]` or its documented verdict grammar |
 | `SCRIPT-OWNS-SCANNING` | every cited scanner exists in the tree and `py_compile`s, and every shipped script is named by its SKILL.md — this is what backs "the scanner reads the files, the model never has to" |
+| `REFERENCES-CITED` | every **bare** `references/…` or `scripts/…` path a SKILL.md cites exists in that skill's own directory. A path already carrying a prefix (`<spend-skill>/scripts/spend.py`) is a deliberate cross-skill reference and is left alone; a bare path that ships under a *different* skill WARNs unless the citing line names that skill; `.py` is left to `SCRIPT-OWNS-SCANNING`, so one defect never lights two checks |
 | `ESTATE-WRITE` | anything that writes COORD, COORD-AGENTS or the spend ledger says **append-only** or routes through the owning script; a directive to hand-edit one is a FAIL |
 | `WORKER-CONTRACT` | every worker skill ships a self-check section and a finishing-up/chains section (arrangement contracts — fable-mode, fable-director, oracle, agentswarm, game-forge — are exempt by construction) |
 | `TRIGGER-SANITY` | front-matter `name` matches the directory; the description is a scalar YAML accepts (**an unquoted `": "` silently kills a skill while the file sits on disk**) and names at least one `/slash` trigger |
@@ -46,6 +47,25 @@ a fix hint. A finding you cannot act on is a bug in this skill.
 
 A line that names sonnet, haiku or `fork` **alongside a negation** is the law being
 stated, not a breach of it; the checker reads the line before judging it.
+
+## `--baseline` — what MOVED
+
+A green suite tells you the laws hold. It does not tell you what your edit *did*.
+
+```bash
+python3 <skill>/scripts/eval.py check --root . --json > /tmp/before.json
+# …work…
+python3 <skill>/scripts/eval.py check --root . --baseline /tmp/before.json
+```
+
+After the summary, a `CHANGED` section names every check whose status flipped and every
+finding that appeared or disappeared, each with its `file:line`. Unchanged runs say
+*nothing moved* in one line. `--json` puts the same diff under a `changed` key.
+
+**The baseline never touches the verdict.** The exit code always reports this run — a
+regression against a green baseline still exits 6, and a missing or corrupt baseline file
+is reported in the section, never raised, with the exit code untouched. A diff is a
+reporting mode; the gate stays the gate.
 
 ## What this is NOT
 
@@ -101,7 +121,10 @@ bash plugins/notrest/skills/eval/scripts/router-fixture.sh    # exit 0 = the rou
 
 `fixture.sh` builds a synthetic mini-harness that passes clean, then injects one violation
 per check and asserts each flips exactly its own check to FAIL with exit 6. Run it after
-any edit to `eval.py` — a conformance suite that cannot be falsified is decoration.
+any edit to `eval.py` — a conformance suite that cannot be falsified is decoration. It also
+asserts the two boundaries that keep findings actionable: a deleted `.py` stays
+`SCRIPT-OWNS-SCANNING`'s alone (never also `REFERENCES-CITED`), and `--baseline` adds a
+section without moving the exit code — unchanged, regressed, and missing-file all asserted.
 
 `router-fixture.sh` is the one behavior fixture in the suite that costs nothing: it pipes
 real `UserPromptSubmit` payloads through `hooks/router.sh` and asserts each shape reaches

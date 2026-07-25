@@ -31,7 +31,28 @@ Two hard rules on timing:
 
 ## The brief
 
-The refuter is only as good as its brief, and the brief is the seat's job. Paste `references/brief-template.md` and fill it. Six parts, all required:
+The refuter is only as good as its brief, and the brief is the seat's job — but most of a
+brief is mechanical, and the mechanical parts are the ones that get skipped under time
+pressure. **The seat mints it with the script:**
+
+```bash
+python3 plugins/notrest/skills/refuter/scripts/brief.py --target <path> --budget 12 \
+  --contract "<what must never happen if this is correct>" [--priorities <file>]
+```
+
+`scripts/brief.py` fills what a script can know from the target itself — the artifact
+inlined in a fenced block with its byte count and sha256 (so the bytes under review are
+pinned, not merely referenced), a freshly minted isolated scratch dir, the budget stamp,
+and the prohibitions — and leaves exactly two fields marked `<<< SEAT MUST FILL >>>`: the
+contract paragraph and the specialized ladder. Those two are judgment; nothing else in the
+brief is. It prints the brief on stdout, ready to paste as the lane's whole prompt, and
+tells you on stderr what is still unfilled (`--strict` turns that into exit 5). `--no-inline`
+cites a path instead of pinning bytes, and says in the brief that the file may change under
+the lane. The lane runs on explicit `model: "opus"`, is a different lane than the builder,
+and gets receipted with `spend.py` like any other.
+
+What the brief must say — six parts, all required (they render as the template's seven
+numbered sections, budget and return contract being the last two):
 
 1. **The target and its contract, in one paragraph.** What is this thing supposed to guarantee? A refuter that does not know the contract can only find crashes, and crashes are the least interesting failures.
 2. **The artifact inline, or its exact absolute path.** Inline is better — it pins the bytes under review. If you give a path, say the commit or say "current working tree", because the file may change under the lane.
@@ -94,9 +115,32 @@ Named flat, because each one is a way this skill gets diluted:
 - **The refuter does not review the builder.** It reviews the artifact. No commentary on the lane, its choices, or its competence.
 - **Absence of findings is a result.** Report a clean sweep, list what you attacked, and do not manufacture a rung-6 nit to look thorough.
 
+## The seat's gate on the returned report
+
+A report is not accepted because it looks thorough. Before the seat reads a finding as
+real — and long before a repair is scheduled off it:
+
+```bash
+python3 plugins/notrest/skills/refuter/scripts/verdict_lint.py <report.md>
+```
+
+`scripts/verdict_lint.py` holds the report to the grammar above: exit **5** when a
+CONFIRMED carries no fenced command+output block, when a PLAUSIBLE names no failure
+scenario, when a numbered finding is neither (the noise the skill says to delete), or when
+the SURVIVED list or the budget line is missing. Exit **0** means the shape is right. It
+reads only, never edits the report, and it does not judge whether a finding is *correct* —
+only whether it is the shape the seat agreed to accept. A rejected report goes back to the
+lane for the missing evidence; it does not get read charitably.
+
+Fixture: `bash plugins/notrest/skills/refuter/scripts/fixture.sh` — exit 0 = every
+assertion held. It lints a canned good report and one canned report per way of breaking
+the grammar, and checks that a numbered line inside pasted output is not mistaken for a
+finding.
+
 ## Self-check before returning
 
-Run this list. It is short on purpose.
+Run this list. It is short on purpose. (`verdict_lint.py` mechanizes the first four; run
+it on your own report before returning it.)
 
 - Every CONFIRMED has a command and pasted output.
 - Every PLAUSIBLE has inputs, a state, and a wrong outcome — and the word PLAUSIBLE.

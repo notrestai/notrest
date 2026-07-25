@@ -10,7 +10,9 @@ just talking. Everything agentic is opt-in, explained, and verified before it's 
 
 ## First use — the 2-question setup
 
-No profile at `<scratch>/gpt-lane/chats/main.profile` → run setup BEFORE sending anything.
+No profile at `$GPT_LANE_ROOT/chats/main.profile` (default `~/.claude/gpt-lane/`, so the
+conversation and its settings survive the session that started them) → run setup BEFORE
+sending anything.
 Ask both questions in one round (AskUserQuestion where available; plain numbered questions
 otherwise), each option in plain words:
 
@@ -26,9 +28,10 @@ otherwise), each option in plain words:
 - **repo-aware** — additionally allows `--here` runs where GPT reads the current
   directory; every such run is preceded by a stated secrets check.
 
-Save both answers to `main.profile` (`LEVEL=medium\nMODE=worker`), send the first
-message, parse `session id: <uuid>` from the header, save to `main.id`. Greet with one
-line stating the active settings so the user knows what they got.
+Save both answers to `main.profile` (`LEVEL=medium\nMODE=worker`), then send the first
+message with `gpt.sh chat` — it parses `session id: <uuid>` from the header and saves
+`main.id` itself. Greet with one line stating the active settings so the user knows what
+they got.
 
 **Non-interactive setup (orchestrators, unattended sessions):** `--setup think=<level>
 mode=<chat-only|worker|repo-aware>` skips the questionnaire — REQUIRED form for
@@ -37,24 +40,46 @@ fable-director and any auto-mode session; never block an unattended session on q
 ## Every message after — the resume loop
 
 ```bash
-cd <scratch>/gpt-lane && \
-codex exec --sandbox read-only -c model_reasoning_effort="$LEVEL" \
-  resume "$(cat chats/main.id)" --skip-git-repo-check \
-  "<MESSAGE>" </dev/null 2>&1
+bash plugins/notrest/skills/gpt/scripts/gpt.sh chat "<MESSAGE>"
 ```
 
-Relay the answer quoted + `[model-opinion]`, tokens-used line included. When the suite's
-**spend** skill is present, append the echoed count to its ledger (`--lane gpt`) — the
-cross-model lane shows up in the same routing report as everything else. `--chat <name>`
-runs parallel named conversations (own `.id`/`.profile`). `--new` re-runs setup. If the
-id file is lost, `resume --last` recovers the most recent session — say you did.
+That is the whole loop. `scripts/gpt.sh` holds the flag order, the empty-cwd isolation,
+the session-id capture, and the receipt — the four things that were being retyped from
+memory and getting subtly wrong. It prints codex's output verbatim (header included, so
+the `reasoning effort:` echo stays visible as proof the level applied) and writes the
+session id on first use.
+
+| Call | Shape | Sandbox |
+|---|---|---|
+| `gpt.sh chat "<msg>" [--think L] [--chat NAME]` | resumes the persistent conversation; fresh session + saved id on first use | read-only |
+| `gpt.sh once "<q>" [--think L]` | one-shot, nothing saved — the director-safe form | read-only |
+| `gpt.sh task <slug> "<job>" [--think L]` | background job in a fresh EMPTY workspace; follow-ups resume it | **workspace-write** |
+| `gpt.sh parse <transcript>` | prints `SESSION=` / `TOKENS=` / `EFFORT=` from a codex transcript | — |
+
+Exit codes: 0 ok · 2 usage (including a `--think` outside the low/medium/high ladder) ·
+3 codex CLI absent (it hands over the install block and stops, never attempting auth
+repair) · 4 codex itself returned non-zero. Env: `GPT_LANE_ROOT` (state, default
+`~/.claude/gpt-lane`), `GPT_CODEX_BIN`, `GPT_SPEND_ROOT`, `GPT_NO_SPEND=1`.
+
+Relay the answer quoted + `[model-opinion]`, tokens-used line included. **The receipt is
+automatic:** every call logs through the spend skill's `spend.py` (append-only) on
+`--lane gpt` — the count parsed from codex's own `tokens used` echo graded `observed`,
+and a chars/4 `estimate` when that echo is missing, so the cross-model lane can never
+quietly cost nothing in the routing report. `--chat <name>` runs parallel named
+conversations (own `.id`/`.profile`). `--new` re-runs setup. If the id file is lost,
+`resume --last` recovers the most recent session — say you did.
+
+Fixture: `bash plugins/notrest/skills/gpt/scripts/fixture.sh` — exit 0 = every assertion
+held. It runs against a stub codex, so it spends no quota and makes no network call: the
+stub records its own argv, which is how the resume flag order, the read-only/workspace-write
+split, and the empty-cwd rule are asserted rather than trusted.
 
 ## Extras (each one sentence to invoke, details on use)
 
-- **`--once "<q>"`** — a one-shot outside any chat: fresh `codex exec`, no session saved.
-  The director-safe form. Optional `--think <level>` overrides the profile for this call.
-- **`--task <slug> "<job>"`** (worker/repo-aware profiles only) — background job in a
-  fresh EMPTY workspace `<scratch>/gpt-work/<slug>/` with `--sandbox workspace-write`,
+- **`--once "<q>"`** (`gpt.sh once`) — a one-shot outside any chat: fresh `codex exec`, no
+  session saved. The director-safe form. `--think <level>` overrides the profile per call.
+- **`--task <slug> "<job>"`** (worker/repo-aware profiles only; `gpt.sh task`) — background
+  job in a fresh EMPTY workspace `$GPT_LANE_ROOT/work/<slug>/` with `--sandbox workspace-write`,
   spawned `run_in_background`. The prompt MUST name deliverable files. On the completion
   notification: read the deliverables and check them — content, not existence — before
   relaying as `[model-artifact]`. ⚠ Hardened after GPT's own review of this design: never

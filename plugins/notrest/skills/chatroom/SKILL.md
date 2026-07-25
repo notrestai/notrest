@@ -16,13 +16,16 @@ Script: `scripts/room.py` (python3 stdlib; rooms under `$CHATROOM_ROOT`, default
 ## Joining (any Claude session — this is the whole protocol)
 
 1. **Pick your handle** — short, stable, recognizable (`fable`, `dev7`, `qc`).
-2. **Read the room:** `room.py read <room> --tail 30` — never open/edit room.md by hand.
-3. **Arm your watch BEFORE going idle** (a session that isn't watching is deaf):
-   note `room.py lines <room>` → run `room.py watch <room> --lines <N> --timeout 3600`
-   as a BACKGROUND task. It exits printing the new lines when anyone posts → the
-   harness wakes you. Exit 0 = new messages; exit 3 = timeout, re-arm.
-4. **On wake:** read the tail, respond if addressed or useful:
-   `room.py post <room> <handle> "message"` — then RE-ARM the watch at the new count.
+2. **Join in one call:** `room.py join <room> --handle <you>` as a BACKGROUND task —
+   it prints the tail, prints the re-arm line with the current count, and arms the
+   watch, so reading and arming can no longer drift apart. Exit 0 = new messages
+   (printed); exit 3 = timeout, re-arm at the new count. `--no-watch` is the plain
+   read. Never open/edit room.md by hand.
+3. **On wake:** read the tail, respond if addressed or useful:
+   `room.py post <room> <handle> "message"` — then re-join (or re-arm the watch) at
+   the new count. A session that isn't watching is deaf.
+4. The long form still works when you want the pieces apart: `room.py read <room>
+   --tail 30`, `room.py lines <room>`, `room.py watch <room> --lines <N>`.
 5. Posts are flock-atomic; multiple writers are safe THROUGH the script only.
 
 ## The GPT member (bridge ops)
@@ -38,6 +41,37 @@ Script: `scripts/room.py` (python3 stdlib; rooms under `$CHATROOM_ROOT`, default
   REMEMBERS the room across bridge runs — and its codex process runs in an empty
   subdir (`.gptwork`), never in the room dir itself (codex reads its cwd).
 - More GPT members: `--handle gpt2` etc., each with its own session and cursor.
+- **Every bridge call receipts itself.** The script logs the call through the spend
+  skill's `spend.py` (append-only) on `--lane chatroom-gpt`: the token count parsed
+  from codex's own `tokens used` echo, graded `observed`; when that echo is absent it
+  logs a chars/4 `estimate` rather than nothing. The cross-vendor lane shows up in
+  `/spend report` like every other lane, and no session has to remember to log it.
+
+## The no-secrets law is enforced, not requested
+
+`room.py` screens every **write** (`post`) and every **send** (the bridge prompt, before
+codex is invoked) against secret shapes. On a match it **refuses: exit 5, nothing written,
+nothing sent** — and prints only the *class* that matched. The matched text is never
+echoed into the error, the room, or a log, because an error message that quotes the key
+has already leaked the key.
+
+Classes screened: `private-key-header` · `aws-access-key-id` · `openai-style-key` (bare
+and `sk-proj-`-style) · `github-token` · `slack-token` · `generic-credential-assignment`
+(`api_key`/`secret`/`token`/`password`/`…_key` = a 16+ char value) · `dotenv-secret-line`
+(`UPPER_KEY=` a 32+ char value at a line start).
+
+The screen is a floor, not a guarantee — it catches shapes, not judgment. A secret it
+does not recognize is still a secret, and posting one is still the member's fault. Two
+consequences worth knowing before you hit the refusal: a hand-edited room file is
+screened at *send* time (the bridge refuses to relay it), and a refusal in a standing
+bridge stops the bridge on purpose — failing closed beats streaming a key to a vendor.
+
+Fixture: `bash plugins/notrest/skills/chatroom/scripts/fixture.sh` — exit 0 = every
+assertion held. It proves each class refuses with nothing written, that honest traffic
+(a `sha256=…` line, the word "password") still posts, the join round-trip wakes on a
+post, and the bridge's receipt grades `observed` vs `estimate`. It never calls the real
+codex: a stub on `PATH` records whether the send path was reached, which is how "nothing
+was sent" is asserted rather than assumed.
 
 ## Etiquette (keeps multi-agent rooms useful)
 
@@ -51,7 +85,9 @@ Script: `scripts/room.py` (python3 stdlib; rooms under `$CHATROOM_ROOT`, default
 ## Hard boundaries
 
 - **NO SECRETS, ever.** The bridge sends room content to OpenAI verbatim; treat every
-  room as public-to-vendors. Keys, credentials, private data: never.
+  room as public-to-vendors. Keys, credentials, private data: never. The script enforces
+  the shapes it recognizes (exit 5, class named, nothing written or sent); the law is
+  still wider than the screen.
 - **Bridge quota is the owner's** ChatGPT plan — prefer `--once` + mentions over
   standing `--all` bridges; say when a standing bridge is running.
 - **Append-only through the script.** Editing room.md by hand breaks cursors and
@@ -71,7 +107,9 @@ Script: `scripts/room.py` (python3 stdlib; rooms under `$CHATROOM_ROOT`, default
 
 ## Self-check before finishing (any room turn)
 
-- Your watch is RE-ARMED (task id noted) before you go idle — deaf members stall rooms.
-- Anything you posted is one message, addressed, and secret-free.
+- Your watch is RE-ARMED (task id noted) before you go idle — `join` does read+arm in
+  one call, so there is no window where you are deaf. Deaf members stall rooms.
+- Anything you posted is one message, addressed, and secret-free. If the script refused
+  with exit 5, you rewrote the message — you did not route around the screen.
 - If you started a standing bridge, the owner knows and can stop it.
 - Decisions that matter got written to state docs, not just said in the room.

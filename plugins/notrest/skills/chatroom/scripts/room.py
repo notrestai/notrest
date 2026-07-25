@@ -10,6 +10,9 @@ Subcommands:
   post   <room> <handle> <text...>    atomic append: [utc] @handle: text
   read   <room> [--tail N]            print last N lines (default 20)
   lines  <room>                       print current line count (arm watches with it)
+  join   <room> [--handle H] [--tail N] [--no-watch]
+                                      read the tail, print the re-arm line, and ARM the
+                                      watch — one call (run it as a BACKGROUND task)
   watch  <room> --lines N [--interval S] [--timeout S]
                                       exit 0 printing new lines when count > N
   gpt-bridge <room> [--handle gpt] [--think low|medium|high] [--once] [--all]
@@ -20,13 +23,65 @@ Subcommands:
                                       subdir (agentic cwd isolation).
 
 Rooms live under $CHATROOM_ROOT (default ~/.claude/chatrooms). NO SECRETS in
-rooms: bridge prompts leave the machine to the GPT vendor.
+rooms: bridge prompts leave the machine to the GPT vendor — and that law is
+ENFORCED here (see SECRET_PATTERNS), not merely asked for.
+
+Exit codes: 0 ok · 3 watch timeout · 5 REFUSED (secret shape in a post or a
+bridge prompt — nothing was written, nothing was sent).
 """
 import argparse, fcntl, os, pathlib, re, subprocess, sys, time
 from datetime import datetime, timezone
 
 ROOT = pathlib.Path(os.environ.get("CHATROOM_ROOT",
                                    pathlib.Path.home() / ".claude" / "chatrooms"))
+
+# ── the no-secrets law, enforced ────────────────────────────────────────────
+# A room is a shared file AND a wire to another vendor's model: the bridge posts
+# room text to OpenAI verbatim. Prose asked members not to paste credentials;
+# this screens for them. Every write path (post) and every send path (bridge)
+# runs the screen FIRST.
+#
+# Refusal names the CLASS ONLY. The matched text is never echoed, never logged,
+# never posted — an error message that quotes the key has leaked the key.
+SECRET_PATTERNS = [
+    ("private-key-header", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY")),
+    ("aws-access-key-id", re.compile(r"\bAKIA[0-9A-Z]{16}")),
+    # bare `sk-<20+>` plus the prefixed form (sk-proj-…, sk-ant-…), whose dash
+    # would otherwise break the run of alphanumerics and slip through.
+    ("openai-style-key",
+     re.compile(r"\bsk-(?:[A-Za-z0-9]{20,}|[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{16,})")),
+    ("github-token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}")),
+    ("slack-token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
+    # no leading \b: the keyword is usually mid-identifier (AWS_SECRET_ACCESS_KEY=…),
+    # where a word boundary never fires.
+    ("generic-credential-assignment",
+     re.compile(r"((?:api|access|secret|private|auth)[_-]?key|secret|token|password"
+                r"|passwd|credentials?)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{16,}", re.I)),
+    # .env shape: UPPER_KEY=<32+> at the start of a line (`export` prefix allowed).
+    # Anchored and uppercase so a legitimate `sha256=<64 hex>` in chat is not refused.
+    # `⏎` is an alternative anchor because posts fold newlines into that marker.
+    ("dotenv-secret-line",
+     re.compile(r"(?:^|⏎)[ \t]*(?:export[ \t]+)?[A-Z][A-Z0-9_]{2,}=['\"]?"
+                r"[A-Za-z0-9+/=_\-]{32,}", re.M)),
+]
+
+
+def screen(text):
+    """Return the list of secret-shape CLASS NAMES present in text (never the text)."""
+    return [name for name, pat in SECRET_PATTERNS if pat.search(text)]
+
+
+def refuse_secrets(text, where):
+    """Screen before any write or send. On a match: say the class, exit 5, do nothing."""
+    hits = screen(text)
+    if not hits:
+        return
+    sys.stderr.write(
+        "REFUSED (%s): the no-secrets law — content matches secret-shape class(es): %s\n"
+        "nothing was written to the room and nothing was sent to the bridge.\n"
+        "the matching text is deliberately NOT echoed. Remove it and re-run.\n"
+        % (where, ", ".join(hits)))
+    sys.exit(5)
 
 
 def rdir(name):
@@ -62,7 +117,13 @@ def cmd_post(a):
     p = rlog(a.room)
     if not p.exists():
         sys.exit(f"no such room: {a.room} — create it first")
-    text = " ".join(a.text).replace("\n", " ⏎ ").strip()
+    raw = " ".join(a.text)
+    # Screen the RAW text (newlines intact, before the ⏎ fold) so line-anchored
+    # shapes still match, and screen before the room file is even opened. The handle
+    # goes on its OWN line: prefixing it inline would push a pasted `KEY=…` off the
+    # start of its line and silently defeat the .env anchor.
+    refuse_secrets("@%s\n%s" % (a.handle, raw), "post")
+    text = raw.replace("\n", " ⏎ ").strip()
     if not text:
         sys.exit("empty message")
     with open(p, "a", encoding="utf-8") as f:
@@ -82,6 +143,25 @@ def cmd_lines(a):
     print(len(read_lines(a.room)))
 
 
+def cmd_join(a):
+    """Read + arm, in one call. Run it as a BACKGROUND task: it prints the tail and
+    the re-arm line, then blocks in the watch until someone posts."""
+    lines = read_lines(a.room)
+    n = len(lines)
+    for ln in lines[-a.tail:]:
+        print(ln)
+    me = pathlib.Path(__file__).resolve()
+    arm = f"python3 {me} watch {a.room} --lines {n} --timeout {int(a.timeout)}"
+    print(f"--- room {a.room} · {n} lines · handle @{a.handle}")
+    print(f"--- re-arm: {arm}")
+    if a.no_watch:
+        return
+    print("--- armed: exit 0 prints the new lines, exit 3 = timeout (re-arm at the new "
+          "count)", flush=True)
+    cmd_watch(argparse.Namespace(room=a.room, lines=n, interval=a.interval,
+                                 timeout=a.timeout))
+
+
 def cmd_watch(a):
     deadline = time.time() + a.timeout
     while time.time() < deadline:
@@ -96,9 +176,54 @@ def cmd_watch(a):
 
 
 CODEX_FLAGS = ["--skip-git-repo-check", "--sandbox", "read-only"]
+TOKENS_RE = re.compile(r"tokens used:?\s*([\d,]+)", re.I)
+
+
+def spend_root():
+    """Where spend/ledger.md lives: $CHATROOM_SPEND_ROOT, else the nearest ancestor
+    of this script that already has one, else the cwd."""
+    env = os.environ.get("CHATROOM_SPEND_ROOT")
+    if env:
+        return pathlib.Path(env)
+    here = pathlib.Path(__file__).resolve()
+    for d in here.parents:
+        if (d / "spend" / "ledger.md").exists():
+            return d
+    return pathlib.Path.cwd()
+
+
+def spend_log(out, prompt, model="gpt-5.6-codex", lane="chatroom-gpt"):
+    """Receipt every bridge call in the suite's ledger: observed when codex echoed
+    `tokens used`, estimate (chars/4) when it did not. A ledger failure is never
+    allowed to break the room — it degrades to a printed note."""
+    m = TOKENS_RE.search(out or "")
+    if m:
+        tokens, grade = int(m.group(1).replace(",", "")), "observed"
+    else:
+        tokens, grade = max(1, (len(prompt) + len(out or "")) // 4), "estimate"
+    script = pathlib.Path(__file__).resolve().parents[2] / "spend" / "scripts" / "spend.py"
+    if os.environ.get("CHATROOM_NO_SPEND") or not script.exists():
+        print(f"bridge: tokens={tokens} grade={grade} (no ledger written)", flush=True)
+        return tokens, grade
+    try:
+        r = subprocess.run([sys.executable, str(script), "log", "--model", model,
+                            "--tokens", str(tokens), "--lane", lane, "--grade", grade,
+                            "--purpose", "chatroom gpt-bridge reply",
+                            "--root", str(spend_root())],
+                           text=True, timeout=30, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT)
+        if r.returncode != 0:
+            print(f"bridge: spend receipt failed (exit {r.returncode}) — "
+                  f"tokens={tokens} grade={grade}", flush=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"bridge: spend receipt failed ({exc.__class__.__name__}) — "
+              f"tokens={tokens} grade={grade}", flush=True)
+    return tokens, grade
 
 
 def codex_call(room, prompt, think):
+    # The send path. Everything below this line leaves the machine — screen first.
+    refuse_secrets(prompt, "gpt-bridge send")
     d = rdir(room)
     work = d / ".gptwork"
     work.mkdir(exist_ok=True)
@@ -118,6 +243,7 @@ def codex_call(room, prompt, think):
     m = re.search(r"session id: ([0-9a-f-]+)", out)
     if m and not sess_file.exists():
         sess_file.write_text(m.group(1))
+    spend_log(out, prompt)
     # answer = text after the last '\ncodex\n' marker, cut at 'tokens used'
     parts = out.split("\ncodex\n")
     ans = parts[-1].split("\ntokens used")[0].strip() if len(parts) > 1 else ""
@@ -176,6 +302,11 @@ def main():
     r = sub.add_parser("read"); r.add_argument("room")
     r.add_argument("--tail", type=int, default=20); r.set_defaults(f=cmd_read)
     l = sub.add_parser("lines"); l.add_argument("room"); l.set_defaults(f=cmd_lines)
+    j = sub.add_parser("join"); j.add_argument("room")
+    j.add_argument("--handle", default="claude"); j.add_argument("--tail", type=int, default=30)
+    j.add_argument("--interval", type=float, default=3)
+    j.add_argument("--timeout", type=float, default=3600)
+    j.add_argument("--no-watch", action="store_true"); j.set_defaults(f=cmd_join)
     w = sub.add_parser("watch"); w.add_argument("room")
     w.add_argument("--lines", type=int, required=True)
     w.add_argument("--interval", type=float, default=3)

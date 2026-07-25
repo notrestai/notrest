@@ -1,88 +1,162 @@
 ---
 name: archivist
-description: "The suite's content-continuity index — scans every ORACLE output folder (research/, decision/, factcheck/, critique/, action-plan/, …) into one greppable oracle-index.md, so no skill re-spends a budget on a question this project already answered. Use on /archivist, \"what do we already know about X\", \"have we researched this before\", \"index the dossiers\", \"refresh the oracle index\", or before a researcher/factcheck/decider run. Reads dossiers, writes only the index."
+description: "The suite's findings store — skills emit compact FINDING RECORDS into one append-only archive/findings.jsonl, validated at the door (schema, enums, honesty labels, real URLs behind cited links); archivist keeps the session's whole track and still indexes legacy dossiers into oracle-index.md. Use on /archivist, \"what do we already know about X\", \"show me the session track\", \"index the dossiers\", or before a researcher / factcheck / decider run."
 ---
 
-# archivist — what does this project already know?
+# archivist — the findings store
 
-`oracle` + `sessionend` preserve *session* continuity (what was I doing). Nothing preserved
-*content* continuity (what do we already know) — every working skill writes its
-`{topic}Dossier.md` into its own folder, and after a few weeks that's an estate nobody can
-see across. The index makes it one glance, and one `find` costs less than one web search.
+`oracle` + `sessionend` keep *session* continuity (what was I doing). This keeps *content*
+continuity (what do we already know) — and it is now a **store, not a filing cabinet**.
 
-Script: `scripts/index.py` (python3 stdlib). The index lives at the project root as
-`oracle-index.md` — one compact entry per dossier: title, date, folder, path, and the
-dossier's own 📌 Read Me First lines.
+Per-skill dossier folders are retired. Working skills no longer each write a two-file dossier
+into their own directory; they emit **finding records** — one compact, validated line per
+thing learned — into the store this skill owns. The store is the session's full track: what
+was asked, what was found, what it rests on, and how each step relates to the last.
+
+Script: `scripts/index.py` (python3 stdlib, zero model tokens). Fixture: `scripts/fixture.sh`.
+
+Store: **`archive/findings.jsonl`**, repo-root relative. One JSON record per line,
+**append-only**, written under an exclusive `flock`. Nothing in it is ever edited in place —
+not by a skill, not by the seat, not by this skill. **Never hand-edit it:** a correction is a
+new record, and `track` resolves what is currently true.
+
+## The record — the schema is pinned
+
+```json
+{
+  "id": "F-7",
+  "ts": "2026-07-25T14:03:11Z",
+  "session": "builder-archivist",
+  "skill": "researcher",
+  "kind": "finding",
+  "ask": "which cache for the read path?",
+  "statement": "Redis 7 ships client-side caching over RESP3 tracking; invalidation is push-based.",
+  "evidence": [{"type": "url", "ref": "https://redis.io/docs/latest/…", "label": "cited"}],
+  "relation": "toward",
+  "links": ["F-3"],
+  "status": "live"
+}
+```
+
+- **`id`** — assigned by the store, `F-<n>`, monotonic. A caller that supplies one is rejected.
+- **`ts`** — ISO8601 Z. Caller-supplied or stamped now.
+- **`session` · `skill`** — who wrote it. **`ask`** — the question it was answering.
+- **`kind`** — `finding` · `result` · `decision` · `conflict` · `backtrack` · `side-route`.
+- **`statement`** — the finding itself, 1–3 sentences. Self-contained: it must read alone.
+- **`evidence`** — `[{type: url|path|command|coord-line, ref, label}]`, label one of
+  `cited` · `estimate` · `recall` · `unverified` · `model-opinion`.
+- **`relation`** — `toward` (progress on the ask) · `lateral` (sideways) · `back` (a retreat).
+- **`links`** — ids this record answers, extends, or corrects. **`status`** — `live` ·
+  `superseded` · `refuted` (as written; the *effective* status is resolved, see below).
+
+## Validation at the door
+
+`add` validates before it appends. A rejected record **exits 2 and names the rule it broke**;
+nothing is written. This is where the suite's honesty-lint lives — a claim that cannot state
+what it rests on does not enter the store.
+
+| rule | turns a record away when |
+|---|---|
+| `statement-required` | statement missing or blank |
+| `kind-enum` · `relation-enum` · `status-enum` | value outside its enum |
+| `evidence-type-enum` · `evidence-label-enum` | evidence type or honesty label outside its enum |
+| `evidence-shape` | evidence is not a list of `{type, ref, label}` with a non-empty ref |
+| `cited-url-needs-url` | a `[cited]` url evidence ref is not a real URL (`scheme://host`) |
+| `evidence-required` | `kind=finding\|result\|decision` with an empty evidence list |
+| `links-unknown` · `links-shape` | links names an id the store does not hold, or is not a list |
+| `unknown-field` · `id-assigned` · `ts-format` · `field-type` | the schema is pinned; ids and shapes are the store's |
+| `json-parse` · `record-object` · `no-input` · `store-corrupt` | the input or the store is not what it claims |
+
+## The resolution rule — append-only status flips
+
+A JSONL store is append-only, so **no record's status is ever rewritten**. A flip is a new
+**tombstone** record: `kind=result`, `relation=back`, the target in `links`, and a statement
+opening `supersedes F-<id>` or `refutes F-<id>`. `supersede` and `refute` write those; both
+validate like anything else.
+
+**`track` resolves the effective status by walking links:** a record's effective status is the
+status it was written with, unless a later tombstone (a) names it in `links` **and** (b) opens
+its statement with the flip verb. Both conditions must hold — a passing mention flips nothing.
+The last such tombstone in `ts` order wins. `--status live` filters on the *effective* status,
+so a superseded record disappears from the live track while staying on disk, forever, with the
+record that replaced it.
 
 ## Commands
 
-- **Refresh:** `python3 <skill>/scripts/index.py scan [--root <project>]` — walks the
-  known output folders (including `pipeline/NN-<skill>/` stage subfolders), finds every
-  `*Dossier.md`, and REPLACES `oracle-index.md`. Idempotent; run it freely.
-- **Query:** `python3 <skill>/scripts/index.py find "<term>" [--root <project>]` — prints
-  the matching index entries (case-insensitive, matches anywhere in an entry).
+**Write one record** (the sink every skill uses):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "session":"<session>","skill":"<skill>","kind":"finding","ask":"<the question>",
+  "statement":"<the finding, 1-3 sentences>",
+  "evidence":[{"type":"url","ref":"https://…","label":"cited"}],
+  "relation":"toward","links":[]}'
+```
+
+Prints the assigned id on success; exits 2 with the rule name on rejection. `--json` or stdin.
+(Loose install: the script sits at `../archivist/scripts/index.py` relative to any sibling skill.)
+
+- **Track:** `index.py track [--session S] [--kind K] [--status live] [--json] [--root .]` —
+  the session's records in `ts` order, one compact line each:
+  `id · kind · relation · statement-head · [labels]`, with ` · SUPERSEDED by F-n` inline on a
+  flipped record. `--json` is the machine surface (`graph` consumes it): every schema field
+  plus `effective_status` and `status_by`.
+- **Flip:** `index.py supersede F-3 --by F-9 [--note "…"]` ·
+  `index.py refute F-3 --evidence <url|path> [--type …] [--label …]`.
+- **Search:** `index.py find "<term>" [--root .]` — matches statements and asks in the store,
+  then legacy index entries, then **dossier bodies** (the index carries only each dossier's
+  Read Me First head, so a term buried in the body used to be invisible).
+- **Legacy index:** `index.py scan [--root .]` — walks the known output folders for every
+  `*Dossier.md` and REPLACES `oracle-index.md`, adding one pointer entry each for the findings
+  store, `COORD-AGENTS.md`, and `compile/candidates.md`. Idempotent; run it freely.
+- **Prove it:** `bash scripts/fixture.sh` — every kind lands, every rule turns its record away
+  with exit 2, the track round-trips, the flips resolve, `find` sees bodies. Exit 0 = green.
+
+## The legacy estate stays readable
+
+History does not get rewritten. Dossiers written before the store still index: `scan` reads
+`research/`, `market-research/`, `understanding/`, `decision/`, `factcheck/`, `critique/`,
+`action-plan/`, `runbook/`, `pipeline/`, `introspection/`, `recap/`, `draft/`, and dates each
+entry from **the dossier's own date line** when it declares one, falling back to file mtime.
+`COORD-AGENTS.md` (which agents ran, what each concluded) and `compile/candidates.md` (what
+this project keeps doing) get one pointer entry each — a pointer, never a copy. From a pointer
+you `grep` the real file, and from a hit you read the transcript before citing it.
 
 ## The workflow
 
-1. **Consult before spending.** About to start a researcher / marketresearcher / factcheck
-   / decider / explainer run? One `find` first. On a hit, surface it: path, date, headline
-   — and offer the real choices: *reuse* (answer from the existing dossier), *extend*
-   (new run seeded with the old dossier as input), or *fresh* (topic moved on). The user
-   picks; you recommend based on age and how load-bearing the claims are.
-2. **Answer "what do we know about X".** `find`, then read only the matching dossier(s),
-   and answer with paths + dates + the dossiers' own honesty labels intact.
-3. **Keep it fresh, cheaply.** Re-scan at natural seams — after any skill writes a new
-   dossier, at `/sessionend`, at oracle intake in a repo with prior runs. A scan is
-   read-only over dossiers and rewrites one file.
-
-## The agent ledger is part of the estate
-
-Dossiers are one dimension of what a project already knows; **which agents were consulted
-and what each concluded** is another. The SubagentStop hook auto-writes `COORD-AGENTS.md`
-at the repo root — one machine-written line per completed agent (id · model · the last
-thing it said · the path to its full transcript). When that file exists, `scan` adds one
-entry to `oracle-index.md`: its path and its ledger entry count (a pointer into the estate,
-not a copy of every agent line). From there the workflow is one hop deeper than for
-dossiers — the index points you to `COORD-AGENTS.md`; `grep` *that* for "have we already
-had an agent look at X", and each hit points at the full transcript on disk for a deep
-audit. All at zero model-token cost: the harness writes the transcript, the hook writes the
-line, the scan writes the pointer. Same honesty rule as the index — `COORD-AGENTS.md` is
-machine-written and a finding aid; read the transcript it points to before citing what an
-agent concluded.
-
-**Repeated work is the third dimension.** Where `COORD-AGENTS.md` records *who was consulted*,
-`compile/candidates.md` records *what this project keeps doing* — the **compile** skill's
-machine-written table of jobs the estate has recorded three or more times. When it exists,
-`scan` adds one entry to `oracle-index.md` the same way: its path plus its ripe/total counts,
-a pointer and not a copy. From the index you go to `candidates.md` for the evidence rows, and
-from a ripe row to `/compile <slug>`. Same honesty rule again — the counts measure repetition,
-never value, and a ripe row is a candidate, not a verdict.
+1. **Consult before spending.** About to run researcher / factcheck / decider / explainer? One
+   `find` first. On a hit, surface it — id or path, date, statement — and offer the real
+   choices: *reuse*, *extend* (seed the run with it), or *fresh* (it moved on). The user picks.
+2. **Emit as you go, not at the end.** A record per thing learned, written when it is learned.
+   A track assembled afterwards is a memory, not a record.
+3. **Answer "what do we know about X"** from `find` + `track`, with labels and dates intact.
+4. **Correct by appending.** Wrong record? `supersede` it with the better one. Contradicted by
+   evidence? `refute` it with the ref. Never delete, never rewrite.
 
 ## Honesty rules
 
-- **The index is a finding aid, never a source.** Cite the dossier it points to; never
-  the index line. Labels and confidence live in the dossier — don't restate them from
-  the index as if re-verified.
-- **A hit is not "still true".** The dossier is a snapshot of its date. Before reusing
-  load-bearing `[cited]` claims from an old dossier, re-verify the ones that could have
-  moved (fable-mode Rule 2: verify what you're handed) — and say which you re-verified.
-- **Never hand-edit `oracle-index.md`.** It's generated; edits are lost on the next scan.
-  Fix the dossier, then re-scan.
-- Empty result ≠ never researched — the index only sees the standard output folders under
-  the scanned root. Say where you looked.
+- **The store is a finding aid, never a source.** Cite the `ref` inside the evidence, not the
+  record line. A `[recall]` record stays `[recall]` when quoted.
+- **A live record is not "still true".** It is a snapshot of its `ts`. Re-verify load-bearing
+  `[cited]` claims that could have moved, and say which you re-verified.
+- **Validation is not verification.** `add` exiting 0 means the record is well-formed and says
+  what it rests on — not that the claim is right.
+- **Empty result ≠ never investigated.** The store only sees what was written under the scanned
+  root. Say where you looked.
 
 ## Self-check before finishing
 
-- The index was regenerated by the script, not hand-written, and the entry count printed
-  by `scan` is in the transcript.
-- Anything you told the user came from a dossier you actually opened this turn — not from
-  the index line alone.
-- If you reused an old dossier for a load-bearing answer, you named its date and what you
-  re-verified.
-- If a new dossier was written this session, the index was re-scanned after it landed.
+- Every record was written by the script and **validated at the door (`add` exited 0)** — none
+  hand-appended to the JSONL.
+- Each statement reads alone, in 1–3 sentences, with its evidence attached.
+- Corrections went in as `supersede`/`refute` tombstones; nothing on disk was edited in place.
+- Anything told to the user came from a record or dossier actually opened this turn.
+- If a legacy dossier landed this session, `scan` ran after it.
 
 ## Finishing up
 
-Chains: a stale-but-relevant hit feeds `/researcher` or `/factcheck` as seed input
-("extend this dossier"); a fresh hit feeds `/decider` as evidence. At `/sessionend`,
-a re-scan makes the next session's oracle intake start already knowing the estate.
+Report the ids written and the track's live count — not the record bodies. Chains: `track
+--json` feeds `/graph` for the rendered session track; a stale-but-relevant hit seeds
+`/researcher` or `/factcheck`; live records feed `/decider` as evidence; `/refuter` attacks a
+record and its finding becomes the `refute` evidence. At `/sessionend`, one `scan` leaves the
+next session's intake already knowing the estate.

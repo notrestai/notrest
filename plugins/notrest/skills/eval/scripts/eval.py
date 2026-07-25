@@ -401,6 +401,65 @@ def check_hooks(root, plug, _skills):
     return out
 
 
+# A citation is judged against the CITING skill's own directory only when it is written
+# bare. `<spend-skill>/scripts/spend.py` and `${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/
+# graph.py` are deliberate cross-skill references and the leading path says so, so the
+# lookbehind drops anything already carrying a path prefix.
+CITE_RE = re.compile(r"(?<![A-Za-z0-9_./-])(references|scripts)/([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)")
+
+
+def check_references(root, _plug, skills):
+    ID = "REFERENCES-CITED"
+    law = "every bare references/ or scripts/ path a SKILL.md cites exists in that skill's own dir"
+    out, ok = [], 0
+    # what the whole tree ships, so an attributed cross-skill citation can be resolved
+    # instead of guessed at
+    owners = {}
+    for name, (d, _t) in skills.items():
+        for sub in ("references", "scripts"):
+            base = os.path.join(d, sub)
+            for dirpath, dirnames, filenames in os.walk(base):
+                for fn in list(dirnames) + filenames:
+                    p = os.path.join(dirpath, fn)
+                    owners.setdefault(os.path.relpath(p, d), set()).add(name)
+
+    for name, (d, txt) in sorted(skills.items()):
+        f = rel(root, os.path.join(d, "SKILL.md"))
+        seen = set()
+        for m in CITE_RE.finditer(txt):
+            cited = ("%s/%s" % (m.group(1), m.group(2))).rstrip("/.")
+            if cited in seen:
+                continue
+            seen.add(cited)
+            # .py scanners are SCRIPT-OWNS-SCANNING's ground; two checks firing on one
+            # defect turns a precise report into a pile.
+            if cited.endswith(".py"):
+                continue
+            local = os.path.join(d, cited)
+            if os.path.exists(local):
+                ok += 1
+                continue
+            elsewhere = sorted(owners.get(cited, set()) - {name})
+            line_start = txt.rfind("\n", 0, m.start()) + 1
+            line_end = txt.find("\n", m.end())
+            line = txt[line_start:line_end if line_end > 0 else len(txt)]
+            if elsewhere and any(o in line for o in elsewhere):
+                ok += 1                      # attributed cross-skill citation: honest
+            elif elsewhere:
+                out.append(R(ID, "WARN", law, "%s:%d  cites %s — it ships in %s, not here"
+                             % (f, lineno(txt, m.start()), cited, "/".join(elsewhere)),
+                             "name the owning skill on that line, or the reader opens the "
+                             "wrong directory"))
+            else:
+                out.append(R(ID, "FAIL", law, "%s:%d  cites %s — no such file under %s/"
+                             % (f, lineno(txt, m.start()), cited, name),
+                             "ship the file or stop citing it — a cited path that does not "
+                             "exist is a promise the skill cannot keep"))
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law, "%d cited reference/script path(s) resolve" % ok))
+    return out
+
+
 ROUTE_RE = re.compile(r"\bSKILL=([a-z][a-z0-9-]*)")
 
 
@@ -461,9 +520,9 @@ def check_router(root, plug, skills):
     return out
 
 
-CHECKS = [check_offload, check_labels, check_scripts, check_estate,
-          check_selfcheck, check_triggers, check_safety, check_hooks,
-          check_router]
+CHECKS = [check_offload, check_labels, check_scripts, check_references,
+          check_estate, check_selfcheck, check_triggers, check_safety,
+          check_hooks, check_router]
 
 
 # ---------------------------------------------------------------------------
@@ -514,7 +573,67 @@ def run_behavior(name):
 
 
 # ---------------------------------------------------------------------------
-def run_check(root, as_json):
+# baseline diff — what MOVED since a recorded run
+# ---------------------------------------------------------------------------
+RANK = {"SKIP": 0, "PASS": 1, "WARN": 2, "FAIL": 3}
+
+
+def aggregate(rows):
+    """One status per check id: the worst row wins, because that is what the exit code
+    already reflects."""
+    out = {}
+    for r in rows:
+        cur = out.get(r["check"])
+        if cur is None or RANK.get(r["status"], 0) > RANK.get(cur, 0):
+            out[r["check"]] = r["status"]
+    return out
+
+
+def diff_baseline(path, current):
+    """-> dict. A baseline never changes the verdict or the exit code; it only says what
+    moved. An unreadable baseline is reported, not raised — a missing reference run is
+    not a conformance failure."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            prev = json.load(fh).get("results") or []
+    except (OSError, ValueError, AttributeError) as exc:
+        return {"path": path, "error": "%s: %s" % (type(exc).__name__, exc)}
+
+    old_agg, new_agg = aggregate(prev), aggregate(current)
+    flips = [{"check": k, "from": old_agg.get(k, "absent"), "to": new_agg.get(k, "absent")}
+             for k in sorted(set(old_agg) | set(new_agg))
+             if old_agg.get(k, "absent") != new_agg.get(k, "absent")]
+
+    def key(r):
+        return (r["check"], r["status"], r["evidence"])
+    old_f, new_f = {key(r): r for r in prev}, {key(r): r for r in current}
+    added = [new_f[k] for k in sorted(set(new_f) - set(old_f))]
+    removed = [old_f[k] for k in sorted(set(old_f) - set(new_f))]
+    return {"path": path, "flips": flips, "added": added, "removed": removed}
+
+
+def print_changed(d):
+    print("")
+    if d.get("error"):
+        print("CHANGED vs %s — baseline unreadable (%s); the verdict above stands unchanged"
+              % (d["path"], d["error"]))
+        return
+    if not (d["flips"] or d["added"] or d["removed"]):
+        print("CHANGED vs %s — nothing moved: same checks, same findings" % d["path"])
+        return
+    print("CHANGED vs %s" % d["path"])
+    for f in d["flips"]:
+        print("  %-22s %s -> %s" % (f["check"], f["from"], f["to"]))
+    for r in d["added"]:
+        print("  + %-5s %-22s %s" % (r["status"], r["check"], r["evidence"]))
+    for r in d["removed"]:
+        print("  - %-5s %-22s %s" % (r["status"], r["check"], r["evidence"]))
+    print("  (%d check(s) flipped · %d finding(s) added · %d removed — the exit code above "
+          "reports THIS run, never the diff)" % (len(d["flips"]), len(d["added"]),
+                                                 len(d["removed"])))
+
+
+def run_check(root, as_json, baseline=None):
     started = time.time()
     plug, skills = locate(root)
     if not skills:
@@ -527,11 +646,15 @@ def run_check(root, as_json):
     warns = sum(1 for r in results if r.status == "WARN")
     elapsed = time.time() - started
     verdict = "FAIL" if fails else ("WARN" if warns else "PASS")
+    rows = [r.as_dict() for r in results]
+    changed = diff_baseline(baseline, rows) if baseline else None
     if as_json:
-        print(json.dumps({"verdict": verdict, "root": root, "skills": len(skills),
-                          "fails": fails, "warns": warns,
-                          "seconds": round(elapsed, 3),
-                          "results": [r.as_dict() for r in results]}, indent=2))
+        blob = {"verdict": verdict, "root": root, "skills": len(skills),
+                "fails": fails, "warns": warns, "seconds": round(elapsed, 3),
+                "results": rows}
+        if changed is not None:
+            blob["changed"] = changed
+        print(json.dumps(blob, indent=2))
     else:
         for r in results:
             print("%-5s %-22s %s — %s" % (r.status, r.check, r.law, r.evidence))
@@ -539,6 +662,8 @@ def run_check(root, as_json):
                 print("      fix: %s" % r.fix)
         print("SUMMARY %s — %d skills, %d checks, %d fail, %d warn, %.2fs, 0 model tokens"
               % (verdict, len(skills), len(CHECKS), fails, warns, elapsed))
+        if changed is not None:
+            print_changed(changed)
     return 6 if fails else (5 if warns else 0)
 
 
@@ -548,12 +673,15 @@ def main(argv):
     c = sub.add_parser("check", help="static law conformance over the shipped files")
     c.add_argument("--root", default=os.getcwd())
     c.add_argument("--json", action="store_true")
+    c.add_argument("--baseline", metavar="FILE.json",
+                   help="a previous --json run; report what MOVED since it "
+                        "(never changes the verdict or the exit code)")
     b = sub.add_parser("behavior", help="print an opt-in bounded model case (does not run it)")
     b.add_argument("--case", required=True)
     b.add_argument("--list", action="store_true")
     ns = ap.parse_args(argv)
     if ns.cmd == "check":
-        return run_check(os.path.abspath(ns.root), ns.json)
+        return run_check(os.path.abspath(ns.root), ns.json, ns.baseline)
     if ns.cmd == "behavior":
         return run_behavior(ns.case)
     ap.print_help()
