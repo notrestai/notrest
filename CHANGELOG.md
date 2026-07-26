@@ -1,5 +1,52 @@
 # Changelog — the notrest harness
 
+## 3.10.0 — 2026-07-26
+
+**Teeth, a heartbeat, a proven watch, and a transporter — the four vectors' first rungs land together.**
+
+- **beam — the 29th skill** (`/beam up` · `/beam down`): in-flight lanes checkpoint to a
+  pushed `beam/<ts>` ref and respawn in the cloud; results recall home with receipts.
+  Physics honored: nothing teleports process memory — bank (brief + progress digest +
+  files) → snapshot (temp-index git plumbing publishes the ref WITHOUT touching the live
+  worktree; no-touch proven five independent ways incl. reflog length) → rail (prints,
+  never spawns: PRIMARY `claude --cloud` with checkout-the-ref-first; scheduled-kick via
+  routines with the untrusted-fire-text law; Desktop Continue-in-Web; the gated
+  `isolation:"remote"` fast path with its mandatory `remote_launched` assertion — verified
+  to DEGRADE SILENTLY otherwise) → down (fetches to a recall ref, DELIVERED/MISSING per
+  lane, exit 3 on missing, folds by instruction only). Harness carriage: the ref's own
+  `.claude/settings.json` gains project-scoped notrest installation (user config never
+  travels to cloud VMs — verified), working copy byte-untouched. `--force` stops running
+  lanes after banking, and every forced lane carries a written LOSS-ESTIMATE — a
+  mid-flight checkpoint is never pretended lossless. The resume-prompt law block rides in
+  every payload (opus-explicit, commit-to-ref, records through the door, tight RETURN.md,
+  stay in your lane). Fixture: 170 assertions incl. fake-cloud round trip.
+- **pretool-gate.sh — the first HARD gate** (PreToolUse on Bash, exit-2 blocking verified
+  against the binary): `git push` in this repo blocks while doctor/eval are red (codes
+  printed raw); the consumer install flow that shadowed the runtime three times today
+  blocks anywhere on this machine. `NOTREST_GATE_OVERRIDE=1` honored in BOTH env forms
+  (the natural prefix spelling would otherwise have been a documented lie); fail-open on
+  the gate's own errors; 1.9ms miss path; 35-assertion fixture. Arms on `/reload-plugins`
+  or restart.
+- **pulse.sh — the autonomy heartbeat:** one unattended run of every instrument + river
+  refresh, one flock'd COORD line, exit 1 on health reds only (workload signals — due
+  claims, ripe candidates — are data, not sirens; `--strict` restores the literal
+  reading). Scheduling remains the owner's click, by law. 48-assertion fixture.
+- **watch PROVEN LIVE** — the last never-proven claim from the v3.5.0 handoff dies:
+  two T1 doc claims (the very pages the cutover and the gate rest on) enrolled, probed
+  over real HTTP (200 ×2), sha256 baselines set, re-probes UNCHANGED at zero model
+  tokens, first real drift-log block written; UNVERIFIABLE→HOLDS earned, not carried
+  (store record F-3).
+- **UTC law:** watch.py stamped local time with a Z suffix (proven: 23:09 UTC emitted
+  16:09Z; F-4) — fixed to timezone.utc; estate-writer audit found no other Z-liar.
+- Housekeeping: third shadow reinstall purged (F-5, linked to F-1 — the river now shows
+  recurring rocks on the same ground); five >500 descriptions dieted to fund beam under
+  the 3,600 ceiling (always-on ~3,513); journey fixture derives its skill count from disk
+  instead of pinning 28; HOOK-CONTRACT nuance documented (a PreToolUse hook exits 2 on
+  its decision path by design — failure paths still exit 0).
+- Gate: 18 fixtures (~1,150 assertions) seat-re-run exit 0 · eval 12/12 0-fail (29
+  skills) · doctor 10/10 post-ritual · validate 0 · cross-lane conflict audit clean
+  (every changed file traced to exactly one owner).
+
 ## 3.9.0 — 2026-07-25
 
 **All eighteen journey gaps in one batch — the loop closes: every verb feeds the store, the store feeds the pictures, and refuted ground shows red.**

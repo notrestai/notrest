@@ -1,6 +1,6 @@
 # The notrest harness in 10 minutes
 
-The session harness — plus twenty-eight skills — that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
+The session harness — plus twenty-nine skills — that make any Claude session **token-lean, verified, and continuous** — on any topic, with any model. This is the shortest path from install to your first full working loop.
 
 ## 1. Install (once)
 

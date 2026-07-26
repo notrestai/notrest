@@ -123,11 +123,16 @@ Three hard constraints on any case added here:
 ```bash
 bash plugins/notrest/skills/eval/scripts/fixture.sh           # exit 0 = every assertion held
 bash plugins/notrest/skills/eval/scripts/router-fixture.sh    # exit 0 = the routing law holds
+bash plugins/notrest/skills/eval/scripts/pretool-fixture.sh   # exit 0 = the hard gate has teeth
 ```
 
 `fixture.sh` (28 assertions) builds a synthetic mini-harness that passes clean, then injects
 one violation per check and asserts each flips exactly its own check to FAIL with exit 6. Run
 it after any edit to `eval.py` — a conformance suite that cannot be falsified is decoration.
+`pretool-fixture.sh` (35 assertions) proves the PreToolUse gate: rule blocks against stub
+instruments, all four override forms, fail-open on garbage, and the miss-path timing bound.
+One nuance the HOOK-CONTRACT law tolerates by design: a PreToolUse hook exits 2 on its
+DECISION path — blocking is its job; its failure paths still exit 0 (fail-open).
 It also asserts the boundaries that keep findings actionable: a deleted `.py` stays
 `SCRIPT-OWNS-SCANNING`'s alone (never also `REFERENCES-CITED`); a ghost verb moved through
 *both* authorities stays `ROUTER`'s alone (never also `ROUTE-TABLE-PARITY`); a drifted shape

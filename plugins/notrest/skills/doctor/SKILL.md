@@ -105,6 +105,46 @@ it could not determine, rather than guessing.
   session that knows the context disappears.
 - **Against the installed cache dir** when a session's behaviour disagrees with the repo.
 
+## The pulse — the estate's heartbeat in one command
+
+`scripts/pulse.sh [--root .]` is every read-only instrument in the suite, run back to back
+by something that is not a model. It calls `doctor.py check`, `eval.py check`, `watch.py due`,
+`compile.py report` and `spend.py report`, then `graph.py river --no-open` and `graph.py scan`
+(both guarded by existence — a repo without the graph skill still has a heartbeat), and banks
+**one** line to `COORD.md`:
+
+```
+- [2026-07-26 23:05Z] [pulse] estate pulse -> doctor=5 eval=0 watch-due=2 compile=ripe spend=CLEAN river=findings+coord | evidence: pulse.sh
+```
+
+That append is the only thing pulse writes. It goes in under the same exclusive lock the
+SessionEnd hook uses, and an identical line already in the file is a no-op, so a pulse is safe
+to re-run and two racing pulses land two lines rather than one torn one.
+
+**Exit 0 = green, exit 1 = something wants a human** — the whole point, because a scheduler can
+only alert on a number. The colour is decided by **health** (doctor, eval, spend, graph); the
+two instruments that use a non-zero exit as a *signal* rather than a fault — `watch.py due`
+exit 3 (something is due) and `compile.py report` exit 3 (candidates are ripe) — are carried on
+the line as **data**, not as alarms. An estate with a due watch and eleven ripe candidates is
+the system working; wiring that to the siren would make the heartbeat permanently red, and an
+alarm that is always on is an alarm nobody reads. `--strict` restores the literal reading (any
+non-zero exits 1) for a caller who wants the unnuanced gate.
+
+Silent-fail-open, like the hooks: no `set -e`, a missing instrument prints `-` instead of a
+stack trace, and pulse's own plumbing never raises the alarm.
+
+Fixture: `bash plugins/notrest/skills/doctor/scripts/pulse-fixture.sh` — exit 0 = every
+assertion held.
+
+### Scheduling it is the owner's click, never the harness's
+
+pulse is what you would point a scheduler at — and **the harness never schedules itself.**
+Creating, updating, pausing, or deleting a scheduled task is an owner-confirmed action, one
+explicit yes per action, exactly as `watch` requires for its recheck cycle: *offer*, then wait.
+Never write a fake schedule, never claim a task exists, and never imply something is running in
+the background. A cron line the owner did not approve is a background process nobody consented
+to. Run it by hand until the owner says otherwise — `bash pulse.sh --root .` is the whole ritual.
+
 ## Proving it
 
 ```bash

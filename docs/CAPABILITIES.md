@@ -271,6 +271,42 @@ gap: Judges shipped text only — any law without a textual fingerprint is invis
 
 ---
 
+## The four vectors (owner-ratified 2026-07-25)
+
+The roadmap's axes after v3.9.0. Each staged; a rung ships only when the one below is
+fixture-proven.
+
+**V1 — PreToolUse policy (enforcement with teeth).** The harness stops being
+nudge-and-audit: hooks that BLOCK. Rung 1 (building): `hooks/pretool-gate.sh` — the ship
+gate goes mechanical (`git push` in this repo blocked while doctor/eval are red) and the
+SHADOW incident becomes impossible (`claude plugin install/update …notrest` blocked on
+this machine); always with `NOTREST_GATE_OVERRIDE=1` as the logged escape hatch, always
+fail-open on the gate's own errors. Rung 2: estate-write policy (hand-appends to
+machine-owned ledgers warned). Rung 3: lane-spawn policy (a non-opus offload blocked at
+the call, not discovered in the ledger).
+
+**V2 — Autonomy (the harness runs without a seat).** Rung 1 (building):
+`doctor/scripts/pulse.sh` — one unattended heartbeat: all instruments + river refresh,
+one COORD line, exit 1 on any red. Rung 2 (owner's click, never self-installed): the
+pulse on a daily schedule; watch's cadence on the scheduled-tasks MCP. Rung 3: a
+scheduled session that acts on a red pulse (triage lane, bounded). The law stands: the
+harness never schedules itself.
+
+**V3 — Agent SDK (owning the loop).** The port path, in order: (1) a SPEC page — what
+the shell owns (loop, session mgmt, surface) vs what ports untouched (the estate,
+instruments, router, laws — all files + stdlib scripts + exit codes by design); (2) a
+spike: a minimal claude-agent-sdk app that boots with the laws injected, the estate
+mounted, and one verb end-to-end (researcher → record → river); (3) the port. Nothing
+here blocks V1/V2/V4 — the plugin remains the spec and test-bed, and every law proven
+in fixtures moves with us.
+
+**V4 — Hardening (close the honesty gaps).** Rung 1 (building): watch proven LIVE on
+real URLs (the last never-proven claim from the v3.5.0 handoff era dies). Rung 2: a
+bounded behavioral eval arm via native `claude plugin eval` (does a research-shaped ask
+actually invoke researcher? — routing measured, not asserted). Rung 3: Chains sections
+for the 8 skills without them; the prose-only handoffs made mechanical. Rung 4:
+multi-machine estate (the PM cross-project view proven, then the estate syncs).
+
 ## Build priority (owner-redlineable)
 
 1. **Router hook** — SHIPPED v3.7.0: the enforcement layer for "use the suite's verbs".

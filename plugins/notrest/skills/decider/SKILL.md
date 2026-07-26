@@ -1,6 +1,6 @@
 ---
 name: decider
-description: "Structure any decision — options (always including do-nothing/wait), criteria weighted by what the user actually cares about, evidence per option, a reasoned scoring matrix with a sensitivity check (\"which assumption flips the winner\"), a pre-mortem on the front-runner, and a recommendation with confidence + reversibility framing — landing a validated DECISION RECORD in the archivist store (or --quick). Use on /decider or \"should I…\", \"help me decide/choose\", \"X or Y\", \"compare these options\", \"what are the tradeoffs\". The user decides; this structures."
+description: "Structure any decision — options (always incl. do-nothing), weighted criteria, evidence per option, a scored matrix with a sensitivity hinge (\"which assumption flips the winner\"), a pre-mortem on the front-runner, a recommendation with confidence + reversibility — landing a validated DECISION RECORD in the archivist store (or --quick). Use on /decider or \"should I…\", \"help me decide/choose\", \"X or Y\", \"compare these options\", \"what are the tradeoffs\". The user decides; this structures."
 ---
 
 # Decider

@@ -46,3 +46,11 @@
 [2026-07-26 03:45Z] lane=subagent model=claude-opus-5 tokens=1526554 grade=observed purpose="auto-receipt: Let me verify whether the many `story.not.rest` snapshots ar" agent=a44da15a142bdfeb6
 [2026-07-26 03:45Z] lane=subagent model=claude-opus-5 tokens=2851280 grade=observed purpose="auto-receipt: Mapping complete. No files were modified. ## ESTATE MAP `~/." agent=ac03288865ded136b
 [2026-07-26 03:46Z] lane=subagent model=claude-opus-5 tokens=7433017 grade=observed purpose="auto-receipt: Audit complete. Report below. --- # PORTABILITY AUDIT — `ora" agent=a5c7b8b5519ba3c55
+[2026-07-26 04:09Z] lane=subagent model=claude-opus-5 tokens=1620324 grade=observed purpose="auto-receipt: I probed the live environment. **Six facts in the brief are" agent=a95c9323f97a92574
+[2026-07-26 04:11Z] lane=subagent model=claude-opus-5 tokens=3807496 grade=observed purpose="auto-receipt: Let me verify the one thing that determines whether remote a" agent=ae1ec7f5be80a5a5c
+[2026-07-26 04:11Z] lane=subagent model=claude-opus-5 tokens=3625575 grade=observed purpose="auto-receipt: Let me derive the actually-used MCP connectors from the tran" agent=a94694039b64f2224
+[2026-07-26 22:54Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a853886dd8098152f
+[2026-07-26 23:02Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ac4dc2f80860858d2
+[2026-07-26 23:06Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a5838c47322e36a64
+[2026-07-26 23:10Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a931d2ff4294dcbb5
+[2026-07-26 23:14Z] lane=subagent model=claude-opus-5 tokens=10824847 grade=observed purpose="auto-receipt: Confirmed defect — `watch.py:655` stamps **local** time with" agent=a92ec90f53d50c930

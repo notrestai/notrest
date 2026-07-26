@@ -1,6 +1,6 @@
 ---
 name: factcheck
-description: "Verify claims against real sources — extract the load-bearing claims from a statement, document, or answer, hunt primary sources (two independent ones for CONFIRMED; daisy-chains detected and collapsed), and deliver claim-by-claim verdicts ✅ CONFIRMED / 🟡 PLAUSIBLE / 🔴 REFUTED / 🔵 MISLEADING / ⚪ UNVERIFIABLE with dated citations — landing one validated FINDING RECORD per claim in the archivist store (or --quick for the top claims in chat). Use on /factcheck or \"is this true\", \"fact-check / verify / double-check this\", \"did X really say/do that\"."
+description: "Verify claims against real sources — extract the load-bearing claims, hunt primary sources (two independent for CONFIRMED; daisy-chains collapsed), claim-by-claim verdicts ✅ CONFIRMED / 🟡 PLAUSIBLE / 🔴 REFUTED / 🔵 MISLEADING / ⚪ UNVERIFIABLE with dated citations — one validated FINDING RECORD per claim in the store (or --quick). Use on /factcheck or \"is this true\", \"fact-check / verify / double-check this\", \"did X really say/do that\"."
 ---
 
 # Factcheck

@@ -1,7 +1,7 @@
 # ORACLE Suite
 
 A working-session toolkit for Claude Code by [Not Rest Inc.](https://do.not.rest) — structured
-thinking from intake to handoff. Twenty-eight skills that compose:
+thinking from intake to handoff. Twenty-nine skills that compose:
 
 - **oracle** — session intake (the ORACLE six-question setup) + loads/scaffolds the `CLAUDE.md` foundation. Say "hey oracle" or `/oracle`.
 - **researcher** — multi-pass research → background + decision dossier.
@@ -75,6 +75,7 @@ thinking from intake to handoff. Twenty-eight skills that compose:
   ([estimate] stays hedged, [unverified] drops or hedges, never becomes fact). Numbers never
   invented, quotes never manufactured, recipients never guessed — and a draft is never sent:
   sending is the owner's act, and a draft file is never evidence of delivery.
+- **beam** — checkpoints in-flight lanes to a pushed beam ref, respawns them in a cloud session, recalls the results home (`/beam up` · `/beam down`).
 - **director** — chains the skills into a pipeline (e.g. `researcher → critic → stepbystep`).
 - **fable-director** — seats and runs the "3 DEVS AND A RELAY" multi-session dev arrangement
   (metered director + flat lanes over per-lane blackboard files with token-watch wakes;

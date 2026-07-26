@@ -63,7 +63,6 @@ ROUTER_VERBS=$(grep -oE '\bSKILL=[a-z][a-z0-9-]*' "$PLUG/hooks/router.sh" 2>/dev
                | sort -u | wc -l | tr -d ' ')
 
 ge  "router shape nodes"        14 "$(val "$J" counts.shapes)"
-chk "skill nodes"               28 "$(val "$J" counts.skills)"
 chk "skill nodes == SKILL.md files on disk" "$DISK_SKILLS" "$(val "$J" counts.skills)"
 ge  "routed skills"    "$ROUTER_VERBS" "$(val "$J" counts.routed)"
 ge  "phrase pills"              40 "$(val "$J" counts.phrases)"

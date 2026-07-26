@@ -31,7 +31,7 @@ Stdlib only. Files: <root>/watch/watchlist.md, <root>/watch/drift-log.md, and a 
 validator cache at <root>/watch/.probe-cache.json (machine-written, safe to delete).
 """
 import argparse, hashlib, json, os, pathlib, re, subprocess, sys, tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from urllib import error as uerror, request as urequest
 
 CADENCE_DAYS = {"daily": 1, "weekly": 7, "fortnightly": 14, "monthly": 30,
@@ -652,7 +652,7 @@ def cmd_append(a):
           % (log, len(findings), p))
     print("COORD line: - [%s] [watch] recheck: %s due -> %d holds / %d drifted / %d dead "
           "| evidence: watch/drift-log.md %s"
-          % (datetime.now().strftime("%Y-%m-%d %H:%MZ"), n_due, counts["HOLDS"],
+          % (datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ"), n_due, counts["HOLDS"],
              counts["DRIFTED"], counts["DEAD-SOURCE"], when))
 
 

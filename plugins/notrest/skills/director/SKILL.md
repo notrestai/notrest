@@ -1,6 +1,6 @@
 ---
 name: director
-description: Chain other ORACLE skills into a pipeline — parse the ordered skill list + seed input, run every stage for real (reading each skill's SKILL.md from disk; isolated subagent per stage where available), hand each stage's output to the next, and produce a numbered run folder + pipeline summary (or --quick). Use on /director or asks to run skills in sequence, chain, pipeline, or "do X then Y then Z" (e.g. "research this, critique it, then plan it"). For orchestrating SESSIONS instead, see fable-director.
+description: Chain ORACLE skills into a pipeline — parse the ordered list + seed, run every stage for real (each SKILL.md read from disk; isolated subagent per stage), hand each output to the next, produce a numbered run folder + summary (or --quick). Use on /director or asks to run skills in sequence, chain, pipeline, "do X then Y then Z". For orchestrating SESSIONS instead, see fable-director.
 ---
 
 # Director
