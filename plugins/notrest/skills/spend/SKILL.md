@@ -12,8 +12,10 @@ but a rule without an instrument is an assertion. This skill is the instrument: 
 spend the session can *observe* gets one append-only ledger line, and `report` computes the
 model split and flags any offload lane that ran on anything but Opus.
 
+**Router shape:** `spend-audit`
+
 Script: `scripts/spend.py` (python3 stdlib; flock-atomic appends, same DNA as chatroom's
-room.py). Ledger: `<root>/spend/ledger.md`. Fixture: `scripts/fixture.sh` — 41 assertions
+room.py). Ledger: `<root>/spend/ledger.md`. Fixture: `scripts/fixture.sh` — 64 assertions
 over synthetic ledgers proving the gate both fires and stays quiet in the right cases
 (never touches the real ledger).
 
@@ -21,11 +23,34 @@ over synthetic ledgers proving the gate both fires and stays quiet in the right 
 
 - **Log:** `python3 <skill>/scripts/spend.py log --model <id> [--tokens N] [--lane main|director|seat|subagent|workflow|gpt|<name>] [--grade observed|estimate] [--purpose "..."] [--root <project>]`
   — tokens optional (`unknown` is honest and allowed); grade defaults to `observed`.
+- **Log the seat's own spend:** `python3 <skill>/scripts/spend.py log --seat-estimate <tokens> --note "<what the session was doing>" [--model <id>] [--root <project>]`
+  — appends a `lane=seat grade=estimate kind=seat-estimate` line. See below.
 - **Report:** `python3 <skill>/scripts/spend.py report [--root <project>] [--since YYYY-MM-DD] [--json]`
   — entries and token totals per model with share %, count of estimate-grade entries, and
   the routing verdict. **Exits 4 on a violation**, so it can gate a script or a ship
   ritual. `--since` narrows to entries dated on or after a day; `--json` emits the same
   findings machine-readably with the same exit codes.
+
+## The seat's own spend (`--seat-estimate`)
+
+Every number this ledger can produce is a **lane subtotal sitting next to a session** whose
+largest consumer — the seat itself — is invisible: the main loop's totals are not exposed to
+the model. The ledger has always said so honestly, and that honesty left a gap exactly the
+size of the reader's imagination. `--seat-estimate` writes the seat's own guess down as what
+it is:
+
+- The line is `lane=seat model=<id or ?> tokens=N grade=estimate kind=seat-estimate` — a seat
+  lane, so the offload rule does not apply and **an estimate can never move the gate**.
+- Its tokens are kept **out** of `tokens (known)` and out of the per-model share table. An
+  estimate that can move a percentage is an estimate laundered into a measurement.
+- `report` counts them on their own line — *"seat estimates: N, informational — not
+  offload-gated"* — and prints each raw line, so the shape of the gap is on the page instead
+  of in the reader's head.
+- `--note` is **required**: a naked number nobody can interpret is worse than the gap it
+  fills. `--seat-estimate` on a non-seat `--lane` is refused — an offload lane's spend is
+  observable, so log it observed.
+- Say your model if you know it (you do); `model=?` is recorded rather than invented if you
+  don't.
 
 ## What counts as a violation
 
@@ -61,15 +86,20 @@ Log at the moment the number is in front of you — it is not exposed twice:
 - **No number available** → log the call anyway with `--tokens` omitted or your honest
   guess as `--grade estimate`. A model-only entry still audits routing perfectly — the
   model name is always known, and routing is what the rule is about.
-- Session close (`/sessionend`) → run `report`; paste the verdict line into the handoff.
+- **Session close (`/sessionend`)** → run `report`; paste the verdict line into the handoff.
+  Also log **one** `--seat-estimate` line for the session's own orchestration burn, with a
+  note saying what the seat was doing (`"seat: six-lane build round, orchestration only"`).
+  One honest estimate per session beats a running guess per turn, and it stops the handoff
+  from presenting a lane subtotal as a session cost.
 
 ## Honesty rules
 
 - **Routing compliance is exact; token totals are not.** Every entry's `model` is what was
   actually set on the call — the violation check is airtight. Token sums cover only what
-  the harness exposed; the main loop's own consumption is NOT visible to the model and is
-  never in the ledger. Say both facts when reporting; never present the ledger total as
-  the session's total bill.
+  the harness exposed; the main loop's own consumption is NOT visible to the model, so it
+  enters the ledger only as an explicitly-labelled `--seat-estimate`, kept out of the
+  observed totals. Say both facts when reporting; never present the ledger total as the
+  session's total bill, and never add a seat estimate to an observed total to make one.
 - **Grades are load-bearing.** `observed` = a number the harness printed; `estimate` =
   your inference (and the report counts how many of those there are). Never launder an
   estimate into observed.
@@ -83,7 +113,8 @@ Log at the moment the number is in front of you — it is not exposed twice:
   were unobservable and why).
 - The report's verdict line is in the transcript when you claimed the routing was clean —
   "clean" without a run report is `[unverified]`.
-- Token claims carried their grade; nothing estimated was presented as observed.
+- Token claims carried their grade; nothing estimated was presented as observed — and no
+  seat estimate was summed into an observed total or quoted as a measurement.
 - If report exited 4, the violation was surfaced to the user verbatim — never smoothed.
 
 ## Finishing up

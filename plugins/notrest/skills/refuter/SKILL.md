@@ -15,6 +15,8 @@ The bar is empirical. The best run this harness has had returned three CONFIRMED
 
 ## When to run
 
+**Router shape:** `adversarial-review`
+
 Blast-radius tiered. The seat picks the tier; the tier is not negotiable upward by the builder.
 
 | The artifact | The review |

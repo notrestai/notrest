@@ -9,6 +9,8 @@ Takes any claim-bearing thing — a statement, an article, a forwarded message, 
 
 The special power of this skill is the **🔵 MISLEADING** verdict: the claim that's technically true but framed to make you believe something false. Pure true/false checkers miss it; it's where most real-world deception lives.
 
+**Router shape:** `fact-check` — the UserPromptSubmit router (`hooks/router.sh`) nudges a prompt here when it looks like *"fact check"*, *"verify (this/the) claim"*, or *"is it true …"*. Without live sources the route still holds; what changes is the honesty label on the answer, never the verdict grammar.
+
 ## The prompt & subject
 
 The subject is what the user passed — pasted text, an attached document, a URL to fetch, or "the answer you just gave me." Use `$ARGUMENTS` if populated; otherwise the text after `/factcheck`. If the subject document isn't in context, read/fetch it first. If it's genuinely unclear what to check, ask exactly one clarifying question, then begin.

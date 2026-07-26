@@ -13,6 +13,11 @@ That is the whole skill. Ten named checks, one line each, a fix command on every
 FAIL, one summary line at the end. `--root` defaults to the git root of the cwd, so bare
 `doctor.py check` works from anywhere inside the repo. Add `--json` for machine output.
 
+**Router shape:** `health-check` — the UserPromptSubmit router (`hooks/router.sh`) nudges a
+prompt here when it looks like *"health check"*, *"is the harness healthy"*, or *"check the
+install"* — including the *"why isn't X triggering"* case, which is almost always an install
+fact. *"check the laws"* is a different shape and goes to `/eval`.
+
 Point it at what a session is actually *running* instead of the repo it edits — only
 needed in cache mode, since a skills-dir install runs the repo itself:
 

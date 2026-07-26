@@ -9,6 +9,8 @@ Takes a decision — technical, business, or personal — and gives it a structu
 
 Two framing rules govern everything: **facts vs values** (evidence is checkable; how much the user cares about each criterion is theirs — never substitute your weights for theirs silently), and **reversibility** (a two-way door rewards deciding fast and learning; a one-way door rewards resolving the load-bearing unknown first).
 
+**Router shape:** `decision` — the UserPromptSubmit router (`hooks/router.sh`) nudges a prompt here when it looks like *"should I …"*, *"choose between"*, *"compare options"*, or *"decide/deciding"*. The nudge is a route, not a verdict: the user decides, this structures.
+
 ## The prompt
 
 The decision is everything the user passed when invoking the skill. Use `$ARGUMENTS` if populated; otherwise the text after `/decider`. Attached documents (a research dossier, a spec, a comparison someone sent) are evidence — read them first. If the decision or its options are genuinely unclear, ask exactly one clarifying question (ideally: "what are you deciding between, and by when?"), then begin.

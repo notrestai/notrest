@@ -43,3 +43,6 @@
 [2026-07-25 08:23Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ad3284192b7a2d1dd
 [2026-07-25 08:38Z] lane=subagent model=claude-opus-5 tokens=12942847 grade=observed purpose="auto-receipt: Three scope-negatives are worth buying back. Restoring them" agent=adb784bc1b4f56161
 [2026-07-25 19:53Z] lane=subagent model=claude-opus-5 tokens=10758382 grade=observed purpose="auto-receipt: Verified against current docs, and empirically tested on you" agent=a72972024631f0d8d
+[2026-07-26 03:45Z] lane=subagent model=claude-opus-5 tokens=1526554 grade=observed purpose="auto-receipt: Let me verify whether the many `story.not.rest` snapshots ar" agent=a44da15a142bdfeb6
+[2026-07-26 03:45Z] lane=subagent model=claude-opus-5 tokens=2851280 grade=observed purpose="auto-receipt: Mapping complete. No files were modified. ## ESTATE MAP `~/." agent=ac03288865ded136b
+[2026-07-26 03:46Z] lane=subagent model=claude-opus-5 tokens=7433017 grade=observed purpose="auto-receipt: Audit complete. Report below. --- # PORTABILITY AUDIT — `ora" agent=a5c7b8b5519ba3c55

@@ -16,6 +16,10 @@ Subcommands:
                                       the COORD volumes drawn as a river flowing
                                       left→right into the GOAL bank (graph/river.
                                       {json,html}, self-contained)
+  journey [--out F]                   the DOOR, not the work: router.sh's shapes,
+                                      oracle's intake routes and each skill's own
+                                      chain lines drawn as user-phrase → shape →
+                                      skill → chains-to (graph/journey.{json,html})
   links <path> | orphans | stale      plain-text queries over the last scan
 
 Honesty: the graph shows REFERENCES that a text scan can see — not importance.
@@ -1432,6 +1436,20 @@ def build_river(root, session=None, cap=RIVER_CAP, use_now=False):
         r["links"] = [l for l in r["links"] if l in kept]
 
     eff, over, override_pairs = resolve_status(recs)
+    # ---- RESTS-ON-REFUTED: a record that is itself LIVE but whose links contain
+    # an effectively-refuted id is standing on refuted ground. Deliberately ONE
+    # HOP — the rule reads the record's own links and does not walk the chain
+    # transitively, because a transitive claim about ground nobody cited would be
+    # the river inventing a dependency. The refuter is excluded: a record that
+    # refutes another one is not resting on it.
+    rests = {}
+    for r in recs:
+        if eff[r["id"]] != "live":
+            continue
+        src = [l for l in dict.fromkeys(r["links"])
+               if eff.get(l) == "refuted" and (r["id"], l) not in override_pairs]
+        if src:
+            rests[r["id"]] = sorted(src, key=id_key)
     chan, chans = assign_channels(recs)
     idx = {r["id"]: i for i, r in enumerate(recs)}
 
@@ -1445,6 +1463,7 @@ def build_river(root, session=None, cap=RIVER_CAP, use_now=False):
         n.update({"i": i, "channel": c, "x": round(x, 2), "y": round(y, 2),
                   "effective": eff[r["id"]], "superseded_by": over.get(r["id"], []),
                   "rock": r["kind"] == "conflict" or eff[r["id"]] == "refuted",
+                  "rests_on": rests.get(r["id"], []),
                   "_k": tskey(r["ts"])})
         nodes.append(n)
     pos = {n["id"]: n for n in nodes}
@@ -1516,6 +1535,13 @@ def build_river(root, session=None, cap=RIVER_CAP, use_now=False):
             prevs = [m for m in nodes if m["i"] < n["i"] and m["channel"] == n["channel"]]
             if prevs:
                 edges.append({"from": n["id"], "to": prevs[-1]["id"], "kind": "back"})
+    # the INBOUND edge from each refuted source to the live stone standing on it.
+    # It is its own edge kind because the flow edge between two adjacent stones is
+    # never drawn (the water band IS that edge) — restyling it would show nothing.
+    for rid in sorted(rests, key=lambda k: (idx.get(k, 0), k)):
+        for src in rests[rid]:
+            edges.append({"from": src, "to": rid, "kind": "rests",
+                          "rests_on_refuted": True})
 
     # ---- the banks: milestone flags (ship/gate COORD lines) and lane ticks
     def x_for(key, ref=None):
@@ -1569,6 +1595,7 @@ def build_river(root, session=None, cap=RIVER_CAP, use_now=False):
               "live": sum(1 for n in nodes if n["effective"] == "live"),
               "superseded": sum(1 for n in nodes if n["effective"] == "superseded"),
               "refuted": sum(1 for n in nodes if n["effective"] == "refuted"),
+              "rests_on_refuted": len(rests),
               "channels": len(channels),
               "side_channels": sum(1 for c in channels if c["kind"] == "side"),
               "merged": sum(1 for c in channels if c["outcome"] == "merged"),
@@ -1696,16 +1723,22 @@ svg.drag{cursor:grabbing}
 .ring{fill:none;stroke:var(--stone-edge);stroke-width:1.2;opacity:.9}
 .forkmark{fill:none;stroke:var(--water-side);stroke-width:2;stroke-linecap:round}
 .nlabel{fill:var(--text-secondary);font-size:11.5px;text-anchor:middle}
-svg.far .nlabel,svg.far .flaglabel,svg.far .deadlabel,svg.far .arclabel{display:none}
+svg.far .nlabel,svg.far .flaglabel,svg.far .deadlabel,svg.far .arclabel,
+svg.far .restlabel{display:none}
 .wake{fill:none;stroke:var(--sheen);stroke-width:1.4;opacity:.5}
 /* --- arcs --- */
 .arc{fill:none;stroke-width:2;opacity:.85}
 .arc.back{stroke:var(--back);stroke-dasharray:7 4}
 .arc.supersede{stroke:var(--text-muted);stroke-dasharray:2 4}
 .arc.refute{stroke:var(--rock);stroke-dasharray:2 4}
+/* rests-on-refuted: the same red as a rock, but a LONG dash and a forward arrow
+   — the eye must not confuse "this was refuted" with "this stands on refuted". */
+.arc.rests{stroke:var(--rock);stroke-dasharray:10 5;stroke-width:2.4;opacity:.92}
 .arc.link{stroke:var(--link);stroke-width:1.2;opacity:.55;stroke-dasharray:1 5}
 .ah-back{fill:var(--back)}.ah-sup{fill:var(--text-muted)}.ah-ref{fill:var(--rock)}
 .arclabel{fill:var(--back);font-size:11px;text-anchor:middle}
+.restlabel{fill:var(--rock);font-size:11px;text-anchor:middle}
+.restmark{fill:none;stroke:var(--rock);stroke-width:1.3;stroke-dasharray:3 3;opacity:.9}
 .deadmark{stroke:var(--dead);stroke-width:2.2;fill:none;stroke-linecap:round}
 .deadlabel{fill:var(--dead);font-size:11px}
 /* --- banks --- */
@@ -1753,6 +1786,9 @@ svg.far .nlabel,svg.far .flaglabel,svg.far .deadlabel,svg.far .arclabel{display:
 .ev-unverified{background:color-mix(in srgb,var(--rock) 18%,transparent);border-color:var(--rock)}
 .ev-model-opinion{background:color-mix(in srgb,var(--rock) 18%,transparent);border-color:var(--rock)}
 #card .foot{color:var(--text-muted);font-size:10.5px;margin-top:.45rem}
+#card .rests{color:var(--rock);font-weight:600;font-size:11.5px;letter-spacing:.03em;
+  margin:.4rem 0 .1rem}
+.sw.dash{background:none!important;height:0;border-radius:0;border-top:3px dashed var(--rock)}
 #empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   color:var(--text-muted);font-size:13px;text-align:center;padding:2rem}
 </style>
@@ -1903,7 +1939,7 @@ gt.textContent = D.goal.label; gBank.appendChild(gt);
   if (!a || !b) return;
   var back = e.kind === 'back';
   var d = back ? loopPath(a.x, a.y, b.x, b.y) : underPath(a.x, a.y, b.x, b.y);
-  var mk = back ? 'ah-back' : (e.kind === 'refute' ? 'ah-ref' : 'ah-sup');
+  var mk = back ? 'ah-back' : ((e.kind === 'refute' || e.kind === 'rests') ? 'ah-ref' : 'ah-sup');
   var at = {d:d};
   if (e.kind !== 'link') at['marker-end'] = 'url(#' + mk + ')';
   gArc.appendChild(el('path', at, 'arc ' + e.kind));
@@ -1911,13 +1947,21 @@ gt.textContent = D.goal.label; gBank.appendChild(gt);
     var t = el('text', {x:num((a.x + b.x) / 2), y:num(Math.min(a.y, b.y) - 74 - Math.min(150, Math.abs(a.x - b.x) * 0.15) + 26)}, 'arclabel');
     t.textContent = 'backtrack'; gArc.appendChild(t);
   }
+  if (e.kind === 'rests'){
+    var rl = el('text', {x:num((a.x + b.x) / 2),
+      y:num(Math.max(a.y, b.y) + 46 + Math.min(120, Math.abs(a.x - b.x) * 0.10))}, 'restlabel');
+    rl.textContent = 'rests on refuted'; gArc.appendChild(rl);
+  }
 });
 
 /* stones turned — one glyph per record, rocks where the flow hit something */
 nodes.forEach(function(n, idx){
-  var g = el('g', {'data-i':idx}, 'node st-' + n.effective + (n.rock ? ' rock' : ''));
+  var rests = !!(n.rests_on && n.rests_on.length);
+  var g = el('g', {'data-i':idx}, 'node st-' + n.effective + (n.rock ? ' rock' : '') +
+                                  (rests ? ' rests' : ''));
   var main = n.channel === 0, r = (main ? 12 : 9.5) + (n.kind === 'decision' ? 2 : 0);
   var seed = hash(n.id);
+  if (rests) g.appendChild(el('circle', {cx:n.x, cy:n.y, r:r + 3.6}, 'restmark'));
   if (n.rock){
     g.appendChild(el('polygon', {points:pebble(n.x, n.y, r + 2.5, seed, 7, 0.34)}, 'rockglyph'));
     g.appendChild(el('path', {d:'M' + (n.x - r - 10) + ',' + (n.y + r) + ' q' + (r + 10) +
@@ -1969,11 +2013,15 @@ function evRows(ev){
 function nodeCard(n){
   var sup = n.superseded_by && n.superseded_by.length
     ? '<div class="foot">' + esc(n.effective) + ' by ' + esc(n.superseded_by.join(', ')) + '</div>' : '';
+  /* the standing-on-refuted-ground warning: this record is live, but something it
+     cites has been refuted. One hop only — the river says what the links say. */
+  var rest = (n.rests_on && n.rests_on.length)
+    ? '<div class="rests">RESTS-ON-REFUTED ' + esc(n.rests_on.join(', ')) + '</div>' : '';
   return '<div><span class="k">' + esc(n.kind) + '</span><span class="k">' + esc(n.relation) +
     '</span><span class="k">' + esc(n.effective) + '</span>' +
     (n.inferred ? '<span class="k">inferred</span>' : '') + '</div>' +
     '<div class="ask">' + esc(clip(n.ask, 300) || '(no ask recorded)') + '</div>' +
-    (n.statement ? '<div class="st">' + esc(clip(n.statement, 420)) + '</div>' : '') +
+    (n.statement ? '<div class="st">' + esc(clip(n.statement, 420)) + '</div>' : '') + rest +
     '<div class="lbl">EVIDENCE</div>' + evRows(n.evidence) + sup +
     '<div class="foot">' + esc(n.ts) + ' · ' + esc(n.session || '—') + ' · ' +
     esc(n.skill || '—') + ' · channel ' + n.channel + ' · <code>' + esc(n.ref) + '</code>' +
@@ -2123,6 +2171,8 @@ q.addEventListener('input', function(){
     sw('var(--water-side)') + 'side channel <span class="n">' + c.lateral + '</span>',
     sw('var(--back)') + 'backtrack loop <span class="n">' + c.back + '</span>',
     sw('var(--rock)') + 'rock — conflict / refuted <span class="n">' + c.rocks + '</span>',
+    '<i class="sw dash"></i>rests on refuted — a live record citing refuted ground ' +
+      '<span class="n">' + c.rests_on_refuted + '</span>',
     sw('var(--stone)') + 'stone turned <span class="n">' + c.records + '</span>',
     sw('var(--flag-ship)') + 'COORD flag <span class="n">' + c.milestones + '</span>',
     sw('var(--goal)') + 'goal bank'
@@ -2179,9 +2229,807 @@ def cmd_river(a):
     html_p.write_text(render_river_html(r, title=root.name), encoding="utf-8")
     c = r["counts"]
     print(f"{html_p}: {c['records']} records · {c['channels']} channels "
-          f"({c['merged']} merged, {c['dead_end']} dead-end) · {c['rocks']} rocks · "
+          f"({c['merged']} merged, {c['dead_end']} dead-end) · {c['rocks']} rocks "
+          f"({c['rests_on_refuted']} resting on refuted) · "
           f"{c['back']} backtracks · {c['milestones']} milestones · mode={r['mode']}")
     for n in r["notes"]:
+        print(f"  note: {n}")
+    print(f"  data: {json_p}")
+    if a.open:
+        opener = "open" if sys.platform == "darwin" else "xdg-open"
+        try:
+            subprocess.run([opener, str(html_p)], check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"  opened with {opener}")
+        except OSError:
+            print(f"  could not run {opener} — open {html_p} in any browser")
+    return 0
+
+
+# =========================================================== journey: the doors
+#
+# The router is this harness's front door and nothing has ever drawn it. `journey`
+# reads the THREE places a route is actually written down — hooks/router.sh (the
+# SKILL=/SHAPE= case chain, the same parse eval.py's ROUTER check uses),
+# skills/oracle/SKILL.md's intake routing bullet, and each skill's own
+# chains/finishing-up section — and renders the whole door as one page: what a
+# user types → the shape the router calls it → the verb that runs → what that
+# verb hands off to. Skills nothing routes to are drawn, not hidden: "by name
+# only" is a fact about the door, and the most useful thing on the page.
+
+JPX = 26.0             # pill column left edge
+JPW = 278.0            # pill max width (JPILL_CHARS * JCHAR + padding)
+JSX = 372.0            # shape column left edge
+JSW = 184.0
+JKX = 668.0            # skill column left edge
+JKW = 206.0
+JCHAR = 6.6            # px per char at the node font size — layout without measuring
+JPILL_CHARS = 38       # phrase clip, so the width estimate can never underrun
+JPILL_H = 22.0
+JPILL_GAP = 5.0
+JNODE_H = 34.0
+JROW_GAP = 22.0
+JY0 = 104.0
+JBAND_GAP = 96.0       # gap before the "by name only" band
+JBAND_COLS = 4
+JBAND_W = 190.0
+JBAND_H = 32.0
+JBAND_GX = 16.0
+JBAND_GY = 12.0
+JBULGE = 176.0         # how far right the chain arcs swing
+
+RE_RT_PAT = re.compile(r'\*"([^"]+)"\*')
+RE_RT_SKILL = re.compile(r"\bSKILL=([a-z][a-z0-9-]*)")
+RE_RT_SHAPE = re.compile(r"\bSHAPE=([a-z][a-z0-9-]*)")
+RE_OR_ROUTE = re.compile(r"→\s*`/(?:notrest:)?([a-z][a-z0-9-]*)`")
+RE_CH_HDR = re.compile(r"^#{2,6}[ \t]*(?:chains?|chaining|finishing[ \t]+up|hand[ \t-]?off)\b",
+                       re.I)
+RE_CH_HEAD = re.compile(r"^#{2,6}[ \t]")
+RE_CH_BT = re.compile(r"`/(?:notrest:)?([a-z][a-z0-9-]+)`")
+RE_CH_BARE = re.compile(r"(?<![\w/.])/(?:notrest:)?([a-z][a-z0-9-]+)(?![\w/.-])")
+
+
+def find_plugin(root):
+    """The plugin tree under a repo root: a directory holding skills/ beside
+    hooks/router.sh. Falls back to any skills/ dir so a plugin without a router
+    still draws (with a note), and returns None when there is no skill tree."""
+    cands = [root / "plugins" / "notrest", root]
+    pdir = root / "plugins"
+    if pdir.is_dir():
+        cands += sorted(p for p in pdir.iterdir() if p.is_dir())
+    for want_router in (True, False):
+        for c in cands:
+            if not (c / "skills").is_dir():
+                continue
+            if want_router and not (c / "hooks" / "router.sh").is_file():
+                continue
+            return c
+    return None
+
+
+def parse_router(path):
+    """The SKILL=/SHAPE= case arms in TABLE ORDER — order is precedence here
+    (first match wins), so the drawing keeps the chain's own sequence rather than
+    sorting it into a lie. Arms that emit no route (the slash-command guard, the
+    already-named-the-verb guard) drop their patterns at the `;;`."""
+    text = _slurp(path)
+    if text is None:
+        return [], "no hooks/router.sh — nothing draws the shape column"
+    routes, pend = [], []
+    for raw in text.splitlines():
+        s = raw.strip()
+        if not s or s.startswith("#"):
+            continue
+        pats = [p.strip() for p in RE_RT_PAT.findall(s)]
+        sk, sh = RE_RT_SKILL.search(s), RE_RT_SHAPE.search(s)
+        if sk and sh:
+            phr = [p for p in pend + pats if p and "$" not in p]
+            routes.append({"shape": sh.group(1), "skill": sk.group(1),
+                           "phrases": list(dict.fromkeys(phr))})
+            pend = []
+            continue
+        pend += pats
+        if ";;" in s or s == "esac":
+            pend = []
+    return routes, None
+
+
+def parse_oracle_routes(path):
+    """oracle/SKILL.md's intake routing bullet: `<what the user wants> → /verb`.
+    These are INTAKE routes, not router shapes — the hook never fires them, the
+    intake conversation does, and the page draws them as their own kind."""
+    text = _slurp(path)
+    if text is None:
+        return [], "no oracle/SKILL.md — no intake routes drawn"
+    line = next((l for l in text.splitlines() if "Route to the right tool" in l), None)
+    if line is None:
+        return [], "oracle/SKILL.md carries no 'Route to the right tool' bullet"
+    # The bullet is one long line of `phrase → /verb` pairs joined by `·`, opened
+    # by prose. Split on the separator FIRST, then keep only the tail of each
+    # segment after its last prose colon/dash — that is what strips the bullet's
+    # lead-in off the first pair instead of pinning half a sentence to a skill.
+    out = []
+    for seg in line.split("·"):
+        prev = 0
+        for m in RE_OR_ROUTE.finditer(seg):
+            phrase = seg[prev:m.start()]
+            prev = m.end()
+            phrase = phrase.split("—")[-1].split(":")[-1].split("**")[-1]
+            phrase = phrase.replace('"', "").replace("“", "").replace("”", "")
+            phrase = phrase.strip(" ·*`'()[]").strip()
+            if phrase:
+                out.append({"phrase": phrase, "skill": m.group(1)})
+    return out, None
+
+
+def chains_of(text, name, known):
+    """A skill's own hand-off lines. BEST EFFORT, and the page says so: only an
+    explicit `/verb` reference inside a Chains / Finishing-up section becomes an
+    arrow. A section that names its siblings in prose ("researcher /
+    marketresearcher → draft") parses to nothing and is DISCLOSED — a guessed
+    arrow would be this script inventing a hand-off the skill never wrote."""
+    sec, on = [], False
+    for ln in text.splitlines():
+        if RE_CH_HEAD.match(ln):
+            on = bool(RE_CH_HDR.match(ln))
+            if on:
+                continue
+        if on:
+            sec.append(ln)
+    body = "\n".join(sec)
+    if not body.strip():
+        return [], False
+    hits = set(RE_CH_BT.findall(body)) | set(RE_CH_BARE.findall(body))
+    return sorted(n for n in hits if n in known and n != name), True
+
+
+def git_stamp(root):
+    """REPRODUCIBILITY LAW, journey edition. river stamps from the newest input
+    timestamp; that is wrong here because the inputs are tracked FILES whose
+    mtimes are rewritten by every clone — two checkouts of the same commit would
+    stamp differently. The commit is the honest identity of this input set."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+        if r.returncode == 0:
+            h = r.stdout.decode("utf-8", "replace").strip()
+            if h:
+                # a commit hash over a modified tree names the wrong inputs, so say
+                # so: `+dirty` is the difference between "this is commit X" and
+                # "this is commit X plus whatever is uncommitted right now".
+                d = subprocess.run(["git", "-C", str(root), "status", "--porcelain",
+                                    "--untracked-files=no"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                   timeout=30)
+                dirty = d.returncode == 0 and d.stdout.strip()
+                return (h + "+dirty" if dirty else h), "git-head"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "(no git HEAD)", "none"
+
+
+def _jclip(s, n=JPILL_CHARS):
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+def build_journey(root):
+    notes = []
+    plug = find_plugin(root)
+    if plug is None:
+        die(f"no plugin tree under {root} — journey needs a directory holding "
+            f"skills/ (looked at plugins/notrest, plugins/*, and the root itself)")
+    sk_dir = plug / "skills"
+    known = sorted(p.name for p in sk_dir.iterdir()
+                   if p.is_dir() and (p / "SKILL.md").is_file())
+    kset = set(known)
+    if not known:
+        die(f"no skills with a SKILL.md under {sk_dir}")
+
+    routes, rnote = parse_router(plug / "hooks" / "router.sh")
+    if rnote:
+        notes.append(rnote)
+    intake, onote = parse_oracle_routes(sk_dir / "oracle" / "SKILL.md")
+    if onote:
+        notes.append(onote)
+
+    chains, nosec, nochain = {}, [], []
+    for name in known:
+        tgt, had = chains_of(_slurp(sk_dir / name / "SKILL.md") or "", name, kset)
+        chains[name] = tgt
+        if not had:
+            nosec.append(name)              # no such section to read at all
+        elif not tgt:
+            nochain.append(name)            # a section, but nothing this parse can read
+
+    # ---- rows: one per router shape (table order), then the intake-only skills
+    rows, by_shape, row_of = [], {}, {}
+    for rt in routes:
+        if rt["skill"] not in kset:
+            notes.append(f"router routes to /notrest:{rt['skill']} — no such skill "
+                         f"directory (drawn anyway; eval's ROUTER check owns that fault)")
+        if rt["shape"] in by_shape:
+            row = by_shape[rt["shape"]]
+            row["router"] += [p for p in rt["phrases"] if p not in row["router"]]
+            continue
+        row = {"skill": rt["skill"], "shape": rt["shape"],
+               "router": list(rt["phrases"]), "intake": []}
+        by_shape[rt["shape"]] = row
+        rows.append(row)
+        row_of.setdefault(rt["skill"], row)
+    extra = {}
+    for it in intake:
+        if it["skill"] not in kset:
+            notes.append(f"oracle intake names /{it['skill']} — no such skill directory")
+        row = row_of.get(it["skill"]) or extra.get(it["skill"])
+        if row is None:
+            row = {"skill": it["skill"], "shape": None, "router": [], "intake": []}
+            extra[it["skill"]] = row
+        if it["phrase"] not in row["intake"]:
+            row["intake"].append(it["phrase"])
+    for name in sorted(extra):
+        rows.append(extra[name])
+        row_of[name] = extra[name]
+
+    # ---- geometry
+    pills, nodes, edges = [], [], []
+    y = JY0
+    for r in rows:
+        items = ([("router", p) for p in r["router"]] +
+                 [("intake", p) for p in r["intake"]])
+        n = max(1, len(items))
+        h = round(max(JNODE_H, n * JPILL_H + (n - 1) * JPILL_GAP), 2)
+        cy = round(y + h / 2, 2)
+        sid = ("shape:" + r["shape"]) if r["shape"] else None
+        kid = "skill:" + r["skill"]
+        if sid:
+            nodes.append({"id": sid, "kind": "shape", "name": r["shape"], "skill": r["skill"],
+                          "x": JSX, "y": round(cy - JNODE_H / 2, 2), "w": JSW, "h": JNODE_H,
+                          "cx": round(JSX + JSW / 2, 2), "cy": cy,
+                          "phrases": list(r["router"])})
+        nodes.append({"id": kid, "kind": "skill", "name": r["skill"], "shape": r["shape"],
+                      "routed": True, "x": JKX, "y": round(cy - JNODE_H / 2, 2),
+                      "w": JKW, "h": JNODE_H, "cx": round(JKX + JKW / 2, 2), "cy": cy,
+                      "router_phrases": list(r["router"]), "intake_phrases": list(r["intake"])})
+        py = y
+        for knd, txt in items:
+            t = _jclip(txt)
+            w = round(min(JPW, max(96.0, len(t) * JCHAR + 26.0)), 2)
+            to = sid if (knd == "router" and sid) else kid
+            pid = "p%d" % len(pills)
+            pills.append({"id": pid, "text": t, "full": re.sub(r"\s+", " ", txt).strip(),
+                          "kind": knd, "to": to, "skill": r["skill"],
+                          "x": JPX, "y": round(py, 2), "w": w, "h": JPILL_H,
+                          "cy": round(py + JPILL_H / 2, 2)})
+            edges.append({"from": pid, "to": to,
+                          "kind": "route" if knd == "router" else "intake"})
+            py += JPILL_H + JPILL_GAP
+        if sid:
+            edges.append({"from": sid, "to": kid, "kind": "route"})
+        y += h + JROW_GAP
+
+    band_names = [n for n in known if n not in row_of]
+    band_top = round(y - JROW_GAP + JBAND_GAP, 2)
+    band_bot = band_top
+    for i, name in enumerate(band_names):
+        bx = JPX + (i % JBAND_COLS) * (JBAND_W + JBAND_GX)
+        by = band_top + (i // JBAND_COLS) * (JBAND_H + JBAND_GY)
+        nodes.append({"id": "skill:" + name, "kind": "skill", "name": name, "shape": None,
+                      "routed": False, "x": round(bx, 2), "y": round(by, 2),
+                      "w": JBAND_W, "h": JBAND_H, "cx": round(bx + JBAND_W / 2, 2),
+                      "cy": round(by + JBAND_H / 2, 2),
+                      "router_phrases": [], "intake_phrases": []})
+        band_bot = max(band_bot, by + JBAND_H)
+
+    have = {n["id"] for n in nodes}
+    for name in known:
+        for t in chains[name]:
+            if "skill:" + name in have and "skill:" + t in have:
+                edges.append({"from": "skill:" + name, "to": "skill:" + t, "kind": "chain"})
+
+    byid = {n["id"]: n for n in nodes}
+    into = {}
+    for e in edges:
+        if e["kind"] == "chain":
+            into.setdefault(e["to"], []).append(e["from"][6:])
+    for n in nodes:
+        if n["kind"] != "skill":
+            continue
+        n["chains_to"] = chains.get(n["name"], [])
+        n["chained_from"] = sorted(into.get(n["id"], []))
+        n["has_chains_section"] = n["name"] not in nosec
+
+    stamp, stamp_from = git_stamp(root)
+    if stamp_from == "none":
+        notes.append("git is unavailable or this is not a repo — the page carries no "
+                     "commit stamp, so two renders of different trees look alike")
+    elif stamp.endswith("+dirty"):
+        notes.append(f"stamped {stamp}: the tree has uncommitted tracked changes, so the "
+                     f"commit alone does not identify what was read")
+    if nosec:
+        notes.append("no Chains / Finishing-up section to parse in: " + ", ".join(nosec))
+    if nochain:
+        notes.append("a Chains / Finishing-up section with no explicit `/verb` reference "
+                     "(hand-offs named in prose are NOT guessed at): " + ", ".join(nochain))
+
+    x1 = max([n["x"] + n["w"] for n in nodes] + [JKX + JKW]) + JBULGE + 40.0
+    extent = {"x0": 0.0, "y0": 0.0, "x1": round(x1, 2), "y1": round(band_bot + 70.0, 2)}
+    counts = {"skills": sum(1 for n in nodes if n["kind"] == "skill"),
+              "shapes": sum(1 for n in nodes if n["kind"] == "shape"),
+              "routed": sum(1 for n in nodes if n["kind"] == "skill" and n["routed"]),
+              "by_name_only": len(band_names),
+              "phrases": len(pills),
+              "router_phrases": sum(1 for p in pills if p["kind"] == "router"),
+              "intake_phrases": sum(1 for p in pills if p["kind"] == "intake"),
+              "chains": sum(1 for e in edges if e["kind"] == "chain"),
+              "edges": len(edges),
+              "no_chains_section": len(nosec), "chains_unparsed": len(nochain)}
+    return {"generated": stamp, "stamp_from": stamp_from, "root": str(root),
+            "plugin": str(plug), "sources": {
+                "router": str((plug / "hooks" / "router.sh").relative_to(root))
+                          if str(plug).startswith(str(root)) else str(plug / "hooks" / "router.sh"),
+                "intake": "skills/oracle/SKILL.md", "chains": "skills/*/SKILL.md"},
+            "extent": extent, "bandTop": band_top, "notes": notes, "counts": counts,
+            "byName": band_names, "pills": pills, "nodes": nodes, "edges": edges}
+
+
+JOURNEY_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>journey — __TITLE__</title>
+<style>
+:root{
+  --surface-0:#f7f6f2; --surface-1:#ffffff; --border:#e6e3da; --border-strong:#d2cfc4;
+  --text-primary:#20201d; --text-secondary:#57564f; --text-muted:#86857b;
+  --phrase:#7F77DD; --phrase-bg:#eceaff; --intake:#1D9E75; --intake-bg:#e2f4ee;
+  --shape:#5C98D6; --shape-bg:#e4eefa; --skill:#20201d; --skill-bg:#ffffff;
+  --byname:#B4633A; --byname-bg:#f6ece5; --chain:#a8a69a; --wire:#b9b6aa;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --surface-0:#141413; --surface-1:#1f1f1d; --border:#37362e; --border-strong:#4b4a40;
+    --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+    --phrase:#9a92ea; --phrase-bg:#2a2843; --intake:#3fc79c; --intake-bg:#1d3630;
+    --shape:#6FA9E6; --shape-bg:#1e2c3d; --skill:#f2f1ea; --skill-bg:#26261f;
+    --byname:#d98a5e; --byname-bg:#33261e; --chain:#5d5c53; --wire:#4a493f;
+  }
+}
+:root[data-theme="dark"]{
+  --surface-0:#141413; --surface-1:#1f1f1d; --border:#37362e; --border-strong:#4b4a40;
+  --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+  --phrase:#9a92ea; --phrase-bg:#2a2843; --intake:#3fc79c; --intake-bg:#1d3630;
+  --shape:#6FA9E6; --shape-bg:#1e2c3d; --skill:#f2f1ea; --skill-bg:#26261f;
+  --byname:#d98a5e; --byname-bg:#33261e; --chain:#5d5c53; --wire:#4a493f;
+}
+*{box-sizing:border-box}
+html{height:100%;width:100%}
+body{margin:0;width:100vw;height:100vh;background:var(--surface-0);color:var(--text-primary);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center;padding:.6rem .9rem;
+  border-bottom:1px solid var(--border);background:var(--surface-1)}
+h1{font-size:14px;font-weight:500;margin:0}
+.sub{font-size:12px;color:var(--text-muted)}
+.path{max-width:52ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.grow{flex:1}
+input[type=search]{font:inherit;font-size:12px;padding:.3rem .55rem;border-radius:999px;
+  border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);width:190px}
+input[type=search]:focus{outline:none;border-color:var(--border-strong)}
+button{background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border);
+  border-radius:999px;padding:.3rem .7rem;font-size:12px;cursor:pointer;font-family:inherit}
+button:hover{border-color:var(--border-strong)}
+button.off{opacity:.5}
+main{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+#stage{flex:1;position:relative;min-width:0;min-height:0;overflow:hidden}
+svg{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;
+  touch-action:none;background:var(--surface-0)}
+svg.drag{cursor:grabbing}
+.colcap{fill:var(--text-muted);font-size:11.5px;letter-spacing:.09em}
+.colrule{stroke:var(--border);stroke-width:1;stroke-dasharray:2 5}
+.pill rect{fill:var(--phrase-bg);stroke:var(--phrase);stroke-width:1}
+.pill.intake rect{fill:var(--intake-bg);stroke:var(--intake);stroke-dasharray:4 3}
+.pill text{fill:var(--text-primary);font-size:11.5px}
+.nd rect{stroke-width:1.4}
+.nd.shape rect{fill:var(--shape-bg);stroke:var(--shape)}
+.nd.skill rect{fill:var(--skill-bg);stroke:var(--border-strong)}
+.nd.skill.byname rect{fill:var(--byname-bg);stroke:var(--byname);stroke-dasharray:5 3}
+.nd text{font-size:13px;font-weight:500;fill:var(--text-primary);text-anchor:middle}
+.nd.shape text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;
+  fill:var(--shape)}
+.nd.skill.byname text{fill:var(--byname)}
+.wire{fill:none;stroke:var(--wire);stroke-width:1.3;opacity:.8}
+.wire.intake{stroke:var(--intake);stroke-dasharray:5 4;opacity:.75}
+.wire.hop{stroke:var(--shape);stroke-width:1.8;opacity:.85}
+.chain{fill:none;stroke:var(--chain);stroke-width:1.15;opacity:.42}
+svg.nochain .chain,svg.nochain .chainhead{display:none}
+.chainhead{fill:var(--chain);opacity:.5}
+.pill,.nd{cursor:pointer}
+.pill:hover rect,.nd:hover rect{stroke-width:2.2}
+.dim{opacity:.13}
+.hot .chain,.chain.hot{stroke:var(--phrase);opacity:.95;stroke-width:2}
+svg.far .pill text,svg.far .colcap{display:none}
+#legend{position:absolute;left:.7rem;bottom:.7rem;background:var(--surface-1);
+  border:1px solid var(--border);border-radius:10px;padding:.5rem .65rem;font-size:11.5px;
+  color:var(--text-secondary);max-width:min(720px,92%);max-height:44%;overflow:auto}
+#legend>summary{cursor:pointer;list-style:none;color:var(--text-muted);font-size:11px;
+  letter-spacing:.06em;margin:-.15rem 0 0}
+#legend>summary::-webkit-details-marker{display:none}
+#legend:not([open]){padding:.3rem .6rem}
+#legend:not([open])>summary{margin:0}
+#legend .row{display:flex;flex-wrap:wrap;gap:.25rem .8rem;align-items:center}
+#legend .row+.row{margin-top:.35rem;padding-top:.35rem;border-top:1px solid var(--border)}
+#legend span.it{display:inline-flex;align-items:center;gap:.32rem}
+#legend .n{color:var(--text-muted)}
+#legend .note{color:var(--text-muted);line-height:1.45}
+.sw{width:16px;height:9px;border-radius:3px;flex:none;display:inline-block;
+  border:1px solid var(--border-strong)}
+#card{position:absolute;display:none;max-width:min(430px,72vw);max-height:56vh;overflow:auto;
+  background:var(--surface-1);border:1px solid var(--border-strong);border-radius:10px;
+  padding:.55rem .7rem;font-size:12.5px;box-shadow:0 6px 24px rgba(0,0,0,.18);
+  pointer-events:none;z-index:6;line-height:1.45}
+#card.pinned{pointer-events:auto}
+#card .k{display:inline-block;font-size:10.5px;padding:.05rem .4rem;border-radius:999px;
+  border:1px solid var(--border);color:var(--text-secondary);margin-right:.25rem}
+#card .ttl{font-weight:600;margin:.35rem 0 .15rem;font-size:13.5px}
+#card .lbl{font-size:10.5px;letter-spacing:.04em;color:var(--text-muted);margin:.5rem 0 .2rem}
+#card .st{color:var(--text-secondary)}
+#card code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;
+  word-break:break-all;color:var(--text-secondary)}
+#card .foot{color:var(--text-muted);font-size:10.5px;margin-top:.45rem}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>journey — <span class="mono">__TITLE__</span></h1>
+    <div class="sub mono path" title="__ROOT__">__ROOT__</div>
+  </div>
+  <div class="sub">__COUNTS__ · <span class="mono">__GENERATED__</span>
+    <span title="stamp source">(__STAMPFROM__)</span></div>
+  <span class="grow"></span>
+  <input id="q" type="search" placeholder="filter phrases · skills…" autocomplete="off">
+  <span id="qn" class="sub"></span>
+  <button id="chains" type="button">chains</button>
+  <button id="fit" type="button">fit</button>
+  <button id="zin" type="button">+</button>
+  <button id="zout" type="button">−</button>
+  <button id="theme" type="button">light / dark</button>
+</header>
+<main><div id="stage">
+  <svg id="sv" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="jh" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5"
+              orient="auto-start-reverse"><path class="chainhead" d="M0,0 L10,4 L0,8 z"/></marker>
+    </defs>
+    <g id="scene"></g>
+  </svg>
+  <div id="card"></div>
+  <details id="legend" open><summary>LEGEND — click to fold</summary></details>
+</div></main>
+<script>
+(function(){
+var D = "__JOURNEY_DATA__";
+var NS = 'http://www.w3.org/2000/svg';
+var root = document.documentElement;
+var svg = document.getElementById('sv'), scene = document.getElementById('scene');
+var stage = document.getElementById('stage'), card = document.getElementById('card');
+var nodes = D.nodes || [], pills = D.pills || [], byId = {}, i;
+for (i = 0; i < nodes.length; i++) byId[nodes[i].id] = nodes[i];
+for (i = 0; i < pills.length; i++) byId[pills[i].id] = pills[i];
+var gById = {}, view = {x:0, y:0, k:1}, userMoved = false, pinned = null;
+
+function el(tag, attrs, cls){
+  var e = document.createElementNS(NS, tag);
+  if (cls) e.setAttribute('class', cls);
+  for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function esc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function num(v){ return Math.round(v * 100) / 100; }
+/* an S-curve between two column edges — the wires read as flow, not as a truss */
+function wire(x1, y1, x2, y2){
+  var mx = (x1 + x2) / 2;
+  return 'M' + num(x1) + ',' + num(y1) + ' C' + num(mx) + ',' + num(y1) + ' ' +
+         num(mx) + ',' + num(y2) + ' ' + num(x2) + ',' + num(y2);
+}
+/* chains swing out to the right of the skill column so they never cross the wires */
+function arc(x, y1, y2, out){
+  return 'M' + num(x) + ',' + num(y1) + ' C' + num(x + out) + ',' + num(y1) + ' ' +
+         num(x + out) + ',' + num(y2) + ' ' + num(x) + ',' + num(y2);
+}
+
+var E = D.extent;
+var gCap = el('g'), gChain = el('g'), gWire = el('g'), gNode = el('g');
+[gCap, gChain, gWire, gNode].forEach(function(g){ scene.appendChild(g); });
+
+/* column captions */
+function cap(x, t){
+  var e = el('text', {x:x, y:56}, 'colcap'); e.textContent = t; gCap.appendChild(e);
+  gCap.appendChild(el('path', {d:'M' + x + ',68 H' + (x + 240)}, 'colrule'));
+}
+cap(__JPX__, 'WHAT SOMEONE TYPES');
+cap(__JSX__, 'SHAPE — router.sh');
+cap(__JKX__, 'SKILL — the verb that runs');
+var bt = el('text', {x:__JPX__, y:D.bandTop - 30}, 'colcap');
+bt.textContent = 'BY NAME ONLY — no router arm, no intake route: these fire when you type the name';
+gCap.appendChild(bt);
+gCap.appendChild(el('path', {d:'M' + __JPX__ + ',' + (D.bandTop - 18) + ' H' + (E.x1 - 200)}, 'colrule'));
+
+/* chains first, underneath everything */
+(D.edges || []).forEach(function(e){
+  if (e.kind !== 'chain') return;
+  var a = byId[e.from], b = byId[e.to];
+  if (!a || !b) return;
+  var x = Math.max(a.x + a.w, b.x + b.w);
+  var out = 40 + Math.min(__JBULGE__, Math.abs(a.cy - b.cy) * 0.30);
+  var p = el('path', {d:arc(x, a.cy, b.cy, out), 'marker-end':'url(#jh)'}, 'chain');
+  p.setAttribute('data-a', e.from); p.setAttribute('data-b', e.to);
+  gChain.appendChild(p);
+});
+
+/* the wires: phrase -> shape -> skill, and the dashed intake shortcut */
+(D.edges || []).forEach(function(e){
+  if (e.kind === 'chain') return;
+  var a = byId[e.from], b = byId[e.to];
+  if (!a || !b) return;
+  var y1 = a.cy !== undefined ? a.cy : a.y + a.h / 2;
+  gWire.appendChild(el('path',
+    {d:wire(a.x + a.w, y1, b.x, b.cy)},
+    'wire' + (e.kind === 'intake' ? ' intake' : (a.kind === 'shape' ? ' hop' : ''))));
+});
+
+/* pills */
+pills.forEach(function(p){
+  var g = el('g', {'data-id':p.id}, 'pill' + (p.kind === 'intake' ? ' intake' : ''));
+  g.appendChild(el('rect', {x:p.x, y:p.y, width:p.w, height:p.h, rx:11}));
+  var t = el('text', {x:p.x + 11, y:p.y + p.h / 2 + 4});
+  t.textContent = p.text; g.appendChild(t);
+  gNode.appendChild(g); gById[p.id] = g;
+});
+/* shape and skill nodes */
+nodes.forEach(function(n){
+  var cls = 'nd ' + n.kind + (n.kind === 'skill' && !n.routed ? ' byname' : '');
+  var g = el('g', {'data-id':n.id}, cls);
+  g.appendChild(el('rect', {x:n.x, y:n.y, width:n.w, height:n.h, rx:8}));
+  var t = el('text', {x:n.cx, y:n.cy + 4.5});
+  t.textContent = n.name; g.appendChild(t);
+  gNode.appendChild(g); gById[n.id] = g;
+});
+
+/* ------------------------------------------------------------------- cards */
+function list(a){ return (a && a.length) ? a.map(esc).join(' · ') : '<span class="st">—</span>'; }
+function nodeCard(n){
+  if (n.kind === 'shape')
+    return '<div><span class="k">router shape</span></div>' +
+      '<div class="ttl mono">' + esc(n.name) + '</div>' +
+      '<div class="st">routes to <code>/notrest:' + esc(n.skill) + '</code></div>' +
+      '<div class="lbl">PHRASES THAT MATCH</div><div class="st">' + list(n.phrases) + '</div>' +
+      '<div class="foot">first match wins — arms above this one take precedence</div>';
+  return '<div><span class="k">skill</span>' +
+    (n.routed ? '<span class="k">routed</span>' : '<span class="k">by name only</span>') +
+    (n.has_chains_section ? '' : '<span class="k">no chains section</span>') + '</div>' +
+    '<div class="ttl mono">/notrest:' + esc(n.name) + '</div>' +
+    (n.shape ? '<div class="st">router shape <code>' + esc(n.shape) + '</code></div>'
+             : '<div class="st">no router arm — nothing a user types fires this by itself</div>') +
+    '<div class="lbl">ROUTER PHRASES</div><div class="st">' + list(n.router_phrases) + '</div>' +
+    '<div class="lbl">ORACLE INTAKE</div><div class="st">' + list(n.intake_phrases) + '</div>' +
+    '<div class="lbl">CHAINS TO</div><div class="st">' + list(n.chains_to) + '</div>' +
+    '<div class="lbl">CHAINED FROM</div><div class="st">' + list(n.chained_from) + '</div>' +
+    '<div class="foot">chain arrows are parsed from this skill\'s own Chains / Finishing-up ' +
+    'section — text, not behaviour</div>';
+}
+function pillCard(p){
+  return '<div><span class="k">' + (p.kind === 'intake' ? 'oracle intake' : 'router phrase') +
+    '</span></div><div class="ttl">' + esc(p.full || p.text) + '</div>' +
+    '<div class="st">' + (p.kind === 'intake'
+      ? 'the intake conversation routes this to <code>/notrest:' + esc(p.skill) + '</code>'
+      : 'matched word-bounded inside the prompt by <code>hooks/router.sh</code>') + '</div>' +
+    '<div class="foot">the router only NUDGES — it prints one line and never blocks the prompt</div>';
+}
+function bodyFor(id){
+  var n = byId[id];
+  return n.kind === 'router' || n.kind === 'intake' ? pillCard(n) : nodeCard(n);
+}
+function showCard(html, ev){
+  card.innerHTML = html + (pinned ? '<div class="foot">pinned — click the background to release</div>' : '');
+  card.style.display = 'block';
+  var r = stage.getBoundingClientRect(), w = card.offsetWidth, h = card.offsetHeight;
+  var x = ev.clientX - r.left + 16, y = ev.clientY - r.top + 16;
+  if (x + w > r.width - 8) x = Math.max(8, ev.clientX - r.left - w - 16);
+  if (y + h > r.height - 8) y = Math.max(8, r.height - h - 8);
+  card.style.left = x + 'px'; card.style.top = y + 'px';
+}
+function hitTarget(t){
+  while (t && t !== scene){
+    if (t.hasAttribute && t.hasAttribute('data-id')) return t;
+    t = t.parentNode;
+  }
+  return null;
+}
+function highlight(id){
+  var ch = gChain.childNodes, j;
+  for (j = 0; j < ch.length; j++){
+    var on = id && (ch[j].getAttribute('data-a') === id || ch[j].getAttribute('data-b') === id);
+    ch[j].classList.toggle('hot', !!on);
+  }
+}
+svg.addEventListener('mousemove', function(ev){
+  if (drag.on || pinned) return;
+  var g = hitTarget(ev.target);
+  if (g){ showCard(bodyFor(g.getAttribute('data-id')), ev); highlight(g.getAttribute('data-id')); }
+  else { card.style.display = 'none'; highlight(null); }
+});
+svg.addEventListener('mouseleave', function(){ if (!pinned){ card.style.display = 'none'; highlight(null); } });
+function unpin(){ pinned = null; card.classList.remove('pinned'); card.style.display = 'none'; highlight(null); }
+svg.addEventListener('click', function(ev){
+  if (drag.moved) return;
+  var g = hitTarget(ev.target);
+  if (!g || pinned === g){ unpin(); return; }
+  pinned = g; card.classList.add('pinned');
+  showCard(bodyFor(g.getAttribute('data-id')), ev); highlight(g.getAttribute('data-id'));
+});
+document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') unpin(); });
+
+/* ------------------------------------------------------- pan · zoom · fit */
+function apply(){
+  scene.setAttribute('transform', 'translate(' + num(view.x) + ',' + num(view.y) +
+                     ') scale(' + (Math.round(view.k * 1e4) / 1e4) + ')');
+  svg.classList.toggle('far', view.k < 0.42);
+}
+/* fit the WIDTH and anchor at the top: the page is a tall table of doors, read
+   downward. Fitting the height would make every pill a hairline. */
+function fit(){
+  var r = stage.getBoundingClientRect();
+  var w = Math.max(1, E.x1 - E.x0), h = Math.max(1, E.y1 - E.y0);
+  view.k = Math.max(0.05, Math.min(1, (r.width - 36) / w));
+  view.x = 18 - E.x0 * view.k;
+  view.y = (h * view.k <= r.height) ? (r.height - h * view.k) / 2 - E.y0 * view.k
+                                    : 14 - E.y0 * view.k;
+  userMoved = false; apply();
+}
+function zoomAt(cx, cy, f){
+  var k = Math.max(0.05, Math.min(6, view.k * f));
+  view.x = cx - (cx - view.x) * (k / view.k);
+  view.y = cy - (cy - view.y) * (k / view.k);
+  view.k = k; userMoved = true; apply();
+}
+var drag = {on:false, moved:false, x:0, y:0};
+svg.addEventListener('mousedown', function(ev){
+  drag.on = true; drag.moved = false; drag.x = ev.clientX; drag.y = ev.clientY;
+  svg.classList.add('drag');
+});
+window.addEventListener('mousemove', function(ev){
+  if (!drag.on) return;
+  var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  view.x += dx; view.y += dy; drag.x = ev.clientX; drag.y = ev.clientY;
+  userMoved = true; apply();
+});
+window.addEventListener('mouseup', function(){
+  drag.on = false; svg.classList.remove('drag');
+  setTimeout(function(){ drag.moved = false; }, 0);
+});
+svg.addEventListener('wheel', function(ev){
+  ev.preventDefault();
+  var r = stage.getBoundingClientRect();
+  zoomAt(ev.clientX - r.left, ev.clientY - r.top, ev.deltaY < 0 ? 1.12 : 1 / 1.12);
+}, {passive:false});
+document.getElementById('fit').addEventListener('click', fit);
+document.getElementById('zin').addEventListener('click', function(){
+  var r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.25);
+});
+document.getElementById('zout').addEventListener('click', function(){
+  var r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.25);
+});
+document.getElementById('chains').addEventListener('click', function(){
+  svg.classList.toggle('nochain');
+  this.classList.toggle('off', svg.classList.contains('nochain'));
+});
+document.getElementById('theme').addEventListener('click', function(){
+  var cur = root.getAttribute('data-theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+});
+window.addEventListener('resize', function(){ if (!userMoved) fit(); });
+if (window.ResizeObserver) new ResizeObserver(function(){ if (!userMoved) fit(); }).observe(stage);
+window.requestAnimationFrame(function(){ if (!userMoved) fit(); });
+
+/* ------------------------------------------------------------ filter · legend */
+var q = document.getElementById('q'), qn = document.getElementById('qn');
+q.addEventListener('input', function(){
+  var s = q.value.trim().toLowerCase(), shown = 0, all = pills.concat(nodes);
+  all.forEach(function(o){
+    var hay = ((o.text || '') + ' ' + (o.name || '') + ' ' + (o.skill || '') + ' ' +
+               (o.shape || '')).toLowerCase();
+    var on = !s || hay.indexOf(s) >= 0;
+    if (gById[o.id]) gById[o.id].classList.toggle('dim', !on);
+    if (on) shown++;
+  });
+  qn.textContent = s ? shown + '/' + all.length : '';
+});
+(function legend(){
+  var c = D.counts, L = document.getElementById('legend');
+  function sw(bg, br, dash){
+    return '<i class="sw" style="background:' + bg + ';border-color:' + br +
+      (dash ? ';border-style:dashed' : '') + '"></i>';
+  }
+  var glyphs = [
+    sw('var(--phrase-bg)','var(--phrase)') + 'router phrase <span class="n">' + c.router_phrases + '</span>',
+    sw('var(--intake-bg)','var(--intake)',1) + 'oracle intake phrase <span class="n">' + c.intake_phrases + '</span>',
+    sw('var(--shape-bg)','var(--shape)') + 'router shape <span class="n">' + c.shapes + '</span>',
+    sw('var(--skill-bg)','var(--border-strong)') + 'skill reached by a route <span class="n">' + c.routed + '</span>',
+    sw('var(--byname-bg)','var(--byname)',1) + 'by name only <span class="n">' + c.by_name_only + '</span>',
+    sw('transparent','var(--chain)') + 'chains-to arrow <span class="n">' + c.chains + '</span>'
+  ];
+  var tallies = [
+    'skills <span class="n">' + c.skills + '</span>',
+    'shapes <span class="n">' + c.shapes + '</span>',
+    'phrases <span class="n">' + c.phrases + '</span>',
+    'edges <span class="n">' + c.edges + '</span>',
+    'no chains section <span class="n">' + c.no_chains_section + '</span>',
+    'chains section, nothing parseable <span class="n">' + c.chains_unparsed + '</span>'
+  ];
+  var notes = (D.notes || []).slice();
+  notes.push('read from ' + esc(D.sources.router) + ', ' + esc(D.sources.intake) +
+             ' and ' + esc(D.sources.chains) + ' — this page draws what those files SAY, ' +
+             'not what the harness does at runtime.');
+  notes.push('stamped ' + esc(D.generated) + ' from the ' + esc(D.stamp_from) +
+             ' — identical inputs at the same commit render an identical page.');
+  L.innerHTML = '<summary>LEGEND — click to fold</summary>' +
+    '<div class="row">' + glyphs.map(function(g){ return '<span class="it">' + g + '</span>'; }).join('') + '</div>' +
+    '<div class="row">' + tallies.map(function(t){ return '<span class="it">' + t + '</span>'; }).join('') + '</div>' +
+    '<div class="row"><span class="note">' + notes.map(esc).join('<br>') + '</span></div>';
+})();
+fit();
+})();
+</script>
+</body>
+</html>
+"""
+
+
+def render_journey_html(j, title="project"):
+    data = json.dumps(j, separators=(",", ":")).replace("</", "<\\/")
+    c = j["counts"]
+    counts = (f"{c['skills']} skills · {c['shapes']} shapes · {c['phrases']} phrases · "
+              f"{c['chains']} chains · {c['by_name_only']} by name only")
+    return (JOURNEY_TEMPLATE
+            .replace("__TITLE__", esc(title))
+            .replace("__ROOT__", esc(j.get("root", "")))
+            .replace("__GENERATED__", esc(j.get("generated", "")))
+            .replace("__STAMPFROM__", esc(j.get("stamp_from", "")))
+            .replace("__COUNTS__", esc(counts))
+            .replace("__JPX__", str(JPX)).replace("__JSX__", str(JSX))
+            .replace("__JKX__", str(JKX)).replace("__JBULGE__", str(JBULGE))
+            .replace('"__JOURNEY_DATA__"', data))
+
+
+def cmd_journey(a):
+    root = pathlib.Path(a.root).expanduser().resolve()
+    if not root.is_dir():
+        die(f"not a directory: {root}")
+    out = pathlib.Path(a.out).expanduser()
+    out = out if out.is_absolute() else (root / a.out)
+    if out.suffix.lower() in (".html", ".htm"):
+        html_p, json_p = out, out.with_suffix(".json")
+    else:
+        html_p, json_p = out / "journey.html", out / "journey.json"
+    j = build_journey(root)
+    html_p.parent.mkdir(parents=True, exist_ok=True)
+    json_p.write_text(json.dumps(j, indent=1), encoding="utf-8")
+    html_p.write_text(render_journey_html(j, title=root.name), encoding="utf-8")
+    c = j["counts"]
+    print(f"{html_p}: {c['skills']} skills · {c['shapes']} router shapes · "
+          f"{c['phrases']} phrases ({c['router_phrases']} router, {c['intake_phrases']} intake) · "
+          f"{c['chains']} chain arrows · {c['by_name_only']} by name only · "
+          f"stamp={j['generated']} ({j['stamp_from']})")
+    for n in j["notes"]:
         print(f"  note: {n}")
     print(f"  data: {json_p}")
     if a.open:
@@ -2338,6 +3186,14 @@ def main():
     rv.add_argument("--open", dest="open", action="store_true", help="open the page after writing")
     rv.add_argument("--no-open", dest="open", action="store_false")
     rv.set_defaults(f=cmd_river, open=False)
+
+    jr = sub.add_parser("journey", help="draw the door: router shapes, intake routes, chains")
+    jr.add_argument("--root", default=".")
+    jr.add_argument("--out", default="graph/journey.html",
+                    help="output .html (json written beside it) or a directory")
+    jr.add_argument("--open", dest="open", action="store_true", help="open the page after writing")
+    jr.add_argument("--no-open", dest="open", action="store_false")
+    jr.set_defaults(f=cmd_journey, open=False)
 
     q = sub.add_parser("links", help="what links to and from a file (last scan)")
     q.add_argument("path")

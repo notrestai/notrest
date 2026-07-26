@@ -5,6 +5,10 @@ Drafted 2026-07-25 (v3.8.0 tree, 28 skills). `CAPABILITIES.md` is the register: 
 user sees, what lands on disk, and how each verb hands off to the next. Six journeys; every skill
 appears in at least one, and the coverage matrix is the proof.
 
+> **v3.9.0 (2026-07-25): all eighteen gaps below SHIPPED in one six-lane batch.** The
+> G-sections remain as the build record; `graph.py journey` now renders this page's
+> content as a flow diagram at zero model tokens.
+
 **Reading a step.** **HOOK** = fires automatically, nobody typed anything. **INVOKE** = the user
 names the verb, or a skill's own chain line names it. **SEES** = what appears in the transcript.
 **LANDS** = what is on disk afterwards — a record kind, a ledger line, a receipt. Phrases in

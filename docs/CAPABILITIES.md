@@ -20,6 +20,9 @@ script; toolset entries are seat-written from the day's live work.
 > **The successor backlog lives in [JOURNEY.md](JOURNEY.md):** its journey-gaps
 > section (G1–G18) supersedes the priority list below where they overlap — the
 > journeys expose the missing handoffs the register could not see.
+> **v3.9.0: all eighteen shipped in one batch** — the gap section is now a build
+> record; the open items are the journey page's disclosed residuals (8 skills without
+> Chains sections, prose-only handoffs) and this register's unshipped niceties.
 
 ## The law this register serves
 

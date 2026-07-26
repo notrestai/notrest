@@ -1,5 +1,48 @@
 # Changelog — the notrest harness
 
+## 3.9.0 — 2026-07-25
+
+**All eighteen journey gaps in one batch — the loop closes: every verb feeds the store, the store feeds the pictures, and refuted ground shows red.**
+
+- **Six more writers feed the store** (G1/G2/G3): marketresearcher, critic, explainer,
+  stepbystep, actionplan, game-forge emit validated finding records (all 10 shipped
+  snippets pushed through the door for real: F-81–F-90 on a scratch root).
+  marketresearcher/critic keep an optional `--dossier` card (the artifact people
+  circulate); explainer/stepbystep lose their folders; actionplan's runbook file stays
+  the deliverable, tracked by its record; game-forge records only on playtest exit 0.
+- **Readers read the store** (G4/G5/G6): `watch.py add --from-findings` enrolls live
+  cited-URL records idempotently (tombstones excluded — a status flip is bookkeeping,
+  not a claim about the world); draft's source inventory starts from `track --json` and
+  source-maps against record ids; recap walks the store as a sixth source and appends
+  one result record per story.
+- **RESTS-ON-REFUTED** (G7): a live record whose links contain an effectively-refuted id
+  is flagged by `track` (`RESTS-ON-REFUTED F-<n>`, `rests_on_refuted` in `--json`) and
+  painted in the river as a long-dashed red arc + ringed stone. Two independent
+  implementations of one pinned rule (one-hop, live-only, tombstones never rest on what
+  they killed); seat cross-check on a shared scratch store: agreement YES.
+- **Routing hardened** (G8–G12): five new arms — health-check→doctor, law-check→eval,
+  file-graph→graph, spend-audit→spend, "how did we get here"→recap. The graph/spend arms
+  needed a SELFNAMED escape or the already-named-verb guard would have made them
+  permanently dead (caught in-lane, fixture-pinned both directions). oracle's bullet now
+  mirrors all 18 verbs (director reclassified — chains are not shapes — so parity is
+  true set-equality with no allowlist). eval grows to **twelve checks**:
+  ROUTE-TABLE-PARITY (verbs agree across both authorities + every routed skill
+  acknowledges its shape in-body) and ROUTE-CONFORMANCE (WARN-grade: a recorded route
+  must leave downstream evidence).
+- **Four rituals became scripts** (G13–G17): sessionend's close refreshes graph + river
+  behind an existence guard proven on both branches; `director.py plan|handoff|verify`
+  (structure-verified pipelines, sha256 handoff manifests); `compile.py
+  contract|scaffold` (Step-1 pre-filled with trail citations; the judgment columns come
+  back blank by design); `score_snapshot.py append|report` (refuses trend claims under
+  N=10); `spend.py --seat-estimate` (quarantined from measured totals — an estimate that
+  can move a percentage is an estimate laundered into a measurement).
+- **The journey render** (G18): `graph.py journey` — 28 skill nodes, 18 shapes, 87
+  phrase pills, 56 chain arrows on the real repo at 59.9KB, stamped by git hash (+dirty
+  when the tree is), byte-identical re-renders, zero model tokens.
+- Gate: 15 fixtures (~810 assertions) seat-re-run exit 0 · eval 12/12 0-fail 0-warn ·
+  doctor 10/10 · validate 0 · new-arm live smoke 4/4 · descriptions net SHORTER
+  (always-on ~3,530 of the 3,600 ceiling).
+
 ## 3.8.0 — 2026-07-25
 
 **The estate learns to remember as records and be seen as a river — and every defect the register found is fixed.**

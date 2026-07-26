@@ -7,6 +7,8 @@ description: "Rigorous multi-pass research on any question — baseline, ≥5 al
 
 A staged research workflow that takes a single prompt and drives it from a first-cut answer to a defended recommendation. The reasoning runs through five passes; the output is a handful of **validated finding records** in the archivist store — the passes are the working-out, the records are what survives.
 
+**Router shape:** `research` — the UserPromptSubmit router (`hooks/router.sh`) nudges a prompt here when it looks like *"research …"*, *"find sources"*, *"look into"*, or *"deep dive"*. A prior-art phrasing (*"what do we already know?"*) outranks it and lands on `/archivist` instead; taking the nudge or deliberately skipping it is the user's call, silently doing this job by hand is the violation.
+
 ## The prompt
 
 The research question is everything the user passed when invoking the skill. Use `$ARGUMENTS` if it is populated; otherwise use the text the user typed after `/researcher`. If the prompt is empty or one ambiguous word, ask exactly one clarifying question before starting — otherwise begin immediately. Treat the original prompt as the fixed yardstick: every later pass is judged against *this* question, not whatever interesting tangents appear along the way.

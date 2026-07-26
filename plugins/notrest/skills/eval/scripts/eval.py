@@ -520,9 +520,161 @@ def check_router(root, plug, skills):
     return out
 
 
+# ---------------------------------------------------------------------------
+# the routing table has TWO authorities: hooks/router.sh (what the prompt hook
+# fires) and skills/oracle/SKILL.md's routing bullet (what the intake tells the
+# user). Two authorities that drift are worse than one — the user is told one
+# thing and nudged another.
+# ---------------------------------------------------------------------------
+ROUTE_PAIR_RE = re.compile(r"\bSKILL=([a-z][a-z0-9-]*)\s*;\s*SHAPE=([a-z][a-z0-9-]*)")
+ORACLE_BULLET_RE = re.compile(r"^-\s*\*\*Route to the right tool.*$", re.M | re.I)
+ORACLE_VERB_RE = re.compile(r"`/([a-z][a-z0-9-]*)`")
+SHAPE_LINE_RE = re.compile(r"^\*\*Router shape:\*\*[ \t]*`?([a-z][a-z0-9-]*)`?", re.M)
+
+
+def body_of(txt):
+    """SKILL.md minus its front matter. A law has to be stated in the BODY — the
+    description is a trigger, not a place a reader goes looking for the contract."""
+    if txt.startswith("---"):
+        end = txt.find("\n---", 3)
+        if end >= 0:
+            nl = txt.find("\n", end + 1)
+            return txt[nl + 1:] if nl >= 0 else ""
+    return txt
+
+
+def check_route_parity(root, plug, skills):
+    ID = "ROUTE-TABLE-PARITY"
+    law = ("router.sh and oracle's routing bullet name the SAME verbs, and every routed "
+           "skill acknowledges the shape that reaches it")
+    rs = os.path.join(plug, "hooks", "router.sh")
+    if not os.path.isfile(rs):
+        return [R(ID, "SKIP", law, "no hooks/router.sh under %s" % rel(root, plug))]
+    if "oracle" not in skills:
+        return [R(ID, "SKIP", law, "no skills/oracle — no second authority to hold it to")]
+    rtxt, out = read(rs), []
+    od, otxt = skills["oracle"]
+    of = rel(root, os.path.join(od, "SKILL.md"))
+    m = ORACLE_BULLET_RE.search(otxt)
+    if not m:
+        return [R(ID, "FAIL", law,
+                  "%s  (no '**Route to the right tool:**' bullet — the mirror is gone)" % of,
+                  "restore the routing bullet: it is the table's second authority, and "
+                  "without it the router answers to nothing")]
+    bullet, bline = m.group(0), lineno(otxt, m.start())
+    shapes = dict(ROUTE_PAIR_RE.findall(rtxt))
+    routed = set(ROUTE_RE.findall(rtxt))
+    named = set(ORACLE_VERB_RE.findall(bullet))
+    for name in sorted(routed - named):
+        hit = re.search(r"\bSKILL=%s\b" % re.escape(name), rtxt)
+        out.append(R(ID, "FAIL", law,
+                     "%s:%d  routes to /notrest:%s — oracle's routing bullet never names it"
+                     % (rel(root, rs), lineno(rtxt, hit.start()) if hit else 0, name),
+                     "add `/%s` to the routing bullet at %s:%d" % (name, of, bline)))
+    for name in sorted(named - routed):
+        out.append(R(ID, "FAIL", law,
+                     "%s:%d  names /%s — router.sh has no arm that can emit it"
+                     % (of, bline, name),
+                     "add the router arm, or drop /%s from the bullet — a route the intake "
+                     "promises and the hook never fires is half a law" % name))
+    # G9: the destination acknowledges the shape that lands on it, in its own body.
+    ack = []
+    for name in sorted(routed):
+        if name not in skills:
+            continue              # a verb with no skill dir is ROUTER's finding, not this one
+        d, txt = skills[name]
+        f = rel(root, os.path.join(d, "SKILL.md"))
+        sm = SHAPE_LINE_RE.search(body_of(txt))
+        if not sm:
+            out.append(R(ID, "FAIL", law,
+                         "%s  (routed as %s — no '**Router shape:**' line in the body)"
+                         % (f, shapes.get(name, "?")),
+                         "add a body line: **Router shape:** `%s`" % shapes.get(name, "<shape>")))
+        elif name in shapes and sm.group(1) != shapes[name]:
+            out.append(R(ID, "WARN", law,
+                         "%s  (acknowledges %r; router.sh sends %r)"
+                         % (f, sm.group(1), shapes[name]),
+                         "match the shape token to the router arm exactly"))
+        else:
+            ack.append(name)
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law,
+                        "%d verbs agree across router.sh and %s; %d acknowledge their shape: %s"
+                        % (len(routed), of, len(ack), ", ".join(ack) or "-")))
+    return out
+
+
+# A recorded route is a claim about where work WENT. Downstream evidence is what turns
+# it into a fact. WARN-grade on purpose: the ledger is a trail written by humans and
+# lanes mid-flight, and a gate that fails on an unfinished sentence would be lied to
+# rather than obeyed.
+ROUTE_MENTION_RE = re.compile(r"routed to /(?:notrest:)?([a-z][a-z0-9-]*)", re.I)
+ROUTE_NEG_RE = re.compile(r"\b(not|never|no|instead of|rather than|declined?|skipp?ed|"
+                          r"without|overrode|overrid\w+|refused?)\b", re.I)
+LEDGER_LINE_RE = re.compile(r"^-\s*\[")
+GRACE_LINES = 3
+
+
+def _names(text, name):
+    return bool(re.search(r"\b%s\b" % re.escape(name), text, re.I))
+
+
+def check_route_conformance(root, _plug, _skills):
+    ID = "ROUTE-CONFORMANCE"
+    law = ("a route the estate RECORDED left downstream evidence — the ledger says where the "
+           "work landed, not only where it was sent")
+    live = os.path.join(root, "COORD.md")
+    try:
+        sources = [os.path.join(root, fn) for fn in sorted(os.listdir(root))
+                   if fn.startswith("COORD") and fn.endswith(".md") and fn != "COORD-AGENTS.md"]
+    except OSError:
+        sources = []
+    if not sources:
+        return [R(ID, "SKIP", law, "no COORD*.md ledger at the root — no routes recorded")]
+    agents = read(os.path.join(root, "COORD-AGENTS.md"))
+    findings = read(os.path.join(root, "archive", "findings.jsonl"))
+    live_txt = read(live)
+    out, seen = [], 0
+    for path in sources:
+        lines = read(path).splitlines()
+        ledger = [i for i, ln in enumerate(lines) if LEDGER_LINE_RE.match(ln)]
+        # the newest 3 ledger lines are in flight: a lane routed 40 seconds ago has not
+        # landed anything yet, and warning about it would train the reader to ignore this.
+        cutoff = (ledger[-GRACE_LINES] if len(ledger) >= GRACE_LINES else -1) \
+            if os.path.abspath(path) == os.path.abspath(live) else -1
+        for i, ln in enumerate(lines):
+            if cutoff >= 0 and i >= cutoff:
+                continue
+            for m in ROUTE_MENTION_RE.finditer(ln):
+                name = m.group(1).lower()
+                # "not routed to /x", "skipped the route to /x" — the law being applied
+                # deliberately is exactly what fable-mode Hard Rule 12 allows.
+                if ROUTE_NEG_RE.search(ln[max(0, m.start() - 48):m.start()]):
+                    continue
+                seen += 1
+                later = "\n".join(lines[i + 1:])
+                if os.path.abspath(path) != os.path.abspath(live):
+                    later += "\n" + live_txt          # a sealed volume's "later" is the live ledger
+                if (_names(later, name)
+                        or re.search(r'"skill"\s*:\s*"%s"' % re.escape(name), findings, re.I)
+                        or _names(agents, name)):
+                    continue
+                out.append(R(ID, "WARN", law,
+                             "%s:%d  routed to /%s — no later ledger line, findings record, or "
+                             "agent entry names %s" % (rel(root, path), i + 1, name, name),
+                             "append what landed (or say it was deliberately skipped) — a route "
+                             "with no landing is a claim the estate cannot back"))
+    if not seen:
+        return [R(ID, "SKIP", law, "no 'routed to /<skill>' lines across %d ledger file(s)"
+                  % len(sources))]
+    if not out:
+        out.append(R(ID, "PASS", law, "%d recorded route(s) all left downstream evidence" % seen))
+    return out
+
+
 CHECKS = [check_offload, check_labels, check_scripts, check_references,
           check_estate, check_selfcheck, check_triggers, check_safety,
-          check_hooks, check_router]
+          check_hooks, check_router, check_route_parity, check_route_conformance]
 
 
 # ---------------------------------------------------------------------------

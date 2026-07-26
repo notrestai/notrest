@@ -18,7 +18,7 @@ bad()  { FAILS=$((FAILS+1));  echo "FAIL  $1"; }
 # ---------------------------------------------------------------- base harness
 P="$BASE/plugins/notrest"
 mkdir -p "$P/skills/agentswarm" "$P/skills/researcher" "$P/skills/graph/scripts" \
-         "$P/skills/draft/references" "$P/hooks"
+         "$P/skills/draft/references" "$P/skills/oracle" "$P/hooks"
 
 cat > "$P/skills/agentswarm/SKILL.md" <<'EOF'
 ---
@@ -36,6 +36,7 @@ name: researcher
 description: "Research anything into a dossier. Use on /researcher."
 ---
 # researcher
+**Router shape:** `research`
 Every claim carries [cited] / [recall] / [estimate] / [unverified].
 Append the COORD.md ledger line — append-only, never hand-edit.
 ## Self-check before finishing
@@ -50,6 +51,7 @@ name: graph
 description: "A file graph at zero model tokens. Use on /graph."
 ---
 # graph
+**Router shape:** `file-graph`
 Script: `scripts/graph.py` — the scanner reads the files, the model never has to.
 ## Self-check before finishing
 - The scanner ran; the model read nothing.
@@ -62,6 +64,7 @@ name: draft
 description: "Turn a dossier into the thing you send. Use on /draft."
 ---
 # draft
+**Router shape:** `outbound`
 A draft is never sent — sending is the owner's act, in the owner's client.
 Labels survive: [estimate] stays hedged.
 Per-channel shapes live in `references/formats.md`.
@@ -71,6 +74,17 @@ Per-channel shapes live in `references/formats.md`.
 - Hand the draft to the owner.
 EOF
 printf '# formats\nemail · memo · slack\n' > "$P/skills/draft/references/formats.md"
+
+# the routing table's second authority: what the intake TELLS the user must be what the
+# hook FIRES at them.
+cat > "$P/skills/oracle/SKILL.md" <<'EOF'
+---
+name: oracle
+description: "Session intake and resume — the suite's front door. Use on /oracle."
+---
+# oracle
+- **Route to the right tool:** research a question → `/researcher` · write the memo → `/draft` — or say "no skill needed, working directly."
+EOF
 
 cat > "$P/hooks/session-start.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -83,8 +97,8 @@ cat > "$P/hooks/router.sh" <<'EOF'
 # routing law — a task shape routes to the suite's verb for it.
 SKILL=""
 case " $1 " in
-  *" research"*) SKILL=researcher ;;
-  *" write the memo"*) SKILL=draft ;;
+  *" research"*) SKILL=researcher; SHAPE=research ;;
+  *" write the memo"*) SKILL=draft; SHAPE=outbound ;;
 esac
 [ -n "$SKILL" ] || exit 0
 echo "[notrest] route: /notrest:$SKILL"
@@ -155,8 +169,29 @@ set -e
 inject "router present but unregistered" ROUTER \
   'printf "%s\n" "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"bash \\\"\$CLAUDE_PLUGIN_ROOT/hooks/session-start.sh\\\"\"}]}]}}" > "$P/hooks/hooks.json"'
 
+# Both authorities are moved to the ghost verb together, so the tables still AGREE and
+# only "that skill does not exist" is left to find. One defect, one check.
 inject "router verb with no skill dir" ROUTER \
-  'sed -i.bak "s/SKILL=researcher/SKILL=nosuchskill/" "$P/hooks/router.sh" && rm -f "$P/hooks/router.sh.bak"'
+  'sed -i.bak "s/SKILL=researcher/SKILL=nosuchskill/" "$P/hooks/router.sh" && rm -f "$P/hooks/router.sh.bak" &&
+   sed -i.bak "s|/researcher|/nosuchskill|" "$P/skills/oracle/SKILL.md" && rm -f "$P/skills/oracle/SKILL.md.bak"'
+
+# ---------------------------------------------------- the two authorities disagree
+# the hook now fires a verb the intake never promises (and stops firing one it does)
+inject "router arm the intake never mirrors" ROUTE-TABLE-PARITY \
+  'sed -i.bak "s/SKILL=researcher; SHAPE=research/SKILL=graph; SHAPE=file-graph/" "$P/hooks/router.sh" && rm -f "$P/hooks/router.sh.bak"'
+
+# and the other direction: the intake promises a route no prompt can ever trigger
+inject "intake verb the router cannot emit" ROUTE-TABLE-PARITY \
+  'sed -i.bak "s|research a question|map the files -> \`/graph\` and research a question|" "$P/skills/oracle/SKILL.md" && rm -f "$P/skills/oracle/SKILL.md.bak"'
+
+# G9: the destination has to acknowledge the shape that lands on it. A routed skill whose
+# body never says so is a route the reader of that skill cannot see.
+inject "routed skill with no Router-shape line" ROUTE-TABLE-PARITY \
+  'sed -i.bak "/^\*\*Router shape:\*\*/d" "$P/skills/researcher/SKILL.md" && rm -f "$P/skills/researcher/SKILL.md.bak"'
+
+# The bullet is the mirror; losing it entirely is worse than any single disagreement.
+inject "intake routing bullet deleted" ROUTE-TABLE-PARITY \
+  'sed -i.bak "/Route to the right tool/d" "$P/skills/oracle/SKILL.md" && rm -f "$P/skills/oracle/SKILL.md.bak"'
 
 # A ghost reference is the .py case's blind spot: SCRIPT-OWNS-SCANNING only ever looked
 # at scripts/*.py, so a SKILL.md could promise a references/ file that was never shipped
@@ -168,6 +203,88 @@ inject "reference cited but never shipped" REFERENCES-CITED \
 # SCANNING's finding alone. Two checks firing on one defect is a report nobody can act on.
 inject "cited .py deleted stays one check" SCRIPT-OWNS-SCANNING \
   'rm -f "$P/skills/graph/scripts/graph.py"'
+
+# A shape token that drifted still routes — the doc just names the shape wrong. That is
+# a WARN, and a check that cannot tell the two apart teaches the reader to ignore it.
+WS="$TMP/ws"; rm -rf "$WS"; cp -R "$BASE" "$WS"
+sed -i.bak 's/^\*\*Router shape:\*\* `research`$/**Router shape:** `recap`/' \
+  "$WS/plugins/notrest/skills/researcher/SKILL.md"
+rm -f "$WS/plugins/notrest/skills/researcher/SKILL.md.bak"
+python3 "$EVAL" check --root "$WS" > "$TMP/shape.out" 2>&1
+rc=$?
+if [ "$rc" -eq 5 ] && grep -qE "^WARN +ROUTE-TABLE-PARITY" "$TMP/shape.out"; then
+  ok "a drifted shape token WARNs (exit 5) and never FAILs"
+else
+  bad "drifted shape token -> exit $rc (want 5 + a ROUTE-TABLE-PARITY WARN)"
+  grep -E '^(WARN|FAIL) ' "$TMP/shape.out"
+fi
+
+# ------------------------------------- ROUTE-CONFORMANCE: WARN-grade, never a gate
+# A recorded route claims work went somewhere. These assert the claim is judged against
+# the trail — and that the check stays a WARN so a mid-flight ledger never blocks a ship.
+mkcoord() { cat > "$TMP/coord.in"; }
+
+# conform <label> <want-exit> <want-conformance-warns> [extra-setup-shell]
+conform() {
+  label="$1"; want_rc="$2"; want="$3"; shift 3
+  WC="$TMP/wc"; rm -rf "$WC"; cp -R "$BASE" "$WC"
+  cp "$TMP/coord.in" "$WC/COORD.md"
+  W="$WC"; [ "$#" -eq 0 ] || ( eval "$@" )
+  python3 "$EVAL" check --root "$WC" > "$TMP/conf.out" 2>&1
+  rc=$?
+  got="$(grep -cE '^WARN +ROUTE-CONFORMANCE' "$TMP/conf.out")"
+  if [ "$rc" -eq "$want_rc" ] && [ "$got" -eq "$want" ]; then
+    ok "$label -> $got conformance WARN(s), exit $rc"
+  else
+    bad "$label -> $got WARN(s), exit $rc (want $want, exit $want_rc)"
+    grep -E '^(WARN|FAIL) ' "$TMP/conf.out"
+  fi
+}
+
+mkcoord <<'EOF'
+# COORD.md — session coordination ledger
+- [2026-01-01 00:00Z] [main] intake done: O=vector deletes -> routed to /notrest:researcher | evidence: this line
+- [2026-01-01 01:00Z] [main] unrelated parser work landed | evidence: exit 0
+- [2026-01-01 02:00Z] [main] unrelated hook work landed | evidence: exit 0
+- [2026-01-01 03:00Z] [main] unrelated docs work landed | evidence: exit 0
+EOF
+conform "a route with nothing downstream" 5 1
+
+mkcoord <<'EOF'
+# COORD.md — session coordination ledger
+- [2026-01-01 00:00Z] [main] intake done: O=vector deletes -> routed to /notrest:researcher | evidence: this line
+- [2026-01-01 01:00Z] [main] researcher dossier landed, 9 findings | evidence: research/vector-deletes.md
+- [2026-01-01 02:00Z] [main] unrelated hook work landed | evidence: exit 0
+- [2026-01-01 03:00Z] [main] unrelated docs work landed | evidence: exit 0
+EOF
+conform "a route a later ledger line backs" 0 0
+
+mkcoord <<'EOF'
+# COORD.md — session coordination ledger
+- [2026-01-01 00:00Z] [main] unrelated parser work landed | evidence: exit 0
+- [2026-01-01 01:00Z] [main] unrelated hook work landed | evidence: exit 0
+- [2026-01-01 02:00Z] [main] intake done: O=vector deletes -> routed to /notrest:researcher | evidence: this line
+EOF
+conform "an in-flight route inside the 3-line grace window" 0 0
+
+mkcoord <<'EOF'
+# COORD.md — session coordination ledger
+- [2026-01-01 00:00Z] [main] shape was research-shaped but deliberately NOT routed to /researcher — owner wanted it inline | evidence: this line
+- [2026-01-01 01:00Z] [main] unrelated parser work landed | evidence: exit 0
+- [2026-01-01 02:00Z] [main] unrelated hook work landed | evidence: exit 0
+- [2026-01-01 03:00Z] [main] unrelated docs work landed | evidence: exit 0
+EOF
+conform "a route deliberately declined (negation-aware)" 0 0
+
+mkcoord <<'EOF'
+# COORD.md — session coordination ledger
+- [2026-01-01 00:00Z] [main] intake done: O=vector deletes -> routed to /notrest:researcher | evidence: this line
+- [2026-01-01 01:00Z] [main] unrelated parser work landed | evidence: exit 0
+- [2026-01-01 02:00Z] [main] unrelated hook work landed | evidence: exit 0
+- [2026-01-01 03:00Z] [main] unrelated docs work landed | evidence: exit 0
+EOF
+conform "a route the findings store backs" 0 0 \
+  'mkdir -p "$W/archive" && printf %s\\n "{\"id\":\"F-1\",\"skill\":\"researcher\",\"statement\":\"vector deletes are tombstoned\"}" > "$W/archive/findings.jsonl"'
 
 # ------------------------------------------------------- baseline: what MOVED
 # The baseline is a reporting mode, not a gate: it may add a section, never a verdict.

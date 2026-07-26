@@ -177,6 +177,78 @@ t "…and is demoted below the COORD-supported one despite more occurrences" \
 has "candidates.md explains the weak-source mark" "purposes say what a lane was CALLED" "$R5/compile/candidates.md"
 has "the weak-source row is marked in the table" "weak-source" "$R5/compile/candidates.md"
 
+echo "── J · contract pre-fills Step 1 from the trail (and refuses to invent it)"
+# The ripe candidate from section B is the release ritual; its slug is machine-derived,
+# so the fixture asks for it by the slug the scanner actually produced.
+python3 "$CP" scan --root "$R" >/dev/null 2>&1
+SLUG="$(J "top['slug']")"
+python3 "$CP" contract --root "$R" --slug "$SLUG" > "$W/contract.md" 2>&1
+t "contract on a scanned candidate exits 0" "$?" "0"
+has "carries the Step-1 table header verbatim" \
+  "| # | Responsibility | Evidence | Required for parity? | Owner today | Owner after | Why |" "$W/contract.md"
+has "says it is Step 1 half-done, not done" "This is Step 1 half-done" "$W/contract.md"
+has "COORD rows cite in the ritual's grammar" "[COORD 2026-01-02" "$W/contract.md"
+has "spend rows cite in the ritual's grammar" "[spend 2026-01-02" "$W/contract.md"
+has "citations carry a source line ref" "COORD.md:4" "$W/contract.md"
+has "owner-today is mined from the ledger, not assumed" "lane=subagent model=claude-opus-5" "$W/contract.md"
+has "coverage section is present" "Evidence coverage" "$W/contract.md"
+has "coverage names the absent ledger rather than omitting it" "| COORD-AGENTS.md (\`COORD-AGENTS.md\`) | NO |" "$W/contract.md"
+has "coverage admits transcripts were not read" "Transcripts:** not read by this script" "$W/contract.md"
+has "coverage admits compacted history is invisible" "Compacted history is invisible" "$W/contract.md"
+has "the completeness law survives into the draft" "a parity claim over a subset is a lie" "$W/contract.md"
+t "judgment columns are left blank, never guessed" \
+  "$(python3 -c "
+rows=[l for l in open('$W/contract.md',encoding='utf-8') if l.startswith('| 1 |')]
+print(bool(rows) and rows[0].rstrip().endswith('| ? | ? |'))")" "True"
+t "rows walk in timestamp order (Step 1's rule)" \
+  "$(python3 -c "
+import re
+ts=re.findall(r'\[(?:COORD|spend) ([0-9-]+ [0-9:]+Z)\]', open('$W/contract.md',encoding='utf-8').read())
+print(ts==sorted(ts))")" "True"
+t "every cited line ref resolves to a real line in a real file" \
+  "$(python3 -c "
+import re,pathlib
+refs=set(re.findall(r'\`([A-Za-z0-9./-]+\.md):(\d+)\`', open('$W/contract.md',encoding='utf-8').read()))
+ok=all((pathlib.Path('$R')/f).is_file() and len((pathlib.Path('$R')/f).read_text().splitlines())>=int(n)
+       for f,n in refs)
+print(bool(refs) and ok)")" "True"
+python3 "$CP" contract --root "$R" --slug quantum-basket-weaving > "$W/none.md" 2>&1
+t "a slug with no trail evidence exits 3, with no invented rows" "$?" "3"
+has "…and says why plainly" "there is nothing to reconstruct" "$W/none.md"
+python3 "$CP" contract --root "$R" --slug "$SLUG" --write "$W/written.md" >/dev/null 2>&1
+t "--write puts the draft on disk" "$([ -s "$W/written.md" ] && echo yes)" "yes"
+python3 "$CP" contract --root "$R" --slug "$SLUG" --max-rows 2 > "$W/capped.md" 2>&1
+t "--max-rows caps the table" \
+  "$(grep -c '^| [0-9]* | _<rewrite' "$W/capped.md" | tr -d ' ')" "2"
+has "…and says the cap was hit" "capped at --max-rows 2" "$W/capped.md"
+# An unscanned root still yields a contract: the slug's own tokens are the query.
+R6="$W/unscanned"; mkdir -p "$R6"; cp "$R/COORD.md" "$R6/"
+python3 "$CP" contract --root "$R6" --slug "release-changelog" > "$W/unscanned.md" 2>&1
+t "contract works with no scan on disk" "$?" "0"
+has "…and says the row set is a grep, not a cluster" "a grep, not a cluster" "$W/unscanned.md"
+
+echo "── K · scaffold creates an isolated runtime and never overwrites one"
+python3 "$CP" scaffold --root "$R" --slug demo-runtime >/dev/null 2>&1
+t "scaffold exits 0" "$?" "0"
+for f in README.md runner.py fixture.sh BENCHMARK.md; do
+  t "scaffold wrote $f" "$([ -f "$O/demo-runtime/$f" ] && echo yes)" "yes"
+done
+python3 "$O/demo-runtime/runner.py" --help >/dev/null 2>&1; t "the runner stub runs" "$?" "0"
+python3 "$O/demo-runtime/runner.py" run >/dev/null 2>&1
+t "an unimplemented runner exits 4, never a false success" "$?" "4"
+bash -n "$O/demo-runtime/fixture.sh"; t "the fixture stub parses" "$?" "0"
+bash "$O/demo-runtime/fixture.sh" >/dev/null 2>&1; t "the fixture stub passes its own sanity cases" "$?" "0"
+has "README states installation is a release, not a flag" "installed nowhere" "$O/demo-runtime/README.md"
+has "README keeps a 'what it does NOT do' section" "What it does NOT do" "$O/demo-runtime/README.md"
+has "benchmark notes carry the symmetry checklist" "Symmetry checklist" "$O/demo-runtime/BENCHMARK.md"
+has "benchmark notes keep the quality law above the numbers" "outranks every number" "$O/demo-runtime/BENCHMARK.md"
+echo "SENTINEL" >> "$O/demo-runtime/runner.py"
+python3 "$CP" scaffold --root "$R" --slug demo-runtime >/dev/null 2>&1
+t "scaffolding over an existing runtime exits 2" "$?" "2"
+has "…and the existing work is untouched" "SENTINEL" "$O/demo-runtime/runner.py"
+python3 "$CP" scaffold --root "$R" --slug "///" >/dev/null 2>&1
+t "an unusable slug is refused" "$?" "2"
+
 echo
 echo "compile fixture: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

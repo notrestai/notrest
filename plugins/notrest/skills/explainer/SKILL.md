@@ -1,36 +1,41 @@
 ---
 name: explainer
-description: Build genuine understanding of any topic, system, or document — a correct mental model, three depth layers (plain → working → expert), the standard misconceptions, and how to verify the load-bearing claims yourself — producing a background doc + understanding dossier (or --quick for the chat-only mental model). Use on /explainer or asks to explain, "help me understand", "what is X really", "break this down", "ELI5", or "teach me X". For real understanding-building — answer quick factual questions directly.
+description: Build genuine understanding of any topic, system, or document — a correct mental model, three depth layers (plain → working → expert), the standard misconceptions, and how to verify the load-bearing claims yourself — landing finding records (or --quick for the chat-only mental model). Use on /explainer or asks to explain, "help me understand", "what is X really", "break this down", "ELI5", or "teach me X". For real understanding-building — answer quick factual questions directly.
 ---
 
 # Explainer
 
-Turns any topic, system, concept, or document into understanding that survives contact with reality: a mental model that's actually correct, layered depth the reader can climb at their own pace, the misconceptions they'd otherwise absorb, and the means to check the important claims themselves. The reasoning runs through five passes; the output is **two files** — a consolidated background document and a final understanding dossier.
+Turns any topic, system, concept, or document into understanding that survives contact with reality: a mental model that's actually correct, layered depth the reader can climb at their own pace, the misconceptions they'd otherwise absorb, and the means to check the important claims themselves. The reasoning runs through five passes; the explanation is delivered in chat, and what survives it is **validated records** in the archivist store — one `kind=result` holding the mental model, and a `kind=finding` per misconception corrected. The passes are the working-out, the records are what the next session (or the next skill) can reuse.
 
 The bar is *understanding*, not coverage: a reader should finish able to predict how the thing behaves, explain it to someone else, and spot nonsense about it — not just recognize the vocabulary.
+
+**Router shape:** `explanation`
 
 ## The prompt
 
 The subject is everything the user passed when invoking the skill — a topic, a question, a system, or an attached document to be understood. Use `$ARGUMENTS` if populated; otherwise the text after `/explainer`. If a document is referenced but not in context, read it from disk first. If the subject is genuinely ambiguous ("explain the thing"), ask exactly one clarifying question, then begin. Note any stated audience ("for my mom", "I'm a senior engineer") — it calibrates every layer.
 
-**Consult the index first (if present).** If the repo carries an `oracle-index.md` — or the **archivist** skill is installed and prior ORACLE output folders exist — run one `find` on the subject before Pass 1: a prior `understanding/` dossier on the same subject means offer *reuse* / *extend* / *fresh* instead of rebuilding the mental model from scratch.
+**Consult the store first.** Run one `index.py find "<subject>"` before Pass 1 — it searches the findings store, the legacy index, and dossier bodies. A prior mental-model record (or an old `understanding/` dossier) on the same subject means offer *reuse* / *extend* (this run, seeded with the prior records) / *fresh* instead of rebuilding the model from scratch.
 
 ## Quick mode (`--quick`)
 If the invocation includes `--quick` (or a clear equivalent — "quick", "brief", "no files", "just the summary"), run lightweight instead of the full workflow:
-- **No files.** Write nothing to disk — no background, no dossier. Skip the "Setup & output files" step entirely.
+- **No records.** Write nothing to the store. Skip the "Setup & output" step entirely.
 - **Reason, compressed.** Still work through this skill's core logic and search where it normally would, but skip the full multi-pass write-up.
 - **Output in chat only:** the **Read Me First** block this skill defines (the mental model in plain language), then the plain layer and the top 2–3 misconceptions. No sources/reference list.
-- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not fully sourced or saved; run again without `--quick` for the verifiable two-file version."*
+- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not sourced into the store; run again without `--quick` for the recorded, verifiable version."*
 Quick mode is for fast exploration, not deliverables.
 
-## Setup & output files
+## Setup & output — the findings store
 
-Derive a `{topic}` slug from the subject: lowercase, hyphen-joined, punctuation stripped, max ~50 chars. Create an `understanding/` directory and write exactly two files:
+**No understanding folder. No two-file write.** The explanation itself is delivered in chat (the shape is below); what lands is **records** appended to the archivist store (`archive/findings.jsonl`, append-only, validated at the door): one `kind=result` carrying the mental model, and one `kind=finding` per misconception you corrected. The five passes below still run in full — they are what earns a model that predicts; they just do not land as files.
 
-- **`understanding/{topic}background.md`** — all five passes, as sections within this one document.
-- **`understanding/{topic}Dossier.md`** — the final understanding dossier.
+The sink:
 
-If those files already exist from a prior run, suffix the topic with `-2` (then `-3`, etc.).
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{…}'
+```
+
+(Loose install: `../archivist/scripts/index.py` relative to this skill folder.) It prints the assigned `F-<n>` on success and **exits 2 naming the rule** on rejection — a model record with an empty evidence list, or a `[cited]` url that is not a URL, does not enter the store. Fix the record, re-run; never hand-append to the JSONL.
 
 Web search/fetch: use it where correctness is date-sensitive (versions, prices, laws, live systems) or where you're not certain — a wrong explanation taught confidently is worse than none. **Search budget (token discipline):** ~8 searches/fetches default (~2 in `--quick`); a stable, well-understood topic may honestly need none — then label recall as recall.
 
@@ -43,17 +48,16 @@ Web search/fetch: use it where correctness is date-sensitive (versions, prices, 
 - **Simplification ≠ distortion.** Each layer may omit detail; it may not say things the deeper layers contradict. The plain layer is a subset of the truth, never a different truth.
 - **Say what you don't know.** A visible gap beats a smooth fabrication.
 
-## The five passes — all written into `understanding/{topic}background.md`
+## The five passes — the reasoning that earns the records
 
-```markdown
-# <Subject> — Understanding Background
-> Working document. All five passes. The explanation lives in {topic}Dossier.md.
+Run all five in order, in full, as working prose in the session. A mental model worth recording is one a pass argued for and checked.
 
-## Pass 1 — Scope & calibrate
-## Pass 2 — The mental model
-## Pass 3 — The three layers
-## Pass 4 — Misconceptions & edges
-## Pass 5 — Verify it yourself
+```
+Pass 1 — Scope & calibrate     → (reasoning — subject, audience, the questions to answer)
+Pass 2 — The mental model      → (reasoning — the model, its analogy, its breaking point)
+Pass 3 — The three layers      → (the delivered explanation: plain · working · expert edges)
+Pass 4 — Misconceptions        → records: kind=finding per misconception corrected
+Pass 5 — Verify it yourself    → record:  kind=result — the mental model, last
 ```
 
 ### Pass 1 — Scope & calibrate
@@ -74,9 +78,9 @@ The standard wrong beliefs — what do people who *half*-understand this get wro
 ### Pass 5 — Verify it yourself
 For the 3–6 load-bearing claims of the explanation: how the reader can check each one *without trusting you* — a primary source to read, an experiment or calculation to run, a thing to observe. Plus a short **Going Deeper** list: the 2–4 best next resources, each with one line on what it adds (real, labeled sources — not a link dump).
 
-## The dossier — `understanding/{topic}Dossier.md`
+## The explanation — delivered in chat
 
-Write this **after** the background doc. Self-contained — a reader gets the whole understanding from this file alone. **Read Me First and the mental model up top.**
+Deliver it **after** the five passes, in this shape and this order — **Read Me First and the mental model up top**, so a reader who stops after 20 seconds still leaves with the model. Self-contained: no file to open, nothing deferred to a dossier.
 
 ```markdown
 # <Subject> — Understanding
@@ -116,18 +120,58 @@ Plain-language, 3–5 bullets, skimmable in 20 seconds.
 
 > **The mental model:** DNS is a *distributed phone book with aggressive caching* — nobody holds the whole book; everyone holds the pages they were recently asked about, plus the number of someone who knows more. Every lookup is "check my notes → ask someone closer to the source → write down the answer with an expiry date (TTL)." The analogy breaks in one place: unlike a phone book, answers can differ by *who's asking and from where* (split-horizon, geo-routing) — the book is allowed to lie to you on purpose.
 
+## The output — the records
+
+**One `kind=result` for the mental model, one `kind=finding` per misconception corrected.** A record has to teach without the chat around it: the model record carries the core insight, the analogy **and its breaking point** (an analogy stored without its limit becomes the next reader's misconception), and how settled the knowledge is. A misconception record carries the wrong belief, why it's tempting, and the one-line correction.
+
+- **The mental model:** `kind=result`, `relation=toward` — written last, after Pass 4 has had its chance to break it.
+- **Each misconception you corrected:** `kind=finding`, `relation=toward` — the wrong belief in the statement, quoted the way people actually say it.
+- **Genuinely contested territory:** `kind=conflict`, `relation=lateral` — both positions and who holds them, never one side taught as settled.
+- **A model you drafted and abandoned as wrong:** `kind=backtrack`, `relation=back` — the discarded explanation is worth more than a silent correction.
+
+### The snippet, filled
+
+*(The same DNS model, recorded.)*
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "session":"explainer-2026-07-25",
+  "skill":"explainer",
+  "kind":"finding",
+  "ask":"explain DNS",
+  "statement":"Misconception corrected: \"DNS changes take 24-48 hours to propagate.\" Tempting because registrars say it, wrong because nothing propagates — resolvers simply hold the old answer until its TTL expires. Correction: lower the TTL before the change and the cutover is as fast as that TTL. Confidence high, this is settled behavior.",
+  "evidence":[{"type":"url","ref":"https://www.rfc-editor.org/rfc/rfc1035","label":"cited"},
+              {"type":"command","ref":"dig +noall +answer example.com","label":"cited"}],
+  "relation":"toward",
+  "links":[]}'
+```
+
+Then the mental-model record, last, carrying the analogy and where it breaks:
+
+```bash
+… add --root . --json '{"session":"explainer-2026-07-25","skill":"explainer","kind":"result",
+  "ask":"explain DNS",
+  "statement":"Mental model: DNS is a distributed phone book with aggressive caching — nobody holds the whole book, everyone holds the pages they were recently asked about plus the number of someone who knows more, and every answer carries an expiry (TTL). WHERE THE ANALOGY BREAKS: answers can differ by who is asking and from where (split-horizon, geo-routing) — the book is allowed to lie on purpose. Settled knowledge, confidence high.",
+  "evidence":[{"type":"url","ref":"https://www.rfc-editor.org/rfc/rfc1035","label":"cited"},
+              {"type":"command","ref":"dig +trace example.com","label":"cited"}],
+  "relation":"toward","links":["F-61","F-62"]}'
+```
+
+Each `add` prints its `F-<n>`. A non-zero exit means the record was turned away with its rule named — fix it and re-run.
+
 ## Self-check before finishing
-Before declaring done, verify the dossier and fix any miss:
+Before declaring done, verify the records and fix any miss:
+- **Records validated at the door (`add` exited 0)** — every id was printed by the script, nothing hand-appended.
 - The mental model actually predicts behavior — it's an engine, not a slogan.
 - No layer contradicts a deeper layer; simplifications are subsets, not distortions.
-- Every analogy states where it breaks.
+- Every analogy states where it breaks — in the chat explanation **and** inside the `kind=result` statement.
 - Misconceptions are the *standard* ones, and Pass 3's text doesn't feed any of them.
 - Contested areas are shown as contested; fast-moving facts are dated; claims are labeled.
 - Check-It-Yourself covers the load-bearing claims, not trivia.
 
 ## Finishing up
 
-Write `{topic}background.md` first (all five passes), then `{topic}Dossier.md`. Give the user a short chat summary: the mental model in a sentence or two, the #1 misconception, and the paths to both files — point them to the dossier. Don't paste the files into chat. Offer to go deeper on any layer — or to chain onward: `/factcheck` to verify the load-bearing claims independently, `/decider` if the understanding was in service of a choice.
+Run the five passes, deliver the explanation in chat in the shape above, emit a record per misconception as Pass 4 corrects it, and write the `kind=result` mental-model record last. Close with the record ids and `index.py track --status live` as the one command that shows the whole trail — the explanation was the reading, the records are what the project keeps. Offer to go deeper on any layer — or to chain onward: `/factcheck` to verify the load-bearing claims independently, `/decider` if the understanding was in service of a choice.
 
 ## Notes on tone and rigor
 

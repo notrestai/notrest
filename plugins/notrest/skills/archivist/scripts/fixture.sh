@@ -145,6 +145,44 @@ PY
 python3 "$IDX" track --root "$R" | grep -q "SUPERSEDED by F-2" \
   && ok "track line flags the flip inline" || bad "track line hides the flip"
 
+# --------------------------------------------------- RESTS-ON-REFUTED (G7)
+# A(finding) ← B(decision links A), then a tombstone refuting A. B stays LIVE — only a
+# tombstone flips a status — but its footing is gone, and track says so on B's line.
+# C links the un-refuted A2: the control that proves the flag is not painted on everything.
+A="$(python3 "$IDX" add --root "$R" --json "{\"session\":\"s3\",\"skill\":\"factcheck\",\"kind\":\"finding\",\"statement\":\"Eviction is CI-verified on every release.\",\"evidence\":$EVU,\"relation\":\"toward\"}" 2>/dev/null)"
+A2="$(python3 "$IDX" add --root "$R" --json "{\"session\":\"s3\",\"skill\":\"factcheck\",\"kind\":\"finding\",\"statement\":\"The driver ships a connection pool cap.\",\"evidence\":$EVU,\"relation\":\"toward\"}" 2>/dev/null)"
+B="$(python3 "$IDX" add --root "$R" --json "{\"session\":\"s3\",\"skill\":\"decider\",\"kind\":\"decision\",\"statement\":\"Ship the Redis read path now.\",\"evidence\":$EVC,\"relation\":\"toward\",\"links\":[\"$A\"]}" 2>/dev/null)"
+C="$(python3 "$IDX" add --root "$R" --json "{\"session\":\"s3\",\"skill\":\"decider\",\"kind\":\"decision\",\"statement\":\"Cap the pool at 32.\",\"evidence\":$EVC,\"relation\":\"toward\",\"links\":[\"$A2\"]}" 2>/dev/null)"
+python3 "$IDX" refute "$A" --evidence "https://example.org/ci-log-2026" --root "$R" --session s3 >/dev/null 2>&1 \
+  && ok "refute $A appends the tombstone the flag resolves through" || bad "refute of $A failed"
+
+python3 "$IDX" track --root "$R" > "$TMP/track3.txt" 2>&1
+grep -q "^$B .* · RESTS-ON-REFUTED $A\$" "$TMP/track3.txt" \
+  && ok "track flags the live decision resting on refuted ground (RESTS-ON-REFUTED $A)" \
+  || { bad "no RESTS-ON-REFUTED flag on $B"; grep "^$B " "$TMP/track3.txt"; }
+grep "^$C " "$TMP/track3.txt" | grep -q "RESTS-ON-REFUTED" \
+  && bad "control $C (links un-refuted $A2) was flagged" \
+  || ok "control $C links a live finding — unflagged"
+grep "^$A " "$TMP/track3.txt" | grep -q "RESTS-ON-REFUTED" \
+  && bad "the refuted record itself was flagged (only live records rest on anything)" \
+  || ok "the refuted record itself carries REFUTED, not RESTS-ON-REFUTED"
+grep "refutes $A" "$TMP/track3.txt" | grep -q "RESTS-ON-REFUTED" \
+  && bad "the tombstone was flagged as resting on what it killed" \
+  || ok "a tombstone does not rest on its own target"
+
+python3 "$IDX" track --root "$R" --json > "$TMP/track3.json" 2>&1
+python3 - "$TMP/track3.json" "$A" "$B" "$C" <<'PY' && ok "--json carries rests_on_refuted on every record" || bad "rests_on_refuted field wrong"
+import json, sys
+d = json.load(open(sys.argv[1]))
+a, b, c = sys.argv[2], sys.argv[3], sys.argv[4]
+by = {r["id"]: r for r in d["records"]}
+assert all("rests_on_refuted" in r for r in d["records"]), "field missing on some record"
+assert by[b]["rests_on_refuted"] == [a], by[b]["rests_on_refuted"]
+assert by[b]["effective_status"] == "live", by[b]
+assert by[c]["rests_on_refuted"] == [], by[c]["rests_on_refuted"]
+assert by[a]["effective_status"] == "refuted" and by[a]["rests_on_refuted"] == [], by[a]
+PY
+
 # ------------------------------------------------------------- legacy estate
 mkdir -p "$R/research" "$R/draft"
 cat > "$R/research/cache-choiceDossier.md" <<'EOF'
@@ -171,7 +209,7 @@ grep -q "2 entries" "$TMP/scan.out" && ok "scan indexes 2 dossiers (draft/ now i
 grep -q "^### Cache choice — Dossier — 2025-01-15$" "$R/oracle-index.md" \
   && ok "dossier's own date line beats st_mtime (2025-01-15)" \
   || { bad "date not parsed from the dossier"; grep '^### ' "$R/oracle-index.md"; }
-grep -q "findings store — 9 record(s), 7 live" "$R/oracle-index.md" \
+grep -q "findings store — 14 record(s), 11 live" "$R/oracle-index.md" \
   && ok "scan points the index at the findings store" || bad "index has no findings entry"
 
 # ------------------------------------------------------------------- find

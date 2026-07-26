@@ -163,6 +163,80 @@ chk "log created the ledger" "$([ -f "$R/spend/ledger.md" ] && echo yes || echo 
 chk "log wrote exactly one entry" "$(grep -c '^\[' "$R/spend/ledger.md")" "1"
 chk "a freshly logged opus subagent line reports clean" "$(run "$R")" "0"
 
+echo "── 13. the seat's own spend: counted, never gated, never mixed into observed totals"
+SE() { printf '[%s] lane=seat model=%s tokens=%s grade=estimate kind=seat-estimate purpose="%s"' \
+  "$1" "$2" "$3" "$4"; }
+R=$(mk "$(E '2026-07-20 10:00Z' subagent claude-opus-5)" \
+       "$(SE '2026-07-20 11:00Z' claude-fable-5 480000 'seat: whole build session')")
+chk "a seat estimate never fires the gate → exit 0" "$(run "$R")" "0"
+grep -q 'seat estimates: 1, informational — not offload-gated' "$OUT" \
+  && ok "  reported on its own line, in the agreed words" \
+  || no "  seat-estimate line" "$(cat "$OUT")"
+grep -qE '^entries: 2 · tokens \(known\): 100 · estimate-grade: 1$' "$OUT" \
+  && ok "  its 480000 tokens stay OUT of tokens(known) — an estimate cannot move a total" \
+  || no "  observed total excludes the estimate" "$(head -1 "$OUT")"
+grep -qE '^  claude-fable-5 +entries=' "$OUT" \
+  && no "  seat estimate leaked into the per-model share table" \
+  || ok "  it is absent from the per-model share table (no laundered percentage)"
+grep -q 'lane=seat model=claude-fable-5' "$OUT" \
+  && ok "  …but the raw line is still printed verbatim, not summarized away" \
+  || no "  raw seat-estimate line echoed"
+grep -q 'seat estimate(s) below are the seat.s own guess' "$OUT" \
+  && ok "  the honesty NOTE says where the gap went" || no "  NOTE mentions the estimate"
+grep -q '^NOTE: ledger covers observed spend only' "$OUT" \
+  && ok "  …and still starts with the unchanged NOTE prefix" || no "  NOTE prefix unchanged"
+grep -q '^routing: CLEAN' "$OUT" \
+  && ok "  verdict line format is unchanged (doctor greps 'routing:')" || no "  verdict prefix"
+
+echo "── 14. a seat estimate cannot smuggle an offload lane past the gate"
+R=$(mk "$(E '2026-07-20 10:00Z' subagent claude-sonnet-5)" \
+       "$(SE '2026-07-20 11:00Z' claude-fable-5 480000 'seat')")
+chk "a real violation still exits 4 alongside a seat estimate" "$(run "$R")" "4"
+python3 "$SPEND" log --root "$TMP/reject" --seat-estimate 1000 --note "x" --lane subagent \
+  >/dev/null 2>&1
+chk "--seat-estimate on an offload lane is refused" "$?" "1"
+python3 "$SPEND" log --root "$TMP/reject" --seat-estimate 1000 >/dev/null 2>&1
+chk "--seat-estimate without --note is refused (no naked numbers)" "$?" "1"
+python3 "$SPEND" log --root "$TMP/reject" --tokens 5 >/dev/null 2>&1
+chk "an ordinary log still requires --model" "$?" "1"
+
+echo "── 15. logging a seat estimate through the script"
+R="$TMP/seatcase"; mkdir -p "$R"
+python3 "$SPEND" log --root "$R" --seat-estimate 250000 --model claude-fable-5 \
+  --note "seat: six-lane build round, orchestration only" >/dev/null 2>&1
+chk "log --seat-estimate exits 0" "$?" "0"
+chk "wrote exactly one entry" "$(grep -c '^\[' "$R/spend/ledger.md")" "1"
+grep -q 'lane=seat model=claude-fable-5 tokens=250000 grade=estimate kind=seat-estimate' \
+  "$R/spend/ledger.md" && ok "  line shape: lane=seat, grade=estimate, kind=seat-estimate" \
+  || no "  line shape" "$(tail -1 "$R/spend/ledger.md")"
+grep -q 'purpose="seat: six-lane build round, orchestration only"' "$R/spend/ledger.md" \
+  && ok "  --note lands in purpose=" || no "  note in purpose"
+chk "a ledger of nothing but seat estimates reports clean" "$(run "$R")" "0"
+python3 "$SPEND" log --root "$R" --seat-estimate 90000 --note "seat: gate round" >/dev/null 2>&1
+chk "a seat estimate with no --model is allowed (model unknown is honest)" "$?" "0"
+grep -q 'lane=seat model=? tokens=90000' "$R/spend/ledger.md" \
+  && ok "  …and records model=? rather than inventing one" || no "  model=? recorded"
+run "$R" >/dev/null
+grep -q 'seat estimates: 2, informational — not offload-gated' "$OUT" \
+  && ok "  both counted on the seat-estimate line" || no "  count of 2" "$(cat "$OUT")"
+grep -q '340000 tokens self-reported' "$OUT" \
+  && ok "  their tokens are summed and labelled self-reported" || no "  token sum"
+
+echo "── 16. --json carries the seat split"
+R=$(mk "$(E '2026-07-20 10:00Z' subagent claude-opus-5)" \
+       "$(SE '2026-07-20 11:00Z' claude-fable-5 480000 'seat')")
+chk "--json with a seat estimate exits 0" "$(run "$R" --json)" "0"
+python3 -c "
+import json
+d=json.load(open('$OUT'))
+assert d['seat_estimates']['entries']==1, d['seat_estimates']
+assert d['seat_estimates']['tokens']==480000, d['seat_estimates']
+assert d['seat_estimates']['gated'] is False, d['seat_estimates']
+assert d['tokens_known']==100, d['tokens_known']
+assert d['verdict']=='CLEAN', d['verdict']
+" 2>"$TMP/jerr2" && ok "  json splits seat estimates from tokens_known" \
+  || no "  json seat split" "$(cat "$TMP/jerr2")"
+
 echo
 echo "── spend fixture: $PASS PASS · $FAIL FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

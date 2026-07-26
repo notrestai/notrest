@@ -20,8 +20,10 @@ set -- $NORM
 
 # ---------------------------------------------------------------- routing table
 # Ordered, first match wins. Kept as a plain case chain on purpose: greppable
-# is checkable (eval.py check #9 ROUTER reads these SKILL= assignments).
-SKILL=""; SHAPE=""
+# is checkable (eval.py ROUTER + ROUTE-TABLE-PARITY read these SKILL=/SHAPE= pairs;
+# skills/oracle/SKILL.md's routing bullet must name the same verbs).
+# Specific multi-word phrases sit ABOVE the generic one-word arms — first match wins.
+SKILL=""; SHAPE=""; SELFNAMED=""
 case "$NORM" in
   # precedence: these phrases are supersets of the research arm below
   *" what do we already know"*|*" have we research"*|*" already research"*)
@@ -44,9 +46,20 @@ case "$NORM" in
       SKILL=actionplan;       SHAPE=runbook ;;
   *" write the email"*|*" write an email"*|*" write the memo"*|*" write a memo"*|*" write the announcement"*|*" write an announcement"*|*" write the update"*)
       SKILL=draft;            SHAPE=outbound ;;
+  # the instruments: multi-word phrases, so they sit above the generic arms below
+  *" health check"*|*" is the harness healthy"*|*" check the install"*)
+      SKILL=doctor;           SHAPE=health-check ;;
+  *" check the laws"*|*" conformance check"*)
+      SKILL=eval;             SHAPE=law-check ;;
+  # SELFNAMED: the trigger phrase contains the verb's own name, so the
+  # "prompt already named the verb" guard below would swallow every match.
+  *" project graph"*|*" file graph"*)
+      SKILL=graph;            SHAPE=file-graph;   SELFNAMED=1 ;;
+  *" spend report"*|*" token report"*|*" audit the model routing"*)
+      SKILL=spend;            SHAPE=spend-audit;  SELFNAMED=1 ;;
   *" explain"*|*" why does"*|*" how does"*)
       SKILL=explainer;        SHAPE=explanation ;;
-  *" recap"*|*" decision story"*|*" what happened"*)
+  *" recap"*|*" decision story"*|*" what happened"*|*" how did we get here"*)
       SKILL=recap;            SHAPE=recap ;;
   *" wrap up"*|*" end session"*|*" end the session"*|*" handoff"*|*" hand off"*)
       SKILL=sessionend;       SHAPE=handoff ;;
@@ -55,8 +68,13 @@ case "$NORM" in
 esac
 [ -n "$SKILL" ] || exit 0
 
-# The prompt already named the verb — nudging it would be noise.
-case "$NORM" in *" $SKILL "*) exit 0 ;; esac
+# The prompt already named the verb — nudging it would be noise. Exempt: an arm
+# whose own trigger phrase IS the verb's name ("project graph", "spend report") —
+# there the word is the task shape, not the user naming the skill, and applying the
+# guard would leave the arm permanently dead.
+if [ -z "$SELFNAMED" ]; then
+  case "$NORM" in *" $SKILL "*) exit 0 ;; esac
+fi
 
 echo "[notrest] route: this looks ${SHAPE}-shaped — /notrest:${SKILL} is the suite's verb for it (fine to skip deliberately)."
 exit 0

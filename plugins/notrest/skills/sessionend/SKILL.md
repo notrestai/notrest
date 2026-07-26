@@ -7,9 +7,12 @@ description: Capture session state into four continuity files — START-HERE.md 
 
 Run at the end of a working session to snapshot everything the *next* session needs to pick up exactly where this one stopped. It produces a small set of continuity files and — critically — a `START-HERE.md` that tells the next session what to read and what to do, in order. This is the bookend to the `oracle` intake: `oracle` loads context at the start, `sessionend` saves it at the end.
 
-**Each file has a distinct job — they don't overlap:** `CLAUDE.md` = the stable **foundation** (how you work + tooling + conventions + infrastructure + per-project pointers), auto-read by Claude Code at repo root; `HANDOFF.md` / `STATE.md` = this session's **volatile status** and decisions; `START-HERE.md` = the ordered **resume instructions**. A fifth file exists beside these four but is not written here: `COORD.md`, the hook-owned **per-prompt ledger** — written all session long as work lands, the tiebreaker when the status files disagree; sessionend only appends its closing line (Phase 3.6) and compacts it. Volatile things never go in the foundation; the foundation is never restated in the status files.
+**Each file has a distinct job — they don't overlap:** `CLAUDE.md` = the stable **foundation** (how you work + tooling + conventions + infrastructure + per-project pointers), auto-read by Claude Code at repo root; `HANDOFF.md` / `STATE.md` = this session's **volatile status** and decisions; `START-HERE.md` = the ordered **resume instructions**. A fifth file exists beside these four but is not written here: `COORD.md`, the hook-owned **per-prompt ledger** — written all session long as work lands, the tiebreaker when the status files disagree; sessionend only appends its closing line (Phase 3.6); the ledger is never compacted — past 500 lines it ROLLS into sealed volumes (`COORD-<NNN>.md`), a law the hook enforces. Volatile things never go in the foundation; the foundation is never restated in the status files.
 
 ## When to run
+
+**Router shape:** `handoff`
+
 Run when the user invokes **/sessionend** (or clearly asks to end/wrap up the session, save state, or write a handoff). It's a deliberate end-of-session action — don't run it mid-flow unless asked.
 
 ## Where the files go (Code / Cowork / chats)
@@ -50,7 +53,7 @@ handoff even without the files in front of them. The files remain the source of 
 finding aid.
 
 ## Phase 3.6 — Close the estate: index + spend (if those skills are present)
-Two one-command closes, run after the files are written:
+One-command closes, run after the files are written:
 - **archivist** installed and the project has ORACLE output folders → re-run its `scan` so
   `oracle-index.md` includes every dossier this session produced; the next session's oracle
   intake then starts already knowing the estate.
@@ -63,6 +66,32 @@ Two one-command closes, run after the files are written:
   compiling: `<slug>`, seen N×") so the next session inherits the finding instead of
   rediscovering it — the SessionStart hook will surface it too, but the handoff is what a
   cold reader reads first.
+- **graph** installed → refresh both pictures the estate closes on — script-only, zero model
+  tokens, the same spirit as the archivist re-scan. Guard each with a one-line existence
+  check; **`sessionend` must never die on a missing sibling**:
+  ```bash
+  G="${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/graph.py"
+  if [ -f "$G" ]; then
+    python3 "$G" scan  --root .            # the file graph, refreshed
+    python3 "$G" river --root . --no-open  # the journey, banked at close
+  else echo "graph.py absent — graph refresh skipped"; fi
+  ```
+  Expected output — one summary line each, written to stdout (the counts are the project's;
+  `river` adds its `data:` line and any notes):
+  ```
+  <repo>/graph/graph.html: <N> nodes, <M> edges (git listing, 0 skipped)
+  <repo>/graph/river.html: <N> records · <C> channels (0 merged, 0 dead-end) · <R> rocks (0 resting on refuted) · <B> backtracks · <M> milestones · mode=findings+coord
+    data: <repo>/graph/river.json
+  ```
+  Read those lines; don't parse them — `graph` owns the field list and adds to it. What you
+  need from them is that both files were written and `mode=` says which inputs the river had.
+  The `scan` is what graph's own chain line already promises happens here, so the next
+  session's `oracle` opens on a current map instead of a stale one. The `river` banks the
+  journey the ledger just finished writing — `mode=findings+coord`, or `mode=coord-only` plus
+  a note when `archive/findings.jsonl` is absent. `--no-open` because a closing session must
+  never pop a browser. If either command is missing its script or exits non-zero, **note it in
+  `HANDOFF.md` and close anyway**: a refreshed picture is a courtesy to the next session, never
+  a gate on this one's close.
 Skip silently only when the skills aren't installed.
 - A **recap** was produced this session → put its map/dossier paths in `HANDOFF.md` (the
   decision track is part of the handoff).
@@ -108,6 +137,7 @@ Before finishing, confirm — and fix any miss:
 - `CLAUDE.md` (the foundation) was **merged**, not overwritten, and only stably-true things were added to it (volatile status stayed in HANDOFF/STATE).
 - All cited paths/commands are real.
 - If archivist/spend are installed: the index was re-scanned after the last dossier landed, and the spend verdict line is in `HANDOFF.md`.
+- If graph is installed: `scan` and `river` both ran and printed their summary lines — or the one that didn't is named in `HANDOFF.md`, and the close went ahead regardless.
 - In a chat: every file was presented for download with the re-upload reminder.
 
 ## Phase 5 — Open the live line (multi-session environments only)

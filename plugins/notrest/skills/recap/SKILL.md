@@ -19,6 +19,8 @@ written when the work landed).
 
 ## The prompt (all inputs optional)
 
+**Router shape:** `recap`
+
 Everything after `/recap` refines the walk. With no arguments, walk the whole estate.
 
 - **A time window** — "this week", "since v2.13", "the last 10 commits", "2026-07-15 onward",
@@ -34,7 +36,8 @@ say so and walk what exists.
 
 ## Quick mode (`--quick`)
 If the invocation includes `--quick` (or "quick", "brief", "no files", "just the story"):
-- **No files.** Nothing written — no background, no dossier, **no map**.
+- **No files.** Nothing written — no background, no dossier, **no map**, and **no record**:
+  quick mode never touches the findings store either.
 - **Same walk, compressed.** Still inventory the estate and still walk in timestamp order —
   the shortcut is the write-up, never the evidence.
 - **Output in chat only:** the **Read Me First** block, then the decision track as ~5–12
@@ -54,6 +57,7 @@ everything downstream — a thin estate gets an honest short recap, not a padded
 | `COORD-AGENTS.md` | `grep -c '^- \[' COORD-AGENTS.md`; note span | who was consulted, what each concluded, transcript paths |
 | git | `TZ=UTC git log --date=format-local:'%Y-%m-%d %H:%MZ' --pretty=format:'%h|%ad|%s'` | ships, and what actually changed |
 | `spend/ledger.md` | read all lines; total per model and per day | what each round cost |
+| `archive/findings.jsonl` | the findings store — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" track --root .` prints one line per record (id · kind · relation · statement head · labels) and a header with the count; note first + last `ts` | the reasoned layer: what a lane actually **concluded**, citable by id (`F-<n>`) |
 | `oracle-index.md` | if present (archivist) — read it | the dossiers the story references |
 | dossier folders | `research/ market-research/ understanding/ decision/ factcheck/ critique/ action-plan/ runbook/ pipeline/ introspection/ recap/` | what was learned, per topic |
 | `START-HERE.md` · `HANDOFF.md` · `STATE.md` | read if present | the last session's own account of where things stood |
@@ -64,13 +68,20 @@ everything downstream — a thin estate gets an honest short recap, not a padded
 `--date=format-local:` (or use `--date=iso-strict` and convert). Getting this wrong silently
 reorders the entire story.
 
+**Clock shapes differ; the instant does not.** A record's `ts` is strict ISO8601
+(`2026-07-25T04:30:00Z`); a COORD line reads `2026-07-25 04:30Z`. Merge on the **instant**, and
+still print each one **verbatim in its own shape** — normalizing a timestamp to make a table
+tidy breaks the verbatim rule below.
+
 Then **write the inventory down** — sources found, their spans, and **what is missing, by
 name**. "No `spend/ledger.md` — costs are absent from this recap, not zero" is a finding.
 
 ## Step 2 — walk in timestamp order
 
-Merge every source into one chronological list — one entry per trail line, tagged with which
-file it came from — and read it forward. You are looking for five things:
+Merge every source into one chronological list — one entry per trail line **or store record**,
+tagged with which file it came from — and read it forward. The findings store is not a separate
+pass: its records take their place in the same timestamp-merged walk. You are looking for six
+things:
 
 - **RULING** — an owner decision recorded in the trail ("owner ruling:", "ratified", "do NOT").
   These are the load-bearing nodes: everything downstream inherits them.
@@ -87,6 +98,13 @@ file it came from — and read it forward. You are looking for five things:
   `.meta.json` description may be stale from the original spawn.
 - **SHIP** — a version bump, a release commit, a deploy.
 - **COST** — a `spend/ledger.md` line, attached to the round it paid for.
+- **FINDING** — an `archive/findings.jsonl` record: what a lane concluded, already validated at
+  the door and already carrying its own evidence items and honesty labels. Cite it **by id**
+  (`F-<n>`) and quote its `statement` — the id is stable, so a record is the one trail entry you
+  do not have to re-verify to use. Two things to read, not just the statement: a record whose
+  `status` is `superseded` or `refuted` is the trail's own reversal (↩︎) — show the tombstone
+  **and** what it flipped, never only the survivor; and `links` names the records a conclusion
+  rests on, which is a ready-made `informed-by` edge for the graph in Step 3.
 
 Plus one more, which most trails carry and no summary ever surfaces: **OPEN THREAD** — anything
 recorded as "in progress", "PENDING", "parked", "untested", or a papercut noted and not fixed.
@@ -95,7 +113,9 @@ Carry these to the end; the story is not over where the ledger stops.
 **Trust order when sources disagree** (state the conflict, never average it):
 - **Machine-written beats model-written on facts and clocks** — git author dates, `spend.py`
   lines, SubagentStop lines, file mtimes were written by code; COORD timestamps were typed by a
-  model and can drift by minutes.
+  model and can drift by minutes. A store record sits in between: `index.py` stamps `ts` at the
+  door **unless the caller supplied one**, so treat a record's clock as machine-written by
+  default and say so if a backdated `ts` is what makes two entries disagree.
 - **Model-written beats machine-written on intent** — git says *what changed*; COORD says
   *why*, and a rename or a reversal is only legible from the COORD line.
 - Append order is not timestamp order. Ledgers are appended; a line can carry a timestamp
@@ -113,6 +133,7 @@ The track is the story with its receipts attached. **Every claim ends with a cit
 | `[COORD-AGENTS <agent-id> → transcript]` | that agent line **and** its transcript verified present |
 | `[COORD-AGENTS <agent-id> — transcript missing]` | the line exists; the transcript does not |
 | `[spend 2026-07-21 05:24Z]` | that ledger line |
+| `[F-12]` | that findings-store record, by id — quote its `statement`, carry its label, and add `(superseded)` / `(refuted)` when its `status` says so |
 | `[dossier <path>]` | a dossier the story references |
 | `[unverified]` | **no trail line supports this** — say it out loud, in the sentence |
 
@@ -227,7 +248,8 @@ const RECAP_DATA = {
       summary: "Redundancy is a deliberate safety cushion; do not consolidate.",
       cites: [ { type: "coord",      text: "- [2026-07-15 20:10Z] [fable-main] owner ruling: …" },
                { type: "commit",     text: "b2f4cac COORD: owner ruling — five continuity files stay" },
-               { type: "transcript", text: "/abs/path/agent-….jsonl", note: "verified present" } ],
+               { type: "transcript", text: "/abs/path/agent-….jsonl", note: "verified present" },
+               { type: "finding",    text: "F-12 — <the record's statement, quoted>", note: "archive/findings.jsonl" } ],
       flag: ""                         // "unverified" | "inferred" | "" — rendered as a badge
     }
   ],
@@ -240,15 +262,67 @@ Rules for filling it: `ts` verbatim from the trail (never reformatted), one node
 event (do not merge two decisions into a tidy one), `cites` non-empty for every node — a node
 with no citation carries `flag: "unverified"` and says why in `summary`.
 
+The template labels the six cite types it knows (`coord` · `commit` · `transcript` · `spend` ·
+`dossier` · `note`) and **falls back to the raw type name for anything else** — so
+`type: "finding"` renders as `finding` and needs no template edit. Cite a record by its id in
+`text`, and put the store path in `note`; a record's `links` are the trail evidence for an
+`informed-by` edge, so an edge derived from them is *not* `inferred`.
+
+## Bank the recap — one record in the store
+
+recap reads the findings store (Step 1) and it also **writes back to it, exactly once**. After
+the three files land and the render gate has run, emit **one** record — `kind=result`, because a
+recap *is* a result: it is what the walk concluded about the project. That is what makes the
+story findable by `index.py find` and by the *next* recap's Step-1 inventory, instead of being a
+file nobody remembers is there.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "session":"recap-2026-07-25",
+  "skill":"recap",
+  "kind":"result",
+  "ask":"how did this project get here — the decision story for 2026-07-15 → 2026-07-25",
+  "statement":"Walked 2026-07-15 19:18Z → 2026-07-25 04:30Z across 6 sources (COORD 214 lines, COORD-AGENTS 38 entries, git 61 commits, spend 12 lines, 2 store records, 9 dossiers): the harness became a marketplace plugin after the rename ruling, and the biggest turn was pulling evals in-house. 3 open threads; the trail does not record why the external runner was tried first.",
+  "evidence":[{"type":"path","ref":"recap/projectDossier.md","label":"cited"},
+              {"type":"coord-line","ref":"- [2026-07-25 04:30Z] [fable-main] JOURNEY.md — the harness as six user journeys …","label":"cited"}],
+  "relation":"toward",
+  "links":["F-12","F-14"]}'
+```
+
+(Loose install: `../archivist/scripts/index.py` relative to this skill folder. No archivist
+script on disk → skip this step silently; the three files are still the deliverable.)
+
+- **One record, not a stream.** `researcher` emits one per pass because each pass earns a
+  separate claim; a recap has exactly one claim — the shape of the story — and the dossier
+  already holds the working-out.
+- **The two evidence items are the whole point.** `type:"path"` → the dossier you just wrote,
+  the thing a reader opens. `type:"coord-line"` → **the close line: the last trail line inside
+  the walked window, quoted verbatim** — the instant this record is accountable to, and what
+  lets a later walk check whether the story still holds. No COORD in the estate? Ship the
+  `path` item alone (one item satisfies the door) and say in the `statement` that the window
+  had no ledger.
+- **`links` names the records the story leaned on.** Every id must already exist in the store or
+  the door rejects with `links-unknown`; `[]` is the honest value when the story cited none.
+- **The door validates — you don't.** `add` prints the assigned `F-<n>` on success and **exits 2
+  naming the rule** it broke on rejection. Fix the record and re-run; **never hand-append to the
+  JSONL.** Report the `F-<n>` in the chat summary.
+- **This is an append, never an edit** — the one write recap makes outside `recap/`, and the
+  reason it is now both sides of the store: it reads records as trail, and leaves one behind.
+- **Not in `--quick`.** A recap whose render gate failed still gets its record — the failure
+  belongs in the `statement`, not in silence.
+
 ## Honesty rules
 
 - **Derive, never invent.** Every node, edge, and sentence traces to a trail line, a commit, a
   transcript, or a dossier. No reconstructed dialogue, no "the team then decided" without a line.
 - **Timestamps verbatim.** Copy them exactly as recorded, including the `Z`. Do not normalize,
   round, or re-timezone. If two sources timestamp the same event differently, print both.
-- **Never rewrite history.** recap is read-only over the estate: it writes only into `recap/`.
-  It never edits COORD, COORD-AGENTS, the spend ledger, or a dossier — a wrong ledger line gets
-  *quoted and flagged*, never corrected in place.
+- **Never rewrite history.** recap is read-only over the estate: it writes only into `recap/` —
+  plus the single appended record above, which is an append to a store built for appends, never
+  an edit. It never edits COORD, COORD-AGENTS, the spend ledger, a dossier, or an existing
+  record — a wrong ledger line gets *quoted and flagged*, never corrected in place, and a record
+  the story disagrees with gets cited **with** the disagreement stated; recap never supersedes
+  or refutes another skill's record.
 - **A ledger line is an index, not a source.** COORD-AGENTS entries summarize; the transcript is
   the evidence. Before stating what an agent concluded in load-bearing terms, open the
   transcript — and if it is gone, say the conclusion is unverifiable beyond the one-line summary.
@@ -273,19 +347,23 @@ with no citation carries `flag: "unverified"` and says why in `summary`.
 - Open threads are listed — the recap does not end tidier than the project actually is.
 - **The map was opened and looked at** (both themes, console clean) — or the dossier says
   plainly that it was not.
-- Nothing in the estate was modified: `git status` shows changes only under `recap/`.
+- **The one `kind=result` record was emitted and the store printed its `F-<n>`** — or `--quick`,
+  or no archivist script on disk. Nothing was hand-appended to the JSONL.
+- Nothing in the estate was modified: `git status` shows changes only under `recap/`, plus the
+  one appended line in `archive/findings.jsonl`.
 
 ## Finishing up
 
 Write `{slug}background.md` first (inventory + walk + conflicts + graph derivation), then
-`{slug}Dossier.md`, then `{slug}map.html` — then run the render gate. Give the user a short chat
-summary: the shape of the story in a sentence, the biggest turn, the honest gap, and the three
-paths — pointing them at the map first, because that is the part they cannot get from chat.
-Don't paste the files into chat.
+`{slug}Dossier.md`, then `{slug}map.html` — then run the render gate, then bank the one record.
+Give the user a short chat summary: the shape of the story in a sentence, the biggest turn, the
+honest gap, the three paths, and the `F-<n>` the store assigned — pointing them at the map
+first, because that is the part they cannot get from chat. Don't paste the files into chat.
 
 Chains:
-- **`/archivist`** — the story references dossiers by name; one `find` pulls up the ones worth
-  reading, and a fresh scan makes the next recap see the estate the same way.
+- **`/archivist`** — the store is both an input and an output here: `track` lists the records the
+  walk cites, one `find` pulls up the dossiers the story names, and a fresh `scan` makes the next
+  recap see the estate the same way — which now includes this recap's own record.
 - **`/critic`** — a recap surfaces conclusions the project has been running on for weeks;
   pointing critic at the dossier red-teams the one that matters most.
 - **`/sessionend`** — when a recap was produced this session, its `map.html` path belongs in the

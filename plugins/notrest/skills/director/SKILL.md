@@ -29,18 +29,31 @@ If the invocation includes `--quick` (or "quick" / "brief" / "no files"), run th
 - **No files.** Write nothing to disk — skip the pipeline folder, the per-stage files, the background, and the dossier.
 - **Run each stage in quick mode too**, carrying each stage's short summary forward **in-context** as the handoff (instead of via files).
 - **Output in chat only:** the plain-language **What Happened** recap (per stage: what it found, what it changed) and the final result summary. No references.
-- Because everything stays in context, this suits **short chains**; for long chains use the normal file-backed mode.
+- **No script either.** `director.py` plans and verifies a *run folder*; with no files there is nothing to verify, so quick mode has no structural guard — which is the honest reason it suits **short chains** only. For long chains use the normal file-backed mode.
 - End with one line: *"Quick read — not sourced or saved; run without `--quick` for the full file-backed pipeline."*
 
 ## Setup & output files
 
 Derive a `{topic}` slug from the seed prompt. Create a `pipeline/` directory containing:
 
-- **`pipeline/{topic}background.md`** — the orchestration log (parsed chain, validation, the handoff decisions per step, any deviations or failures).
+- **`pipeline/{topic}background.md`** — the orchestration log (parsed chain, validation, the handoff decisions per step, any deviations or failures) — and the **stage checklist**.
 - **`pipeline/{topic}Dossier.md`** — the consolidated pipeline summary (the main read).
 - **`pipeline/NN-<skill>/`** — one numbered subfolder per stage (`01-researcher/`, `02-critic/`, …). Run each sub-skill normally but write its two output files **into its numbered subfolder** instead of the skill's own default directory, so the whole run lives in one place.
+- **`pipeline/run.json`** — the machine manifest (chain, resolved SKILL.md paths, folder names). Written by the script; never hand-edited.
 
-If `pipeline/` already exists from a prior run, suffix the topic with `-2` (then `-3`, etc.).
+Don't hand-build any of that: `director.py plan` does it, and a second run lands in `pipeline-2/` (then `-3/`) so its numbered stage folders can't collide with the first run's.
+
+## The instrument — `scripts/director.py`
+
+The director's named failure mode is *"the last stage never ran"*, and until now the only guard against it was a checklist **the model ticks** — the same model that would be wrong about having run the stage. A box ticked by the party under audit is not evidence. The script makes the structural facts checkable at zero model tokens:
+
+- **`python3 <skill>/scripts/director.py plan --chain a,b,c --topic "<seed>" [--root .]`** — resolves **every** named skill's `SKILL.md` before any work starts (**exit 2** on the first one it can't find, printing the paths it tried, and scaffolding *nothing* — a run half-built around a missing skill is worse than no run, because it looks resumable), then creates the stage folders, the checklist file and `run.json`.
+- **`… handoff --run <dir> --stage NN [--input P] [--output P]`** — writes that stage's manifest: input path + output path + **sha256** of each. Stage 1's input is the seed text; later stages default to the previous stage's real output. The sha is the point — it's what lets `verify` say the file handed forward is the file that's there now.
+- **`… verify --run <dir>`** — **exit 3** on an unticked box, a missing or empty stage folder, a stage with no output, a manifest whose input/output has vanished, or a file whose sha256 no longer matches the manifest that promised it. Exit 0 only when the run is structurally sound.
+
+Two limits, stated so nobody over-reads a green exit: `verify` checks **structure only** — it cannot tell whether a stage's workflow was really performed or whether its content is any good (that stays the seat's job and each sub-skill's own self-check). And a stage folder may legitimately be **empty** when its skill writes records elsewhere — that passes only if the stage's handoff manifest names an output that exists. Work landing outside the folder is fine; work being unlocatable is not.
+
+Fixture: `scripts/fixture.sh` — 54 assertions over synthetic runs, proving the gate fires on each failure mode *and* goes quiet when the run is genuinely complete (never touches a real `pipeline/`).
 
 ## Honesty & integrity rules (apply throughout)
 
@@ -57,8 +70,8 @@ If `pipeline/` already exists from a prior run, suffix the topic with `-2` (then
 **First, resume or start.** Check whether a `pipeline/` for this topic already exists with a partly-ticked checklist — from an earlier turn in this conversation, or a fresh conversation where the user re-uploaded the pipeline files. If it does, **resume**: read the checklist, find the first unticked stage, and continue from there using the prior stage's dossier on disk. Do **not** restart or redo completed stages. Only if there's no existing run, plan it fresh:
 - **Sequence:** the ordered list of skills.
 - **Seed input:** the topic/prompt that feeds stage 1.
-- **Resolve everything up front:** locate and confirm **every** skill in the sequence exists — read each `SKILL.md`'s path *before running any stage*. If one is missing, stop and report it now; don't discover it mid-run.
-- **Pin the chain to disk:** write the ordered sequence and a completion checklist (`[ ] 01-<skill>`, `[ ] 02-<skill>`, … `[ ] NN-<skill>`) into `{topic}background.md` as the very first thing. This file — not your fading memory of the prompt — is the source of truth you re-read before each stage, and it's what makes the run resumable.
+- **Resolve everything up front, with the script:** run `python3 <skill>/scripts/director.py plan --chain <a,b,c> --topic "<seed>" --root .` **before stage 1**. It confirms every skill in the sequence exists and prints where each `SKILL.md` resolved; on a miss it exits 2 and scaffolds nothing, so a missing skill is reported now rather than discovered at stage 3. If it exits 2, stop and report — don't substitute a different skill or invent the missing one's behavior. Read each resolved `SKILL.md` before the run.
+- **Pin the chain to disk:** `plan` writes the ordered sequence and the completion checklist (`- [ ] 01-<skill>`, `- [ ] 02-<skill>`, … `- [ ] NN-<skill>`) into `{topic}background.md` as the very first thing. This file — not your fading memory of the prompt — is the source of truth you re-read before each stage, and it's what makes the run resumable. Keep the box format exactly as written: `verify` parses it.
 - **Handoff plan:** for each adjacent pair, state *what* output of stage N feeds stage N+1, and *how* it maps to stage N+1's expected input. Read the receiving skill's own "prompt/input" section and frame the handoff to match it. For example: a `researcher` Dossier handed to `stepbystep` becomes the goal "build/implement the recommendation in this dossier," with the dossier as the attached document; a dossier handed to `critic` becomes "critique this document."
 - **Sanity note:** if an ordering's handoff is unclear or weak (e.g. a skill that produces no document feeding one that needs one), flag it now.
 
@@ -77,10 +90,12 @@ If `pipeline/` already exists from a prior run, suffix the topic with `-2` (then
 - **If the platform does cut a turn off mid-chain, resume is automatic and silent.** The Phase-1 resume check reads the checklist and continues from the next unticked stage, asking nothing and redoing nothing. The user just lets it keep going; never re-ask anything you already determined.
 - **A single stage too heavy for one turn** (e.g. a high-cap `stepbystep`) may itself be truncated by the window — staging can't shrink one oversized stage. If that's a risk, quietly lower that skill's cap for the run; don't pause to ask. For a hard guarantee on very long chains, the answer is Claude Code's subagent isolation, not a different claude.ai trick.
 
-After each stage, in either mode: **tick its box** in the on-disk checklist and log the handoff (what came in, what went out, which file carries forward). When the suite's **spend** skill is present, also append one ledger line per stage subagent (its model + observed tokens, `--lane subagent`) so the pipeline ends with a checkable routing verdict. Honor each sub-skill's internal caps (e.g. `stepbystep`'s iteration cap). **Do not declare the run finished until every checklist box is ticked** — an empty last box means the last stage never ran, which is the exact failure this design exists to prevent.
+After each stage, in either mode: run `director.py handoff --run <dir> --stage NN` (it records the input path, the output path and a sha256 of each), **tick its box** in the on-disk checklist, and log the handoff in prose (what came in, what went out, which file carries forward). If a stage's real output landed outside its folder — a findings record, a file in another tree — pass `--output <path>` so the manifest still points at it. When the suite's **spend** skill is present, also append one ledger line per stage subagent (its model + observed tokens, `--lane subagent`) so the pipeline ends with a checkable routing verdict. Honor each sub-skill's internal caps (e.g. `stepbystep`'s iteration cap). **Do not declare the run finished until `director.py verify --run <dir>` exits 0** — an unticked last box, or a ticked one with an empty folder behind it, is the exact failure this design exists to prevent, and the script is what makes the difference between the two visible.
 
-### Phase 4 — Consolidate → `{topic}Dossier.md`
-Write the pipeline summary (below) once the chain is done. This includes the plain-language **What Happened** recap: for each stage, what it found and what it *changed*, then what the whole run achieved — written so a non-expert understands the journey from that section alone.
+### Phase 4 — Verify, then consolidate → `{topic}Dossier.md`
+**Run `python3 <skill>/scripts/director.py verify --run <run dir>` before writing a word of the summary.** If it exits 3, the run is not finished: fix what it names (an unticked box, an empty stage folder, a vanished or drifted handoff file) or report the failure honestly — never write a summary over an INCOMPLETE verdict, because a pipeline summary is precisely the artifact that makes a skipped stage invisible. Paste its verdict line into `{topic}background.md`.
+
+Once it exits 0, write the pipeline summary (below). This includes the plain-language **What Happened** recap: for each stage, what it found and what it *changed*, then what the whole run achieved — written so a non-expert understands the journey from that section alone. Remember what the green exit does and does not mean: the artifacts exist and haven't drifted; whether each stage's workflow was genuinely performed is still your claim to make honestly.
 
 ## The dossier — `pipeline/{topic}Dossier.md`
 
@@ -152,7 +167,8 @@ Before declaring done, verify and fix any miss:
 - The final result preserves the last stage's confidence/caveats — nothing was laundered into false certainty.
 - Any missing skill, failed stage, or weak handoff was reported, not papered over.
 - The plain-language **What Happened** recap is present and, for each stage, says what it found and what it changed — jargon-free — ending with what the run achieved.
-- **Every checklist box is ticked — the last stage actually ran** (the failure mode to guard against); nothing was skipped because context filled.
+- **`director.py verify --run <dir>` exited 0** — every box ticked, every stage folder carrying output, every recorded handoff still matching its sha256. The last stage actually ran (the failure mode to guard against); nothing was skipped because context filled. A ticked box is your claim; the exit code is the evidence.
+- Each stage has a handoff manifest (`handoff.json`) naming its real input and output — or the run says plainly which stage lacks one and why.
 - No stage was invoked via the Skill tool; each was located and read from disk, then performed.
 - Stages ran in isolated subagents where available; where inline, each stage's working was offloaded to its background file to protect the director's context.
 - Every stage subagent was spawned with an explicit opus model (never a fork) — none inherited a Fable director's model.

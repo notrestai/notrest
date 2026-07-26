@@ -66,12 +66,44 @@ against the output that follows it.
    active in the working model's thinking right now. Comma-separated, no prose." The
    control is the confabulation baseline: what a smart outsider infers from context alone.
 3. **Behave** — produce the task's next output normally.
-4. **Score** — run `scripts/score_snapshot.py` with the snapshot, the control's guess, and
-   the output text. Append the full entry to the ledger.
-5. **Interpret honestly** — one line: what this run suggests, at run-sized confidence.
+4. **Score and bank in one step** — run `scripts/score_snapshot.py append` with the snapshot,
+   the control's guess, and the output file (below). It scores, writes the run under
+   `introspection/runs/`, and appends the ledger entry itself.
+5. **Interpret honestly** — one line, passed in as `--interpretation`: what this run suggests,
+   at run-sized confidence.
 
-**`/introspect report`** — aggregate the ledger: mean verbalized/silent rates, mean lift,
-turnover curve, N. Refuse trend conclusions under N=10 ("insufficient data" is a result).
+**`/introspect report`** — **run `scripts/score_snapshot.py report --root .`**; do not
+eyeball the ledger. It aggregates mean verbalized/silent rates, mean lift, mean turnover and N,
+and **exits 3 while N < 10**, printing `N=<n> — no trend claims below 10`. Report that refusal
+verbatim; "insufficient data" is a result. Aggregation is the exact place a skill about
+confabulation would confabulate, so it belongs to the script, not to the reader.
+
+## Running the instrument — `scripts/score_snapshot.py`
+
+```bash
+# score only (prints the metrics JSON, writes nothing)
+python3 <skill>/scripts/score_snapshot.py --snapshot "a, b, c" --output-file out.md \
+        [--control "x, y"] [--prev "a, d"]
+
+# score + write the run + append the ledger entry
+python3 <skill>/scripts/score_snapshot.py append --root . --label "<checkpoint>" \
+        --mode now|session|experiment --snapshot "a, b, c" --output-file out.md \
+        [--control "x, y" | --control-absent "<why>"] [--prev "…"] \
+        [--glossed "★ a — gloss · b — gloss"] [--interpretation "<one line>"]
+
+# aggregate (exit 3 below N=10)
+python3 <skill>/scripts/score_snapshot.py report --root .
+```
+
+- `append` needs `--output-file`: a ledger entry must point at the thing that was scored, and
+  it records that file's **sha256** so a later reader can tell whether the scored output is
+  still the output on disk.
+- Runs are numbered from `introspection/runs/`, and the ledger is **append-only** — the script
+  only ever appends, never rewrites. A correction is a NEW run whose interpretation says so.
+- An absent control is written down as absent *with its reason*, never as a zero; a missing
+  interpretation is labelled `[unverified] not recorded`, never invented.
+- Fixture: `scripts/fixture.sh` — 50 assertions covering the arithmetic, the append-only
+  guarantee and the N=10 refusal (it never touches a real `introspection/` ledger).
 
 ## The four metrics (computed by `scripts/score_snapshot.py`)
 
@@ -103,9 +135,12 @@ turnover curve, N. Refuse trend conclusions under N=10 ("insufficient data" is a
 - interpretation (one line, run-sized confidence): ...
 ```
 
-Never overwrite entries. Aggregates go in dated report files beside the ledger, not
-inline. An example ledger with REAL first-run data ships in
-`references/example-ledger.md`.
+Never overwrite entries — the script only appends, and the ledger says so in its own header.
+Each entry has a machine twin under `introspection/runs/run-NNN-<label>.json` (the same metrics
+plus the scored output's sha256); that directory is what `report` aggregates, so a hand-written
+ledger entry with no run file beside it is invisible to the aggregate — log through the script.
+Aggregates go in dated report files beside the ledger, not inline. An example ledger with REAL
+first-run data ships in `references/example-ledger.md`.
 
 ## Honest epistemic status (print this understanding, don't bury it)
 
@@ -123,8 +158,12 @@ inline. An example ledger with REAL first-run data ships in
 - The snapshot was emitted BEFORE the scored output existed, and never edited after.
 - The control saw only outside-visible context — no thinking, no snapshot, no answer.
 - Metrics came from the script, not from eyeballing; `[sem]` additions are tagged.
-- The ledger entry is appended verbatim; the interpretation line claims no more than one
-  run's worth of evidence.
+- The ledger entry was written by `score_snapshot.py append` (not by hand), so a run file
+  exists beside it and the aggregate can see it; the interpretation line claims no more than
+  one run's worth of evidence.
+- Any aggregate claim came from `score_snapshot.py report`. If it exited 3, the refusal
+  (`N=<n> — no trend claims below 10`) was reported as-is and no trend language was used —
+  not "early signs suggest", not "trending positive", nothing.
 - The epistemic-status framing appears in any user-facing summary of results.
 
 ## Notes

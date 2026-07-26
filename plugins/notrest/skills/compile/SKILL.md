@@ -68,9 +68,20 @@ python3 <compile-skill>/scripts/compile.py report --root "$ROOT"
   `candidates.md`. Rulings match on slug **and** on the recorded `sig=` core, so a candidate
   the scanner renames as the ledger grows keeps its ruling.
 
-Exit codes: `scan` 0 · `report` 0/3 · bad arguments 2 · an invalid status 1.
+The same script also carries the ritual's two scaffolding verbs — documented where they are
+used, in Steps 1 and 2:
 
-The skill's own contract test is `scripts/fixture.sh` — run it after any change to `compile.py`.
+- **`contract --slug S [--max-rows N] [--write PATH]`** — the Step-1 responsibility table
+  pre-filled with trail citations mined from the same three ledgers. **Exit 3** when nothing in
+  the estate matches the slug.
+- **`scaffold --slug S`** — the `compile/<slug>/` runtime skeleton. **Exit 2** if the directory
+  already exists; it never overwrites a runtime.
+
+Exit codes: `scan` 0 · `report` 0/3 · `contract` 0/3 · `scaffold` 0/2 · bad arguments 2 · an
+invalid status 1.
+
+The skill's own contract test is `scripts/fixture.sh` — 80 assertions over a synthetic estate;
+run it after any change to `compile.py`.
 
 ### How it decides two entries are the same job
 
@@ -134,12 +145,34 @@ and nobody will remember what they meant in a month.
 
 ## Step 1 — reconstruct the FUNCTIONAL CONTRACT from the trail
 
-Walk the candidate's evidence pointers in timestamp order (recap's trail-walk: COORD line →
-COORD-AGENTS entry → the transcript on it → `git diff` → the spend line). Write the contract
-as a responsibility table, and **cite like recap** — every row carries a trail token
-(`[COORD 2026-07-25 06:05Z]`, `[commit 5c422ed]`, `[spend 2026-07-25 04:30Z]`,
-`[COORD-AGENTS <id> → transcript]`), and a row with no token is `[unverified]` and may not be
-load-bearing.
+**Start with the script, not a blank table:**
+
+```
+python3 <skill>/scripts/compile.py contract --slug <candidate> --root . [--max-rows N] [--write PATH]
+```
+
+It walks the estate for you — COORD volumes, COORD-AGENTS.md and the spend ledger — and emits
+the responsibility table **pre-filled**: rows in timestamp order (Step 1's own rule), each with
+its trail citation, its source line ref, and an *Owner today* mined from the ledger's `lane=` /
+`model=` rather than assumed. The line numbers and timestamps are already on disk; having the
+seat re-derive them by reading ledgers is the exact spend this skill exists to remove, and a
+hand-typed citation is the one kind that can be wrong. Exit 3 means **no trail evidence matched
+the slug** — that is a finding ("there is nothing to reconstruct a contract from"), not a cue to
+start inventing rows.
+
+What it deliberately leaves blank is what you are for: **required for parity**, **owner after**
+and **why** come back as `?`, and each Responsibility cell carries the raw ledger quote it came
+from, not the answer. Rewrite every cell into a real responsibility. A pre-filled judgment would
+be a guess wearing a citation's clothes.
+
+Then do the part no grep can: walk the transcript pointers it lists (recap's trail-walk: COORD
+line → COORD-AGENTS entry → the transcript on it → `git diff` → the spend line). **The script
+reads ledger lines only** — any responsibility that exists only inside a transcript is missing
+from its draft, and its coverage section says so.
+
+Every row carries a trail token (`[COORD 2026-07-25 06:05Z]`, `[commit 5c422ed]`,
+`[spend 2026-07-25 04:30Z]`, `[COORD-AGENTS <id> → transcript]`); a row with no token is
+`[unverified]` and may not be load-bearing.
 
 | # | Responsibility | Evidence | Required for parity? | Owner today | Owner after | Why |
 |---|---|---|---|---|---|---|
@@ -166,11 +199,27 @@ Every row lands in exactly one bucket, and the *why* is the interesting column:
 If bucket B swallows the workflow, say so and stop: **that workflow is not compilable yet**,
 and the honest deliverable is the contract plus what evidence would change the answer.
 
+**Only once the partition says A is real, scaffold the runtime:**
+
+```
+python3 <skill>/scripts/compile.py scaffold --slug <candidate> --root .
+```
+
+It creates `compile/<slug>/` with `runner.py` (a stub whose `run` exits **4**, so a half-built
+runtime can never quietly report success), `README.md` (carrying the *what it does NOT do* and
+retained-model-call sections — a compiled runtime silent about its gaps gets read as complete),
+`fixture.sh`, and `BENCHMARK.md` with Step 6's symmetry checklist ready to fill. **It never
+overwrites an existing directory — exit 2** — because that directory is where the work is.
+
+Scaffold after the partition, not before: the skeleton's sections are the partition written
+down, and a skeleton created first gets filled in by habit instead of by the contract.
+
 ## Step 3 — one persistent Opus builder lane emits the runtime
 
 Seat-builder ritual, unchanged: spec at the seat, **one persistent lane per domain**, feedback
-rounds **resume the same lane** via SendMessage — never a fresh spawn. Everything lands under
-`compile/<slug>/`, isolated, installed nowhere:
+rounds **resume the same lane** via SendMessage — never a fresh spawn. Everything lands in the
+directory Step 2 scaffolded — `compile/<slug>/`, isolated, installed nowhere — and the lane's
+job is to replace the stubs, not to re-invent the shape:
 
 - `README.md` — what it does, what it does not, and **one obvious run command**.
 - the runner + the deterministic adapters (replay/dry-run adapters for anything with side

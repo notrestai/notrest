@@ -1,6 +1,6 @@
 ---
 name: actionplan
-description: Expand a stepbystep plan dossier into a copy-paste runbook — exact ordered commands per host, a verify + rollback on every step, ⛔ warnings before destructive ops, placeholders instead of invented environment specifics (reads an optional map.md). Use on /actionplan or asks to "turn this plan into commands", "make this copy-paste", "write the runbook", or "give me the exact steps/code". If no stepbystep plan exists yet, suggest /stepbystep first.
+description: Expand a stepbystep plan into a copy-paste runbook — exact ordered commands per host, a verify + rollback on every step, ⛔ warnings before destructive ops, placeholders instead of invented environment specifics (reads an optional map.md). Use on /actionplan or asks to "turn this plan into commands", "make this copy-paste", "write the runbook", or "give me the exact steps/code". If no stepbystep plan exists yet, suggest /stepbystep first.
 ---
 
 # Action Plan (Runbook builder)
@@ -9,27 +9,34 @@ Takes the high-level, validated plan from `stepbystep` and turns it into an exec
 
 Division of labour: `stepbystep` decides *what to do and in what order, and validates it*; `actionplan` decides *exactly how to do each step on the user's real machines*. This skill produces the runbook; it does not execute anything.
 
+The runbook is a **file** — it has to survive the session that wrote it, because the operator reads it at 2am on another machine. So the file stays the deliverable, and one `kind=result` record in the archivist store tracks it, carrying the runbook's path as evidence.
+
+**Router shape:** `runbook`
+
 ## Inputs
 
-- **The stepbystep document (required).** Read the stepbystep **Dossier** (the phases and steps, with their "done when" checks and flags) and its **background** if available (the per-step deep research has the implementation detail that makes commands accurate). Use `$ARGUMENTS`/the text after `/actionplan` to locate it; otherwise look in `action-plan/`. If no plan is found, ask the user to provide the stepbystep dossier — or suggest running `/stepbystep` first (or `/director stepbystep → actionplan`). Don't invent a plan.
+- **The plan (required).** Prefer the store: `index.py find "<goal>"`, then `index.py track --kind decision` — the `stepbystep` **decision record** gives the plan shape, the convergence status, and the hinge; its linked `[ONE-WAY]` finding records give the irreversible steps with their "done when" checks and rollbacks. Read the plan prose too if it is still in this session (the per-step deep research has the implementation detail that makes commands accurate), and read a legacy `action-plan/{topic}Dossier.md` if one exists from an older run. Use `$ARGUMENTS`/the text after `/actionplan` to name the goal. If no plan record and no plan document is found, ask the user for one — or suggest running `/stepbystep` first (or `/director stepbystep → actionplan`). Don't invent a plan.
 - **`map.md` (optional, strongly helpful).** If the user provides a `map.md`, read it first — it describes the environment (machines/hosts, addresses, OS, paths, topology, connectivity). Use it to fill in concrete values so fewer questions are needed.
 
 ## Quick mode (`--quick`)
 If the invocation includes `--quick` (or a clear equivalent — "quick", "brief", "no files", "just the summary"), run lightweight instead of the full workflow:
-- **No files.** Write nothing to disk — no background, no dossier. Skip the "Setup & output files" step entirely.
+- **No file, no record.** Write nothing to disk and nothing to the store. Skip the "Setup & output" step entirely.
 - **Reason, compressed.** Still work through this skill's core logic and search where it normally would, but skip the full multi-pass write-up.
 - **Output in chat only:** the **Read Me First** block this skill defines (the plain-language gist), then a short summary (a few sentences or bullets). No sources/reference list.
-- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not fully sourced or saved; run again without `--quick` for the verifiable two-file version."*
+- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — nothing written or recorded; run again without `--quick` for the runbook file and its record."*
 Quick mode is for fast exploration, not deliverables.
 
-## Setup & output files
+## Setup & output — the runbook file, tracked by a record
 
-Derive a `{topic}` slug from the plan's goal. Create a `runbook/` directory and write two files:
+**One file, one record.** Derive a `{topic}` slug from the plan's goal, create a `runbook/` directory, and write **`runbook/{topic}Runbook.md`** — the runbook itself (titled "<goal> — Runbook"): the copy-paste sequence. If it already exists, suffix the topic with `-2` (then `-3`, etc.) so you never overwrite a runbook someone may be halfway through. **No background file:** the environment profile, the per-phase expansion reasoning, and the tooling/version decisions stay in this session as prose, and the assumptions that matter travel *inside* the runbook's own Unknowns & Assumptions section, where the operator will actually see them.
 
-- **`runbook/{topic}background.md`** — the environment profile gathered, the per-phase expansion reasoning, tooling/version decisions, and all assumptions.
-- **`runbook/{topic}Dossier.md`** — the runbook itself (titled "<goal> — Runbook"): the copy-paste sequence.
+Then one `kind=result` record in the archivist store (`archive/findings.jsonl`, append-only, validated at the door) so the runbook is findable from `track` and the river instead of only from the filesystem:
 
-If those already exist, suffix the topic with `-2` (then `-3`, etc.).
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{…}'
+```
+
+(Loose install: `../archivist/scripts/index.py` relative to this skill folder.) It prints the assigned `F-<n>` on success and **exits 2 naming the rule** on rejection — a runbook record with an empty evidence list, or a `[cited]` url that is not a URL, does not enter the store. Fix the record, re-run; never hand-append to the JSONL. The record never replaces the file: a runbook you can't open at 2am is not a runbook.
 
 Use web search/fetch to confirm exact command syntax, flags, and version-specific details — getting a flag wrong makes a copy-paste step fail. Label what you verify.
 
@@ -48,8 +55,8 @@ A runbook that's wrong or dangerous gets run verbatim on real machines. These ar
 
 ## The phases
 
-### Phase 1 — Read the plan & map; build the environment profile → background
-Read the stepbystep dossier (and background) and `map.md` if provided. Extract an **environment profile**: the machines/hosts and how to reach each, OS/distro + versions, shell, already-installed tooling, key paths/directories, connectivity (online / offline / air-gapped), access method (e.g. SSH), and permissions (sudo?). Mark each item **known** (from map/plan) or **unknown**.
+### Phase 1 — Read the plan & map; build the environment profile → (reasoning)
+Read the plan — the `stepbystep` decision record and its linked `[ONE-WAY]` findings, plus the plan prose or a legacy dossier if either is available — and `map.md` if provided. Extract an **environment profile**: the machines/hosts and how to reach each, OS/distro + versions, shell, already-installed tooling, key paths/directories, connectivity (online / offline / air-gapped), access method (e.g. SSH), and permissions (sudo?). Mark each item **known** (from map/plan) or **unknown**.
 
 ### Phase 2 — Targeted environment Q&A (elicitation)
 Work out exactly which specifics the concrete commands will need that aren't already known. Ask the user a **grouped, minimal batch** of questions — only what's needed for *this* plan, about the machines and where things live — not a generic interrogation. 
@@ -65,10 +72,10 @@ Walk each phase/step from stepbystep and produce the concrete implementation. A 
 - **Flags:** ⛔ destructive/irreversible, `[needs expert]`, offline-staging needed.
 Keep prose between blocks minimal — the experience should be copy, run, verify, next.
 
-### Phase 4 — Validate the runbook (consistency pass) → background
+### Phase 4 — Validate the runbook (consistency pass) → (reasoning, then the record)
 Dry-run it mentally end to end: are blocks in correct execution order? Does each step's prerequisites get met by an earlier step? Is every placeholder defined in the values table? Does every destructive step have a ⛔ warning and a backup/restore note? Any secret hardcoded? Any step missing its verify? Fix what this finds, and note the check in the background.
 
-## The dossier (runbook) — `runbook/{topic}Dossier.md`
+## The runbook — `runbook/{topic}Runbook.md`
 
 Self-contained and executable top-to-bottom. **Read Me First, then Before You Start, then the runbook.**
 
@@ -83,7 +90,7 @@ Plain-language, 3–5 bullets, skimmable in 20 seconds.
 - **⛔ Biggest danger:** <the most destructive/irreversible step to be careful with>
 - **Fill these in first:** <values you must supply — see the table below>
 
-**Files:** `{topic}background.md` (environment profile + how each step was expanded) · `{topic}Dossier.md` (this runbook).
+**Where this came from:** the `stepbystep` plan record it expands (`F-<n>`) · the environment profile gathered this session · `map.md`, if one was provided. This file is the deliverable; its record in the store points back here.
 
 ---
 
@@ -140,8 +147,37 @@ Ordered. Run top to bottom. Each step says where to run it and how to confirm it
 >    - Verify: `psql -h <DB_HOST> -U <DB_ADMIN> -lqt | cut -d '|' -f1 | grep -qw legacy_db && echo STILL-THERE || echo dropped` → `dropped`
 >    - Rollback: none — restore from the Phase-1 dump (`pg_restore`) if needed. `[needs expert]`
 
+## The output — the record that tracks the runbook
+
+**One `kind=result` record, written after the file, `relation=toward`.** Its job is to make the runbook findable and to say honestly what state it is in — a runbook with four open placeholders is not the same artifact as one that runs. The statement carries: what the runbook does, how many phases and destructive steps it holds, how many placeholders are still unfilled, and the environment it assumes. **The runbook's path is evidence** (`type=path`) — that is the link between the store and the deliverable, so it is never omitted and never paraphrased.
+
+- `links` names the `stepbystep` decision record this expands (and its `[ONE-WAY]` findings, where they became ⛔ steps) — the chain from plan to commands should be walkable in one `track`.
+- Verified command syntax rides as `[cited]` url evidence; a flag you could not confirm against the user's exact version rides as `[unverified]` and says so in the statement.
+- If a later run rewrites the runbook for the same goal, `index.py supersede F-<old> --by F-<new>` — two live runbooks for one job is how the wrong one gets run.
+
+### The snippet, filled
+
+*(For the Postgres migration runbook above.)*
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "session":"actionplan-2026-07-25",
+  "skill":"actionplan",
+  "kind":"result",
+  "ask":"turn the Postgres migration plan into a copy-paste runbook",
+  "statement":"Runbook written: 4 phases, 23 blocks, 2 destructive steps (both ⛔ with backup + restore paths), assumes Ubuntu 22.04 app host and managed PG 16. Three placeholders are still open — <APP_HOST>, <DB_HOST>, <DB_ADMIN> — so it is not runnable as-is; the values table says where to find each. The pg_dump --format=directory flag is verified against PG 16 docs; the systemd unit name is [unverified] and flagged in the file.",
+  "evidence":[{"type":"path","ref":"runbook/migrate-app-database-to-postgresRunbook.md","label":"cited"},
+              {"type":"url","ref":"https://www.postgresql.org/docs/16/app-pgdump.html","label":"cited"},
+              {"type":"path","ref":"map.md","label":"cited"}],
+  "relation":"toward",
+  "links":["F-73"]}'
+```
+
+The `add` prints its `F-<n>`. A non-zero exit means the record was turned away with its rule named — fix it and re-run. The runbook file stands either way; the record is how anyone finds it.
+
 ## Self-check before finishing
 Before declaring done, verify and fix any miss:
+- **Records validated at the door (`add` exited 0)** — the id was printed by the script, nothing hand-appended, and the record's `path` evidence is the runbook's real relative path.
 - Every command block is copy-paste runnable and in correct execution order.
 - No invented hosts/paths/ports/credentials — all are real (from map.md/answers) or marked placeholders defined in the values table.
 - Every destructive/irreversible step has a ⛔ warning and a backup/restore note; no secrets are hardcoded.
@@ -152,11 +188,11 @@ Before declaring done, verify and fix any miss:
 
 ## Finishing up
 
-Write `{topic}background.md` first (profile + expansion reasoning), then `{topic}Dossier.md` (the runbook). Give the user a short chat summary: what the runbook accomplishes, the environment it assumes, the most dangerous step to watch, any values they still need to fill, and the path to the files — point them to the runbook. Don't paste it into chat. Offer to fill in placeholders once they share the missing details, or to expand any phase further.
+Write `runbook/{topic}Runbook.md` (the deliverable), then emit the `kind=result` record that points at it. Give the user a short chat summary: what the runbook accomplishes, the environment it assumes, the most dangerous step to watch, any values they still need to fill, the path to the file, and the record id. Don't paste the runbook into chat. Offer to fill in placeholders once they share the missing details, or to expand any phase further — a rewritten runbook `supersede`s its old record rather than leaving two live.
 
 ## Notes on tone and rigor
 
-- Pairs with `stepbystep` (run it first, then `/actionplan` on its dossier) and `director` (`stepbystep → actionplan`). Inside `director` or any non-interactive run, skip the Q&A and rely on `map.md` + labeled assumptions, listing unknowns up top.
+- Pairs with `stepbystep` (run it first, then `/actionplan` on its decision record) and `director` (`stepbystep → actionplan`). Inside `director` or any non-interactive run, skip the Q&A and rely on `map.md` + labeled assumptions, listing unknowns up top.
 - The runbook is executed by the user on their own machines — this skill writes it, it never runs commands.
 - A placeholder the user fills in 10 seconds is safe; a guessed hostname that points at the wrong machine is not. Always prefer the placeholder.
 - Lead each block with where to run it. The most common runbook failure is running the right command on the wrong host.

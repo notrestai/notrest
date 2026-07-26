@@ -154,15 +154,19 @@ SPEND_RE = re.compile(
 
 
 class Item:
-    __slots__ = ("family", "ref", "ts", "text", "toks", "sig")
+    __slots__ = ("family", "ref", "ts", "text", "toks", "sig", "meta")
 
-    def __init__(self, family, ref, ts, text):
+    def __init__(self, family, ref, ts, text, meta=None):
         self.family = family
         self.ref = ref
         self.ts = ts
         self.text = re.sub(r"\s+", " ", text).strip()
         self.toks = tokens(self.text)
         self.sig = frozenset()
+        # Carried for `contract` only: the lane/model/transcript facts that make a
+        # citation walkable. Clustering never reads it — those fields are on every
+        # line by construction and would cluster the apparatus, not the work.
+        self.meta = meta or {}
 
 
 def _read(p):
@@ -191,7 +195,8 @@ def read_coord(root):
         for i, line in enumerate(text.splitlines(), 1):
             m = COORD_RE.match(line.strip())
             if m:
-                items.append(Item("coord", f"{fn}:{i}", m.group("ts"), m.group("body")))
+                items.append(Item("coord", f"{fn}:{i}", m.group("ts"), m.group("body"),
+                                  {"lane": m.group("lane") or ""}))
     return items
 
 
@@ -218,7 +223,8 @@ def read_agents(root):
                     last = ""
         if not last or last == "?":
             continue
-        items.append(Item("agents", f"COORD-AGENTS.md:{i}", m.group("ts"), last))
+        items.append(Item("agents", f"COORD-AGENTS.md:{i}", m.group("ts"), last,
+                          {"id": m.group("id"), "transcript": tp}))
     return items
 
 
@@ -233,7 +239,8 @@ def read_spend(root):
         m = SPEND_RE.match(line.strip())
         if m and m.group("purpose").strip():
             items.append(Item("spend", f"spend/ledger.md:{i}", m.group("ts"),
-                              m.group("purpose")))
+                              m.group("purpose"),
+                              {"lane": m.group("lane"), "model": m.group("model")}))
     return items
 
 
@@ -750,6 +757,365 @@ def cmd_decide(a):
     return 0
 
 
+# ── contract: Step 1 of the ritual, pre-filled from the trail ─────────────────
+#
+# Step 1 asks the seat to walk a candidate's evidence in timestamp order and cite
+# every row with a trail token. That walk is a GREP — the estate already holds the
+# line numbers, the timestamps, the lanes, the models and the transcript pointers.
+# Having the seat re-derive them by reading ledgers is the exact spend this skill
+# exists to remove, and a hand-typed citation is the one kind that can be wrong.
+#
+# What the script fills: the citations, the source line refs, the timestamp order,
+# the owner-today column (mined from lane=/model=), and the honest coverage note.
+# What it deliberately leaves blank: whether a responsibility is required for parity,
+# who owns it after, and why. Those are judgments; a pre-filled judgment would be a
+# guess wearing a citation's clothes.
+CONTRACT_HEADER = "| # | Responsibility | Evidence | Required for parity? | Owner today | Owner after | Why |"
+CONTRACT_RULE = "|---|---|---|---|---|---|---|"
+MAX_ROWS = 40
+
+
+def cite(it):
+    """The trail token for one estate item, in the ritual's own citation grammar."""
+    if it.family == "coord":
+        return f"[COORD {it.ts}]"
+    if it.family == "spend":
+        return f"[spend {it.ts}]"
+    if it.family == "agents":
+        return f"[COORD-AGENTS {it.meta.get('id', '?')} → transcript]"
+    return f"[{it.family} {it.ts}]"
+
+
+def owner_today(it):
+    """Who ran it, as the ledger recorded it — never as the reader assumes."""
+    if it.family == "spend":
+        return f"lane={it.meta.get('lane', '?')} model={it.meta.get('model', '?')}"
+    if it.family == "agents":
+        return "lane=subagent"
+    lane = it.meta.get("lane") or "seat"
+    return f"seat ({lane})" if lane != "seat" else "seat"
+
+
+def query_tokens(slug, cands):
+    """The slug's tokens — from the scan when the slug is a known candidate (its core
+    and signature are what actually clustered), from the slug itself otherwise, so an
+    unscanned or hand-named workflow still gets a contract."""
+    for c in cands:
+        if slug in (c.get("slug"), c.get("alias")):
+            q = set(c.get("core") or []) | set(c.get("signature") or [])
+            if q:
+                return q, c
+    return set(tokens(slug.replace("-", " "))), None
+
+
+def cmd_contract(a):
+    root = pathlib.Path(a.root).expanduser().resolve()
+    out = outdir(a)
+    cands = []
+    raw = _read(out / CANDIDATES_JSON)
+    if raw:
+        try:
+            cands = json.loads(raw).get("candidates", [])
+        except Exception:
+            cands = []
+    q, cand = query_tokens(a.slug, cands)
+    if not q:
+        print(f"[compile] {a.slug!r} yields no searchable tokens — name the candidate "
+              f"with words the ledgers contain, or run scan first")
+        return 2
+
+    families = {"coord": read_coord(root), "agents": read_agents(root),
+                "spend": read_spend(root)}
+    all_items = [it for v in families.values() for it in v]
+    # A short query must not match on one weak word; a rich one must not demand all of
+    # them (a ledger line records part of a ritual, never the whole vocabulary).
+    need = 1 if len(q) <= 2 else 2
+    scored = []
+    for it in all_items:
+        hits = q & set(it.toks)
+        if len(hits) >= need:
+            scored.append((len(hits), it))
+    scored.sort(key=lambda p: (-p[0], p[1].ts, p[1].ref))
+    rows = [it for _s, it in scored[: a.max_rows]]
+    rows.sort(key=lambda it: (it.ts, it.ref))          # Step 1 walks in TIME order
+    known_refs = {e.get("ref") for e in (cand or {}).get("evidence", [])}
+
+    if not rows:
+        print(f"[compile] no trail evidence matches {a.slug!r} "
+              f"(tokens: {', '.join(sorted(q))}) across "
+              f"{len(all_items)} estate entries — there is nothing to reconstruct a "
+              f"contract from, and inventing rows would be the failure this skill "
+              f"exists to prevent")
+        return 3
+
+    b = [f"# Functional contract (DRAFT) — {(cand or {}).get('alias') or a.slug}",
+         "",
+         f"Pre-filled by `compile.py contract --slug {a.slug}` at "
+         f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%MZ')} · root `{root.as_posix()}`",
+         "",
+         "**This is Step 1 half-done, not Step 1 done.** The script filled what the estate "
+         "records: the citations, the line refs, the timestamp order, and who ran each entry. "
+         "The three judgment columns are deliberately blank — *required for parity*, *owner "
+         "after* and *why* are the seat's rulings, and a pre-filled ruling is a guess wearing "
+         "a citation's clothes. Rewrite each Responsibility cell into a real responsibility; "
+         "the raw ledger text is there as the quote it came from, not as the answer.",
+         ""]
+    if cand:
+        b.append(f"Candidate `{cand['slug']}`"
+                 + (f" (alias `{cand['alias']}`)" if cand.get("alias") else "")
+                 + f" — {cand['occurrences']}× · same-shape {cand.get('shape')} · "
+                 + f"status {cand.get('status')}"
+                 + (" · **weak-source** (spend purposes only, no COORD line — read every row "
+                    "below as shared vocabulary until a COORD line says otherwise)"
+                    if cand.get("weak_source") else ""))
+    else:
+        b.append(f"No scanned candidate named `{a.slug}` — rows below were mined by matching "
+                 f"the slug's own tokens (`{', '.join(sorted(q))}`), so the row set is a "
+                 f"grep, not a cluster. Run `scan` and use the candidate slug for the "
+                 f"clustered evidence set.")
+    b += ["", CONTRACT_HEADER, CONTRACT_RULE]
+    for i, it in enumerate(rows, 1):
+        text = it.text.replace("|", "\\|")
+        if len(text) > 200:
+            text = text[:197] + "…"
+        star = " ★" if it.ref in known_refs else ""
+        b.append(f"| {i} | _<rewrite as a responsibility>_ — {text} | {cite(it)} "
+                 f"`{it.ref}`{star} | ? | {owner_today(it)} | ? | ? |")
+    b += ["",
+          "★ = also in the scanned candidate's own evidence set.",
+          "",
+          "## Trail pointers (walk these before ruling on a row)",
+          ""]
+    tps = [(it.ts, it.meta.get("id", "?"), it.meta.get("transcript", ""))
+           for it in rows if it.family == "agents" and it.meta.get("transcript")]
+    if tps:
+        for ts, aid, tp in tps:
+            b.append(f"- `{aid}` [{ts}] → `{tp}`")
+    else:
+        b.append("- none of the matched rows carry a transcript pointer "
+                 "(COORD-AGENTS entries are where those live)")
+    b += ["",
+          "## Evidence coverage (state this plainly — never claim history you could not access)",
+          "",
+          "| ledger | present | entries read | matched this slug |",
+          "|---|---|---|---|"]
+    for fam, label, path in (("coord", "COORD volumes (+ archive)", "COORD*.md"),
+                             ("agents", "COORD-AGENTS.md", "COORD-AGENTS.md"),
+                             ("spend", "spend/ledger.md", "spend/ledger.md")):
+        got = families[fam]
+        matched = sum(1 for it in rows if it.family == fam)
+        b.append(f"| {label} (`{path}`) | {'yes' if got else 'NO'} | {len(got)} | {matched} |")
+    span = f"{rows[0].ts} … {rows[-1].ts}" if rows else "—"
+    b += ["",
+          f"- **Span covered:** {span} (the matched rows' own timestamps — not the ledgers').",
+          f"- **Matched {len(rows)} of {len(scored)} matching entries** "
+          + (f"(capped at --max-rows {a.max_rows}; raise it to see the rest)."
+             if len(scored) > len(rows) else "(no cap hit)."),
+          "- **Transcripts:** not read by this script. It reads ledger lines only, so any "
+          "responsibility that exists ONLY inside a transcript is missing here — walk the "
+          "pointers above before calling the contract complete.",
+          "- **Compacted history is invisible.** Sealed COORD volumes are read; whatever a "
+          "compaction dropped cannot be recovered and must not be guessed at.",
+          "",
+          "## Before Step 2",
+          "",
+          "- Reconstruct the COMPLETE workflow: a parity claim over a subset is a lie about "
+          "the subset. If a row you remember is not above, the grep missed it — add it by "
+          "hand with its own citation.",
+          "- A row you cannot cite is `[unverified]` and may not be load-bearing.",
+          ""]
+    doc = "\n".join(b) + "\n"
+    if a.write:
+        p = pathlib.Path(a.write).expanduser()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(doc, encoding="utf-8")
+        print(f"[compile] contract draft written to {p} ({len(rows)} rows)")
+    else:
+        sys.stdout.write(doc)
+    return 0
+
+
+# ── scaffold: the runtime skeleton, so Step 3 starts from a shape ──────────────
+SCAFFOLD_README = """# {slug} — compiled runtime (ISOLATED, installed nowhere)
+
+Scaffolded by `compile.py scaffold --slug {slug}` on {when}.
+
+Nothing here is wired into the harness. Installation is a release, not a flag
+(compile SKILL.md Part 3) — until the owner ships it, this directory is a candidate.
+
+## One obvious run command
+
+    python3 {slug}/runner.py run --input <path> --dry-run
+
+## What it does
+
+<one paragraph: the responsibilities from the Step-1 contract that bucket A now owns>
+
+## What it does NOT do
+
+<the responsibilities still owned by a model call (bucket B), a human (C), or nobody
+yet. This section is load-bearing: a compiled runtime that is silent about its gaps
+gets read as complete.>
+
+## Retained model calls (bucket B)
+
+| purpose | input shape | output shape | validator | retries |
+|---|---|---|---|---|
+| <one named purpose> | <smallest sufficient> | <typed> | <the code that checks it> | <bounded> |
+
+## Side effects
+
+Every side-effecting path has a replay/dry-run adapter. A drafted message is never
+evidence a message was sent.
+
+## Files
+
+- `runner.py` — the entry point (stub: fill in `do_run`).
+- `fixture.sh` — the test that must exercise real logic, not mocks agreeing with themselves.
+- `BENCHMARK.md` — the fair-benchmark notes (Step 6). Fill it BEFORE quoting a number.
+"""
+
+SCAFFOLD_RUNNER = '''#!/usr/bin/env python3
+"""runner.py — compiled runtime for `{slug}`. STUB: scaffolded, not written.
+
+Scaffolded by compile.py on {when}. Deliberately unimplemented: `run` exits 4 until
+someone fills in `do_run`, so a half-built runtime can never quietly report success.
+
+Contract: python3 stdlib only unless the contract says otherwise; exit 0 = clean,
+2 = usage, 3 = a real finding, 4 = not implemented / refused to guess.
+"""
+import argparse
+import sys
+
+
+def do_run(args):
+    """Implement the bucket-A responsibilities from the Step-1 contract here.
+
+    Deterministic only. Every retained model call belongs behind a typed boundary
+    with a validator and bounded retries — never an unbounded "do the task" call.
+    """
+    print("[{slug}] runner is a scaffold — do_run is not implemented")
+    return 4
+
+
+def do_selfcheck(args):
+    """What the runtime can assert about itself without doing any work."""
+    print("[{slug}] selfcheck: scaffold only — no logic to check yet")
+    return 4
+
+
+def main():
+    ap = argparse.ArgumentParser(description="compiled runtime for {slug}")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run")
+    r.add_argument("--input", required=False)
+    r.add_argument("--dry-run", action="store_true",
+                   help="side effects replayed, never performed")
+    r.set_defaults(f=do_run)
+    s = sub.add_parser("selfcheck")
+    s.set_defaults(f=do_selfcheck)
+    a = ap.parse_args()
+    sys.exit(a.f(a))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+SCAFFOLD_FIXTURE = '''#!/bin/bash
+# fixture.sh — tests for the `{slug}` compiled runtime. STUB.
+#
+# The law this file exists to keep: exercise the REAL logic. A test that mocks the
+# thing it is testing passes by agreeing with itself, and the refuter lane (Step 4)
+# looks for exactly that. Replay fixtures come from the historical scenarios in the
+# Step-1 contract, not from freshly invented happy paths.
+set -u
+SD="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+R="$SD/runner.py"
+PASS=0; FAIL=0
+ok(){{ PASS=$((PASS+1)); echo "  PASS  $1"; }}
+no(){{ FAIL=$((FAIL+1)); echo "  FAIL  $1"; }}
+t(){{ if [ "$2" = "$3" ]; then ok "$1 ($2)"; else no "$1 — expected [$3] got [$2]"; fi; }}
+
+echo "── scaffold sanity (replace these with real cases)"
+python3 "$R" --help >/dev/null 2>&1; t "runner --help exits 0" "$?" "0"
+python3 "$R" run >/dev/null 2>&1; t "unimplemented run exits 4, never 0" "$?" "4"
+python3 "$R" bogus >/dev/null 2>&1; t "unknown subcommand exits 2" "$?" "2"
+
+# TODO: one case per historical scenario from the Step-1 contract.
+# TODO: one case per validator on a retained model call (invalid output must be caught).
+# TODO: one case proving the dry-run adapter performs NO side effect.
+
+echo
+echo "{slug} fixture: $PASS passed, $FAIL failed"
+[ "$FAIL" -eq 0 ]
+'''
+
+SCAFFOLD_BENCH = """# Benchmark notes — {slug}
+
+Scaffolded {when}. **Fill this in before quoting a single number.** Step 6's whole
+point is that an unfair benchmark is worse than none: it launders a preference into
+a measurement.
+
+## Method A — the estate is the historical side
+
+The old workflow's cost and behavior come from what the ledgers actually recorded,
+not from a re-run staged to lose.
+
+| # | historical scenario | trail citation | old cost (observed/estimate) | new cost | notes |
+|---|---|---|---|---|---|
+|   |                     |                |                              |          |       |
+
+## Symmetry checklist (each line is a way this benchmark could cheat)
+
+- [ ] The compiled side is not handed pre-chewed input the old side had to parse.
+- [ ] Both sides do the SAME responsibilities — the full contract, not a subset.
+- [ ] Failure cases are in the sample, not only the runs that went well.
+- [ ] Old-side numbers carry their grade (observed vs estimate) and say which.
+- [ ] The one-time compilation cost is reported separately (Step 8), not amortized
+      away silently.
+- [ ] The quality law (Step 7) outranks every number here: cheaper and worse is a
+      regression, and gets reported as one.
+
+## Result
+
+<state the finding, with its grade, and the scenario count it rests on>
+"""
+
+
+def cmd_scaffold(a):
+    out = outdir(a)
+    slug = re.sub(r"[^a-z0-9._-]+", "-", a.slug.lower()).strip("-")
+    if not slug:
+        print(f"[compile] {a.slug!r} is not a usable directory name")
+        return 2
+    d = out / slug
+    if d.exists():
+        print(f"[compile] {d} already exists — scaffold never overwrites a runtime "
+              f"(that is where the work is). Delete it deliberately, or pass a "
+              f"different --slug.")
+        return 2
+    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+    d.mkdir(parents=True)
+    files = {
+        "README.md": SCAFFOLD_README.format(slug=slug, when=when),
+        "runner.py": SCAFFOLD_RUNNER.format(slug=slug, when=when),
+        "fixture.sh": SCAFFOLD_FIXTURE.format(slug=slug),
+        "BENCHMARK.md": SCAFFOLD_BENCH.format(slug=slug, when=when),
+    }
+    for fn, body in files.items():
+        p = d / fn
+        p.write_text(body, encoding="utf-8")
+        if fn.endswith((".py", ".sh")):
+            p.chmod(0o755)
+    print(f"[compile] scaffolded {d}/ — {', '.join(sorted(files))}")
+    print(f"[compile] isolated and installed nowhere. Run it: "
+          f"python3 {d / 'runner.py'} run --dry-run  (exits 4 until do_run is written)")
+    print(f"[compile] next: Step 3 builds it in ONE persistent Opus lane; "
+          f"Step 4 has a DIFFERENT lane attack it.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="mine the estate for repeated work")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -776,6 +1142,23 @@ def main():
     d.add_argument("--alias", default="")
     d.add_argument("--note", default="")
     d.set_defaults(f=cmd_decide)
+
+    c = sub.add_parser("contract",
+                       help="Step 1 pre-filled: the responsibility table with trail citations")
+    c.add_argument("--root", default=".")
+    c.add_argument("--out", default="compile")
+    c.add_argument("--slug", required=True)
+    c.add_argument("--max-rows", dest="max_rows", type=int, default=MAX_ROWS)
+    c.add_argument("--write", default=None, metavar="PATH",
+                   help="write the draft to a file instead of stdout")
+    c.set_defaults(f=cmd_contract)
+
+    sc = sub.add_parser("scaffold",
+                        help="create compile/<slug>/ skeleton; never overwrites (exit 2)")
+    sc.add_argument("--root", default=".")
+    sc.add_argument("--out", default="compile")
+    sc.add_argument("--slug", required=True)
+    sc.set_defaults(f=cmd_scaffold)
 
     a = ap.parse_args()
     sys.exit(a.f(a))

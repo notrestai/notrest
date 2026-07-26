@@ -57,6 +57,28 @@ routes "recap ask"           recap            "tell me what happened in the last
 routes "handoff ask"         sessionend       "lets wrap up and hand the state over"
 routes "cadence ask"         watch            "recheck that pricing claim on a cadence every friday"
 
+echo "── the instruments (a harness question routes to the harness's own verb)"
+routes "health-check ask"    doctor           "is the harness healthy after that release"
+routes "install ask"         doctor           "can you check the install for me now"
+routes "law-check ask"       eval             "can you check the laws before we ship"
+routes "file-graph ask"      graph            "show me the project graph for this repo"
+routes "spend-audit ask"     spend            "give me a token report for the session"
+routes "history ask"         recap            "so how did we get here with the auth rewrite"
+
+echo "── self-named arms (the trigger phrase IS the verb — the arm must still fire)"
+# `graph` and `spend` name themselves in their own trigger phrases. Without the
+# SELFNAMED exemption the "prompt already named the verb" guard swallows every match
+# and both arms are dead code that no other assertion would notice.
+routes "self-named graph ask" graph           "show me the file graph for this project"
+routes "self-named spend ask" spend           "give me the spend report for today"
+
+echo "── first-match order (a new arm must not steal an older shape)"
+# The instrument block sits ABOVE recap/explainer, so a history question carrying
+# instrument-adjacent words ("checks", "reports") has to fall past all four arms.
+routes "history beats instruments" recap      "how did we get here after all those checks and reports"
+# and the reverse direction: research outranks the health-check arm it sits above
+routes "research beats health check" researcher "research how health checks work in kubernetes"
+
 echo "── suppressions (the router owes silence)"
 silent "prompt already names a suite verb" "run /notrest:researcher on vector databases for me"
 silent "prompt under four words"           "research vector databases"

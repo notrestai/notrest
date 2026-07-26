@@ -1,17 +1,20 @@
 ---
 name: graph
-description: "Two script-built views, self-contained HTML at zero model tokens, then OPENED: the FILE GRAPH (every file and reference — Obsidian for a codebase) and the RIVER (findings.jsonl + COORD volumes as a river toward the goal — side channels, backtrack loops, conflict rocks, milestone flags). Plus text queries over the last scan. Use on /graph, \"project graph\", \"/graph river\", \"how did we get here\", \"what links to this file\", \"orphans\", \"stale files\", \"all projects graph\"."
+description: "Two script-built views, self-contained HTML at zero model tokens, then OPENED: the FILE GRAPH (every file and reference — Obsidian for a codebase) and the RIVER (findings.jsonl + COORD volumes as a river toward the goal — side channels, backtrack loops, conflict rocks, milestone flags). Plus text queries over the last scan. Use on /graph, \"project graph\", \"/graph river\", \"what links to this file\", \"orphans\", \"stale files\", \"all projects graph\"."
 ---
 
 # graph — how this project connects, and how it got here
 
-`archivist` says what the estate *knows*. This skill draws two things it cannot:
+`archivist` says what the estate *knows*. This skill draws three things it cannot:
 
 - **the file graph** — how the project *connects*: every file a node, every reference the
   scanner can see an edge. The Obsidian graph view, for a codebase.
 - **the river** (`/graph river`) — how the work *moved*: the findings ledger and the COORD
   volumes as a river flowing left→right into the goal, with the side routes, the
   backtracks, the rocks it hit and the flags it passed.
+- **the journey** (`/graph journey`) — how the harness *opens*: what a user types → the
+  shape `router.sh` calls it → the verb that runs → what that verb hands off to, with the
+  skills nothing routes to drawn in their own band instead of hidden.
 
 **The economics are the point.** The model never reads files to build either view — the
 script does, and the model reads a one-line summary (or opens the page). Same pattern as
@@ -29,8 +32,11 @@ timestamp unless you pass `--now`. If a re-render produces a different file from
 ledger, that is a bug in this script, not noise.
 
 Script: `scripts/graph.py` (python3 stdlib only). Output: `<root>/graph/graph.json` +
-`graph.html` (the file graph) and `<root>/graph/river.json` + `river.html` (the river) —
-each regenerated on every run, data inlined, zero network requests.
+`graph.html` (the file graph), `<root>/graph/river.json` + `river.html` (the river) and
+`<root>/graph/journey.json` + `journey.html` (the journey) — each regenerated on every
+run, data inlined, zero network requests.
+
+**Router shape:** `file-graph`
 
 ## `/graph` — the default run: SCAN, then OPEN. No questions.
 
@@ -97,8 +103,10 @@ is the deliverable, not a description of it.
 
 ## `/graph river` — the journey, not the map
 
-`/graph river` (or "how did we get here", "show me the river") draws the *work*, not the
-files. Same three steps — build, open, one line — with `river` in place of `scan`:
+`/graph river` (or "show me the river") draws the *work*, not the files. Same three steps
+— build, open, one line — with `river` in place of `scan`.
+(Asking how the project got to where it is belongs to **`/recap`**, which answers it in
+prose; a river is the picture you reach for once you want the *shape* of the trail.)
 
 ```bash
 python3 <graph-skill>/scripts/graph.py river --root "$ROOT"     # → graph/river.{json,html}
@@ -121,6 +129,7 @@ river, because the ledger is where this estate already records its milestones.
 | a channel that tapers and stops | nothing ever linked it again: **dead end**, marked as one |
 | an upstream loop arrow | `relation: back` — a backtrack to something already passed |
 | a red rock in the channel | `kind: conflict`, or any record whose effective status is `refuted` |
+| a long-dashed red arrow *into* a stone | **rests on refuted** — that stone is live, but it cites ground a refutation took out |
 | a stone | every record — every stone turned, whether or not it led anywhere |
 | a flag on the top bank | a COORD ledger line: ship · gate · correction |
 | a tick on the bottom bank | a `COORD-AGENTS.md` entry — which lane was running when |
@@ -132,6 +141,27 @@ outranks superseded). Superseded stones fade and strike through; refuted ones be
 Hover any glyph for its ask → statement → evidence refs with their honesty labels; click to
 pin the card.
 
+**RESTS-ON-REFUTED — the rule, pinned.** *A live record whose links contain an effectively
+refuted id rests on refuted ground.* The refutation kills the finding; it does not
+automatically kill everything built on it — but it does mean somebody has to look. So the
+river draws the inbound edge from the refuted source to that stone as a **long-dashed red
+arrow** (its own edge kind `rests`, distinct from the rock glyph and from the short-dashed
+`refute` arc), rings the stone in dashed red, and the hover card opens with
+`RESTS-ON-REFUTED <id>`. The count is in the legend and in `counts.rests_on_refuted`.
+
+Three things it deliberately does **not** do:
+- **It is one hop, not transitive.** A record resting on a record that rests on refuted
+  ground is not flagged — the rule reads a record's own `links`, and a transitive claim
+  about ground nobody cited would be the river inventing a dependency.
+- **The refuter is never resting.** A record that refutes X links X; that is an attack, not
+  a foundation, and it is excluded.
+- **It is not a verdict.** "Rests on refuted" says the citation graph now has a hole in it,
+  not that the conclusion is wrong. Read the record before you retract anything — feeding it
+  to `/refuter` is the honest next move.
+
+`archivist`'s finding-store track implements the same rule over the same records, so a
+stone flagged here and a record flagged there are the same claim about the same ground.
+
 **No findings ledger? It degrades, and says so.** With no `archive/findings.jsonl` the river
 is built from the COORD lines themselves — every node marked `inferred: true`, its kind and
 relation read off the line's own words by heuristic, its links chronological rather than
@@ -142,6 +172,46 @@ Flags: `--session <lane>` (one lane's river), `--cap N` (default 500 records, ne
 the page says "showing the last N of M"), `--out <file.html>`, `--open` / `--no-open`
 (default: write only, then open with the environment-aware door above), `--now` (stamp with
 clock time instead of the newest input — breaks byte-identical re-renders).
+
+## `/graph journey` — the door, not the work
+
+The river draws what the *work* did. `/graph journey` draws what the *harness* does when
+somebody types something — the front door nothing else in the suite has ever rendered:
+
+```bash
+python3 <graph-skill>/scripts/graph.py journey --root "$ROOT"   # → graph/journey.{json,html}
+```
+
+Three columns, left to right: **what someone types** → **the shape `router.sh` calls it**
+→ **the skill that runs**, then chain arrows from each skill to the verbs its own SKILL.md
+hands off to. Skills nothing routes to are drawn in a **BY NAME ONLY** band at the bottom —
+that band is the most useful thing on the page, because it names every verb a user can only
+reach by knowing it exists.
+
+**What it reads — three authorities, named on the page.**
+
+| source | what it contributes |
+|---|---|
+| `hooks/router.sh` | the `SKILL=`/`SHAPE=` case arms, in table order (order *is* precedence — first match wins). Same parse `eval.py`'s ROUTER check uses. |
+| `skills/oracle/SKILL.md` | the intake routing bullet — `phrase → /verb` pairs, drawn as green dashed pills that bypass the shape column, because the hook never fires them; the intake conversation does |
+| every `skills/*/SKILL.md` | the Chains / Finishing-up section, mined for explicit `` `/verb` `` references → the chain arrows |
+
+**The chain arrows are best-effort text parsing, and the page says exactly where it failed.**
+Only an explicit `/verb` reference inside a Chains / Finishing-up section becomes an arrow. A
+skill with no such section is *named* in the notes; a skill with a section whose hand-offs are
+written in prose ("researcher / marketresearcher → draft") is *also named*, and draws nothing.
+A guessed arrow would be this script inventing a hand-off nobody wrote.
+
+**The stamp is the commit, not the clock and not an mtime.** `river` stamps from the newest
+input timestamp; that would be wrong here, because the inputs are tracked files whose mtimes
+every clone rewrites — two checkouts of the same commit would stamp differently. `journey`
+stamps from `git rev-parse --short HEAD`, suffixed `+dirty` when tracked files are modified,
+and says `(no git HEAD)` on the page when git is unavailable. Touching an input does not
+change one byte of the render; editing one does.
+
+Flags: `--root`, `--out <file.html>` (default `graph/journey.html`; json written beside it),
+`--open` / `--no-open` (default: write only, then open with the environment-aware door above).
+Exit 2 if no directory holding `skills/` can be found under the root.
 
 ## Commands
 
@@ -165,8 +235,12 @@ or `~/.claude/skills/…`). `<graph-skill>` below means that path.
   legible: the estate is always kept, then the best-connected files.
 
 - **Draw the river:** `python3 <graph-skill>/scripts/graph.py river --root <project> [--session S] [--cap N] [--out graph/river.html] [--open|--no-open] [--now]`
-  Prints `…/river.html: N records · C channels (M merged, D dead-end) · R rocks · B backtracks · F milestones · mode=…`,
+  Prints `…/river.html: N records · C channels (M merged, D dead-end) · R rocks (K resting on refuted) · B backtracks · F milestones · mode=…`,
   then one `note:` line per honesty note (degrade mode, cap, unparseable ledger lines).
+- **Draw the journey:** `python3 <graph-skill>/scripts/graph.py journey --root <project> [--out graph/journey.html] [--open|--no-open]`
+  Prints `…/journey.html: N skills · S router shapes · P phrases (R router, I intake) · C chain arrows · B by name only · stamp=<commit> (git-head)`,
+  then one `note:` line per disclosure (no router, no chains section, prose-only hand-offs,
+  a dirty tree, a missing git HEAD).
 
 ### Queries over the last scan
 
@@ -260,8 +334,21 @@ explicit `/graph` invocations only.
   conclusion from it.
 - **The scan is a snapshot.** Counts move as the repo moves (a lane writing files right now
   changes them). Quote the `generated` stamp with any count you report.
-- **Never hand-edit `graph/graph.json`, `graph.html`, `river.json` or `river.html`.** All
-  four are regenerated on every run; edits are lost. Fix the source, re-run.
+- **Never hand-edit the six generated files** (`graph.json`/`graph.html`,
+  `river.json`/`river.html`, `journey.json`/`journey.html`). All are regenerated on every
+  run; edits are lost. Fix the source, re-run.
+- **The journey draws what the files SAY, not what the harness DOES.** A shape on the page
+  means `router.sh` has an arm for it, not that the arm ever fires on real prompts; a chain
+  arrow means a SKILL.md names that verb in its hand-off section, not that anyone follows
+  it. Never quote the journey as evidence of runtime behaviour — `eval`'s ROUTER check is
+  what proves the router is wired at all.
+- **"By name only" is a statement about the routing table, not about a skill's worth.** It
+  means nothing in `router.sh` or oracle's intake bullet points there — which is the correct
+  design for `/eval`, `/spend`-style instruments and for anything a user should invoke
+  deliberately. Read the band as a list of doors that need a key, not a list of orphans.
+- **"Rests on refuted" is a hole in the citation graph, not a verdict.** It says a live
+  record cites ground a refutation took out. One hop, never transitive, and the record may
+  still be right for other reasons. Read it before you retract it.
 - The graph sees what the listing sees: in a git repo, ignored files are absent by design;
   outside git, the skip list hides dependency directories. Say which listing mode ran (the
   summary line prints it) when the absence of a file matters.
@@ -285,9 +372,11 @@ then report. Two traps that have both bitten:
   <page.html>` binds 127.0.0.1 on a private port, curls the page, and only prints a URL
   once it has proved **HTTP 200** (exit 0 · 4 = served but not 200; reap with
   `render-check.sh --close <port>`). A screenshot of a blank canvas is not a render.
-- **Check it at the size you're actually viewing.** Both viewers re-fit on viewport change
-  — and the first fit runs before layout settles, which is why the river re-fits on the
+- **Check it at the size you're actually viewing.** All three viewers re-fit on viewport
+  change — and the first fit runs before layout settles, which is why they re-fit on the
   next frame and on every stage resize. Glance at that path when you change window size.
+  They fit different axes on purpose: the river fits its **height** (you pan downstream),
+  the journey fits its **width** and never zooms past 1:1 (you pan down the table of doors).
 
 If you cannot open a browser, say the page was written but not rendered — never claim a
 view you did not see.
@@ -298,12 +387,23 @@ view you did not see.
   (every kind, relation and status; a merge, two dead ends, a fork, a backtrack, a rock, a
   supersede, a refute), asserting the counts, the channel outcomes, the edge-kind
   breakdown, the degrade path, the cap, byte-identical re-render, both theme hooks, zero
-  external assets, a real render-check 200, and all three query verbs. Exit 0 = all held.
+  external assets, a real render-check 200, and all three query verbs. Its phase G pins the
+  **rests-on-refuted** rule against a purpose-built pair: a record citing the refuted ground
+  *before* the tombstone lands and one citing it *after* are both flagged, while the refuter
+  itself and an untouched control pair stay clean. Exit 0 = all held.
+- `scripts/journey-fixture.sh` — the journey asserted against **the real repo**, because the
+  journey draws this harness's own door: every skill directory on disk owns exactly one node,
+  every `SKILL=` verb the router can emit lands as a routed skill, routed + by-name-only
+  accounts for all of them, no edge dangles, the page re-renders byte for byte, both themes
+  and zero external assets, a real render-check 200, and the size cap. Then two synthetic
+  phases it fully owns: a plugin tree with no `router.sh` (shapes 0, disclosed, not silently
+  empty) and a throwaway git repo proving the stamp is the **commit** — a touched input
+  re-renders identically, an edited one turns the stamp `+dirty`. Exit 0 = all held.
 
 ## Self-check before finishing
 
-- The scan (or `river`) was run by the script this turn, and its summary line is in the
-  transcript.
+- The scan (or `river`, or `journey`) was run by the script this turn, and its summary line
+  is in the transcript.
 - The page was actually opened — no questions asked, no "want me to open it?" — or the
   report says plainly which environment case blocked it.
 - Any claim about what links to what came from the graph data or the file itself — not from
@@ -311,6 +411,11 @@ view you did not see.
 - If you called a node orphaned, you said where you looked and what wouldn't show up there.
 - If you reported a river, you said which mode it ran in — and if it was COORD-only, you
   said the kinds and relations were inferred before quoting a single count.
+- If you called a stone "rests on refuted", you said it is one hop over the record's own
+  links — not a verdict on the record, and not transitive.
+- If you reported a journey, you repeated its disclosures (which skills had no chains
+  section, which had one nothing could be parsed from) before quoting the chain count, and
+  you did not present a drawn arrow as evidence of runtime behaviour.
 - You drew nothing by hand. A picture this skill can't produce is a missing subcommand.
 - If you registered a project, the owner said yes.
 
@@ -318,8 +423,17 @@ view you did not see.
 
 `archivist` = what the estate *says* (dossiers, the agent ledger) · **graph** = how it
 *connects* (files and references) · **`graph river`** = how it *got here* (the ledgered
-journey, drawn) · `recap` = what happened *over time*, in prose. A river answers "where did
-we go sideways"; a recap answers "what happened"; feed a river's dead end to `/critic` and
-its rocks to `/refuter`. Run the scan at
-`/sessionend` so the next session's oracle opens on a current map; feed a suspicious cluster
-to `/critic`, a tangle to `/stepbystep`, and an unfamiliar corner to `/explainer`.
+work, drawn) · **`graph journey`** = how it *opens* (the router's own door, drawn) ·
+`recap` = what happened *over time*, in prose. A river answers "where did we go sideways";
+a journey answers "what do I type to get X, and what can I only reach by name"; a recap
+answers "what happened".
+
+- **`/refuter`** — a river's rocks, and every stone the river marks **rests-on-refuted**:
+  those are the live conclusions standing on ground a refutation already took out.
+- **`/critic`** — a river's dead ends, and a suspicious cluster in the file graph.
+- **`/eval`** — the journey draws the routing table; eval's ROUTER check *proves* it is
+  wired. A shape on the page and a passing ROUTER check are two different claims.
+- **`/doctor`** — a skill that stopped firing shows up on the journey as a missing arm or a
+  by-name-only band entry; doctor says whether the front matter is why.
+- **`/sessionend`** — run the scan so the next session's oracle opens on a current map.
+- **`/stepbystep`** for a tangle, **`/explainer`** for an unfamiliar corner.

@@ -23,6 +23,8 @@ The whole skill rests on one distinction: **[fact] vs [framing].**
 
 Facts get a source-map. Framing gets a list. Nothing gets invented.
 
+**Router shape:** `outbound`
+
 ## When to run
 
 - You have a suite dossier (research / decision / market / factcheck / recap / plan) and now
@@ -48,8 +50,10 @@ Facts get a source-map. Framing gets a list. Nothing gets invented.
 Three, and the second is the one people forget.
 
 **1 — The source (required).** Any of:
+- **the findings store** — `archive/findings.jsonl`, where decider / factcheck / researcher now
+  leave their **records**. This is the default source, and step 1 below starts there,
 - a path to a suite dossier (`research/…`, `decision/…`, `market-research/…`, `factcheck/…`,
-  `recap/…`, `action-plan/…`),
+  `recap/…`, `action-plan/…`) — the legacy estate, still fully supported,
 - a decision or recap written elsewhere,
 - pasted conclusions.
 
@@ -84,10 +88,44 @@ If the invocation includes `--quick` (or "quick", "just draft it", "no files"):
 
 ### 1 — Read the source and extract the claims, with labels
 
+**Start at the store.** decider and factcheck do not leave a dossier to open — they leave
+**records**. So the source inventory begins with a query, not a file hunt:
+
+```bash
+IDX="${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py"
+python3 "$IDX" track --json --status live --kind decision --root .   # the calls
+python3 "$IDX" track --json --status live --kind result   --root .   # what they concluded
+```
+
+`--kind` takes **one** kind per call — it is an enum, not a list — so that is **two calls**,
+not `--kind decision,result`. Union the two `records` arrays; that is the inventory. Add
+`--kind finding` when the draft needs the underlying evidence too, and `--session <s>` to scope
+it to one session's work. Each record hands you the claim (`statement`), its honesty labels
+(`evidence[].label`), the sources behind it (`evidence[].ref`), and its `id` — which is what
+the source-map cites.
+
+Three store rules that bind the draft:
+
+- **`--status live` is not optional.** It filters on the *effective* status, so a superseded or
+  refuted record never reaches the page. Drafting from a record the store has already retired
+  is how a retracted finding gets mailed to a board.
+- **A record whose `rests_on_refuted` is non-empty may not be stated as fact.** The record is
+  live, but a finding it links was refuted (`"rests_on_refuted": ["F-3"]`). Cut the claim, or
+  write it with the loss named — and put that in the framing list, never silently.
+- **`[model-opinion]` evidence is a judgment, never a source.** Attribute it as an opinion or
+  cut it; it may not be written as a fact about the world.
+
+The store is a finding aid, never a source: cite the record's evidence `ref`, and carry the
+record id so a reader can walk back to it. If there is no store in this repo, fall back to the
+dossier path or the pasted material — everything below is identical either way.
+
 Go through the source and pull out every claim the draft might use. For each one record:
 
 | Claim (as the source states it) | Label | Where in the source |
 |---|---|---|
+
+"Where in the source" is the record id (`F-12`) for a store record, and `path#heading` for a
+file — never "the dossier".
 
 Labels come from the source, not from you. The suite's labels are load-bearing:
 
@@ -121,13 +159,22 @@ format rather than silently overrunning.
 
 Both go in the background file. The source-map is the proof:
 
-| Draft sentence (first ~8 words) | Source line / claim | Label | Treatment |
+| Draft sentence (first ~8 words) | Source (`F-<n>` or path) | Label | Treatment |
 |---|---|---|---|
+| "We are moving the read path to Redis…" | `F-12` (decision) — "Pick Redis; the hinge is whether eviction is CI-verified." | [cited] · ev: `https://redis.io/docs/…` | stated as fact |
+| "Migration should land around mid-Q4…" | `F-9` (result) — "~6 engineer-weeks on current staffing." | [estimate] | hedged ("we estimate") |
+| "Support is 24/7 on Enterprise…" | `understanding/vendor-slaDossier.md#SLA` | [unverified] | dropped |
 
 **Every factual sentence in the deliverable appears in this table.** If a sentence is in the
 draft and not in the map, it came from nowhere — delete it or find its source. "Treatment"
 records what you did to the label: *stated as fact* (only [cited]), *hedged*, *dropped*,
 *attributed*.
+
+**The source column is a pointer someone can follow**: a record id (`F-12`) or a path with a
+heading, never "the dossier" or "the decision". A record id is the stronger citation — it
+carries its evidence refs and its effective status with it, so a reader can check both the
+claim and whether the store still stands behind it. A store-sourced row keeps the evidence
+`ref` beside the label, because the record is the finding aid and the `ref` is the source.
 
 The framing list is the honest half of the same page — one line per choice:
 
@@ -185,7 +232,8 @@ Finish by telling the owner where the file is and that they send it.
 
 Two files (or chat only under `--quick`):
 
-- **`draft/{slug}background.md`** — the working file: source inventory (with the
+- **`draft/{slug}background.md`** — the working file: source inventory (the `track` queries
+  actually run and the record ids they returned, or the dossier paths read, with the
   no-labels disclosure if it applies), the claims table with labels, the three-line audience
   brief, the chosen format + budget, the **framing decisions** list, and the **source-map**
   table at the bottom. Labels appear inline here.
@@ -201,7 +249,9 @@ Two files (or chat only under `--quick`):
 Run all five before handing over. Any failure is fixed, not noted.
 
 1. **No unlabeled fact crossed over.** Every factual sentence in the deliverable appears in the
-   source-map with a source line. Zero exceptions — walk the draft sentence by sentence.
+   source-map with a source line. Zero exceptions — walk the draft sentence by sentence. A
+   store-sourced sentence names its record id; no sentence rests on a record the store no
+   longer calls live, or on one flagged `RESTS-ON-REFUTED` without the loss named in the text.
 2. **No label was upgraded.** Each [estimate] in the map is hedged in the prose. Each
    [unverified] is dropped or hedged. Each [recall] is attributed or hedged. Re-read the
    deliverable *alone*, as the recipient — would you believe anything more firmly than the
@@ -225,6 +275,10 @@ Report, in this order:
 
 ### Chains
 
+- **archivist → draft** — the inventory is a query, not a file hunt: `index.py track --json
+  --status live --kind decision` then `--kind result` (one kind per call). The source-map cites
+  `F-<n>` ids, so a reader walks from a sentence in the email back to the record, its evidence
+  refs, and whether the store still calls it live.
 - **decider → draft** — make the call, then announce it. The canonical pair.
 - **researcher / marketresearcher / factcheck → draft** — findings → the update that carries
   them, labels intact.

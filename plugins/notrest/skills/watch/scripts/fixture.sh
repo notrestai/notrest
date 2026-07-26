@@ -199,6 +199,79 @@ EOF
   python3 "$WP" probe W6 --root "$R" > "$W/p6.txt" 2>&1
   t "an unresolvable finding id exits 2" "$?" "2"
   has "$W/p6.txt" "F-99 UNRESOLVED" "says which id could not be resolved"
+
+  # ── E · add --from-findings: the factcheck→watch handoff as one command ────────────
+  echo "── E · add --from-findings"
+  # Seeded with explicit ts so First verified is deterministic (and the rows fall due).
+  SEEDED=0
+  seed(){ python3 "$IDX" add --root "$R" --json "$(cat)" >/dev/null 2>&1 && SEEDED=$((SEEDED+1)); }
+  seed <<EOF
+{"ts":"2026-06-01T00:00:00Z","session":"fixture","skill":"factcheck","kind":"finding",
+ "statement":"The pricing page lists the on-demand rate.",
+ "evidence":[{"type":"url","ref":"$U/pricing.html","label":"cited"}],"relation":"toward"}
+EOF
+  seed <<EOF
+{"ts":"2026-06-01T00:00:00Z","session":"fixture","skill":"factcheck","kind":"result",
+ "statement":"Two independent registries agree on the state count.",
+ "evidence":[{"type":"url","ref":"$U/registry.html","label":"cited"},
+             {"type":"url","ref":"$U/pricing.html","label":"cited"}],"relation":"toward"}
+EOF
+  seed <<EOF
+{"ts":"2026-06-01T00:00:00Z","session":"fixture","skill":"researcher","kind":"finding",
+ "statement":"The pool ceiling is 32 by default.",
+ "evidence":[{"type":"path","ref":"src/pool.py:12","label":"cited"}],"relation":"toward"}
+EOF
+  seed <<EOF
+{"ts":"2026-06-01T00:00:00Z","session":"fixture","skill":"decider","kind":"decision",
+ "statement":"Ship the read path on the registry feed.",
+ "evidence":[{"type":"url","ref":"$U/registry.html","label":"cited"}],"relation":"toward"}
+EOF
+  seed <<EOF
+{"ts":"2026-06-01T00:00:00Z","session":"fixture","skill":"factcheck","kind":"finding",
+ "statement":"The vendor claims four nines of uptime.",
+ "evidence":[{"type":"url","ref":"$U/uptime.html","label":"cited"}],"relation":"toward"}
+EOF
+  t "seeded 5 more records through the store's own door" "$SEEDED" "5"
+  python3 "$IDX" refute F-6 --evidence "$U/outage-report.html" --root "$R" --session fixture \
+    >/dev/null 2>&1 && ok "refuted F-6 (its row must never be created)" || no "refute F-6 failed"
+
+  python3 "$WP" add --from-findings --root "$R" --today 2026-07-25 > "$W/add1.txt" 2>&1
+  t "add --from-findings exits 0" "$?" "0"
+  has "$W/add1.txt" "2 row(s) appended, 1 already watched, 4 left off (of 7 records)" \
+      "counts every record it read and appends only the watchable ones"
+  grep '^| W7 ' "$W/root/watch/watchlist.md" | grep -q 'F-2' \
+    && ok "W7 carries F-2 in the Source cell (the store keeps owning the URL)" || no "W7 wrong"
+  grep '^| W7 ' "$W/root/watch/watchlist.md" | grep -q 'weekly' \
+    && ok "one [cited] url -> weekly cadence" || no "W7 cadence wrong"
+  grep '^| W8 ' "$W/root/watch/watchlist.md" | grep -q 'monthly' \
+    && ok "two [cited] urls -> monthly cadence" || no "W8 cadence wrong"
+  grep '^| W7 ' "$W/root/watch/watchlist.md" | grep -q '2026-06-01' \
+    && ok "First verified is the record's own ts, not today" || no "W7 date wrong"
+  t "added exactly 2 rows (8 total)" "$(grep -c '^| W' "$W/root/watch/watchlist.md")" "8"
+  grep -q 'F-4 ' "$W/root/watch/watchlist.md" && no "a path-evidence record became a row" \
+    || ok "a record with no [cited] url is left off, not watched"
+  grep -q 'F-5 ' "$W/root/watch/watchlist.md" && no "a kind=decision record became a row" \
+    || ok "kind=decision is left off (rows come from finding|result)"
+  grep -q 'F-6 ' "$W/root/watch/watchlist.md" && no "a refuted record became a row" \
+    || ok "an effectively-refuted record is left off"
+  grep -q 'F-7 ' "$W/root/watch/watchlist.md" && no "the refute tombstone became a row" \
+    || ok "a status-flip tombstone is left off"
+  has "$W/add1.txt" "url evidence — nothing re-readable" "says why F-4 was left off"
+  has "$W/add1.txt" "not effectively live (refuted)" "says why F-6 was left off"
+  has "$W/add1.txt" "status-flip tombstone" "says why F-7 was left off"
+  has "$W/add1.txt" "already watched" "F-1 was already on the list — skipped, not duplicated"
+
+  BEFORE_ADD="$(cat "$W/root/watch/watchlist.md")"
+  python3 "$WP" add --from-findings --root "$R" --today 2026-07-25 > "$W/add2.txt" 2>&1
+  t "a second add exits 0 (idempotent)" "$?" "0"
+  has "$W/add2.txt" "0 row(s) appended, 3 already watched" "the second run appends nothing"
+  t "the second run changed no bytes" \
+    "$([ "$BEFORE_ADD" = "$(cat "$W/root/watch/watchlist.md")" ] && echo identical || echo mutated)" "identical"
+
+  python3 "$WP" due --root "$R" --today 2026-07-25 > "$W/due3.txt" 2>&1
+  t "the appended rows parse and fall due like any other" "$?" "3"
+  has "$W/due3.txt" "DUE  W7" "W7 is due (weekly, first verified 2026-06-01)"
+  has "$W/due3.txt" "via F-2" "due resolved the new row through the store"
 fi
 
 echo

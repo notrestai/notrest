@@ -118,7 +118,9 @@ chk "channels"         4 "$(val "$J" counts.channels)"
 chk "side channels"    3 "$(val "$J" counts.side_channels)"
 chk "merged back"      1 "$(val "$J" counts.merged)"
 chk "dead ends"        2 "$(val "$J" counts.dead_end)"
-chk "edges"           18 "$(val "$J" counts.edges)"
+chk "edges"           19 "$(val "$J" counts.edges)"
+# F-12 refutes F-3, and F-4 (live) cites F-3 — so F-4 stands on refuted ground.
+chk "rests on refuted" 1 "$(val "$J" counts.rests_on_refuted)"
 chk "coord lines"      6 "$(val "$J" counts.coord_lines)"
 chk "milestone flags"  4 "$(val "$J" counts.milestones)"
 chk "  ships"          2 "$(val "$J" counts.ships)"
@@ -151,7 +153,7 @@ for x in e: c[x["kind"]] = c.get(x["kind"],0)+1
 print(" ".join("%s=%d" % kv for kv in sorted(c.items())))
 PY
 )
-chk "edge kinds" "back=1 branch=3 flow=10 link=1 merge=1 refute=1 supersede=1" "$EK"
+chk "edge kinds" "back=1 branch=3 flow=10 link=1 merge=1 refute=1 rests=1 supersede=1" "$EK"
 
 # deterministic: the same inputs must render the same bytes
 cp "$OUT/river.html" "$TMP/first.html"; cp "$J" "$TMP/first.json"
@@ -209,6 +211,79 @@ chk "no invented supersessions" 0 "$(val "$CJ" counts.refuted)"
 if grep -q "COORD-only" "$TMP/co.html"; then ok "the page says it is a COORD-only river"
 else bad "degrade mode is not disclosed in the page"; fi
 mv "$TMP/parked.jsonl" "$R/archive/findings.jsonl"
+
+echo "── phase G: rests-on-refuted ───────────────────────────────────────────"
+# THE RULE (pinned, shared with archivist's track): a record that is itself LIVE
+# but whose links contain an effectively-refuted id stands on refuted ground.
+# One hop, not transitive. The refuter is not resting on what it refutes.
+#
+#   A-1  the ground                       (later refuted by the tombstone)
+#   B-1  decision citing A-1  BEFORE the tombstone   -> must flag
+#   T-1  the tombstone: refutes A-1                  -> must NOT flag (it is the refuter)
+#   B-2  decision citing A-1  AFTER  the tombstone   -> must flag
+#   C-1/C-2  the control pair: same shape, nothing refuted -> must NOT flag
+G="$TMP/ground"
+mkdir -p "$G/archive"
+cat > "$G/archive/findings.jsonl" <<'EOF'
+{"id":"A-1","ts":"2026-07-21T09:00:00Z","session":"lane-g","skill":"researcher","kind":"finding","ask":"what is the baseline","statement":"the baseline is 26,386 chars","evidence":[{"type":"command","ref":"first run","label":"cited"}],"relation":"toward","links":[],"status":"live"}
+{"id":"B-1","ts":"2026-07-21T09:30:00Z","session":"lane-g","skill":"decider","kind":"decision","ask":"do we trim on that baseline","statement":"yes — trim against the 26,386 figure","evidence":[{"type":"coord-line","ref":"COORD.md:2","label":"cited"}],"relation":"toward","links":["A-1"],"status":"live"}
+{"id":"T-1","ts":"2026-07-21T10:00:00Z","session":"lane-g","skill":"factcheck","kind":"finding","ask":"is the baseline real","statement":"refutes A-1: the first run counted the listing twice","evidence":[{"type":"command","ref":"re-run","label":"cited"}],"relation":"toward","links":["A-1"],"status":"live"}
+{"id":"B-2","ts":"2026-07-21T10:30:00Z","session":"lane-g","skill":"decider","kind":"decision","ask":"size the trim","statement":"trim sized against the 26,386 figure","evidence":[{"type":"command","ref":"sizing","label":"estimate"}],"relation":"toward","links":["A-1"],"status":"live"}
+{"id":"C-1","ts":"2026-07-21T11:00:00Z","session":"lane-g","skill":"researcher","kind":"finding","ask":"how many hooks fire per prompt","statement":"two hooks fire on UserPromptSubmit","evidence":[{"type":"path","ref":"hooks/hooks.json","label":"cited"}],"relation":"toward","links":[],"status":"live"}
+{"id":"C-2","ts":"2026-07-21T11:30:00Z","session":"lane-g","skill":"decider","kind":"decision","ask":"keep both hooks","statement":"yes — both stay, they are cheap","evidence":[{"type":"coord-line","ref":"COORD.md:5","label":"cited"}],"relation":"toward","links":["C-1"],"status":"live"}
+EOF
+
+python3 "$GRAPH" river --root "$G" --out "$TMP/ground.html" > "$TMP/g.out" 2>&1
+GX=$?
+GJ="$TMP/ground.json"
+if [ "$GX" -eq 0 ] && [ -f "$GJ" ]; then ok "rests-on-refuted river exits 0"
+else bad "rests river: exit $GX"; sed 's/^/      /' "$TMP/g.out"; fi
+
+chk "A-1 effective status" "refuted" "$(python3 -c "
+import json,sys
+print({x['id']:x for x in json.load(open(sys.argv[1]))['nodes']}['A-1']['effective'])" "$GJ")"
+chk "records resting on refuted ground" 2 "$(val "$GJ" counts.rests_on_refuted)"
+
+REST=$(python3 - "$GJ" <<'PY'
+import json,sys
+n = {x["id"]: x for x in json.load(open(sys.argv[1]))["nodes"]}
+print("B-1=%s B-2=%s T-1=%s C-2=%s" % (",".join(n["B-1"]["rests_on"]) or "-",
+      ",".join(n["B-2"]["rests_on"]) or "-", ",".join(n["T-1"]["rests_on"]) or "-",
+      ",".join(n["C-2"]["rests_on"]) or "-"))
+PY
+)
+chk "rests_on (both Bs flagged · refuter and control clean)" \
+    "B-1=A-1 B-2=A-1 T-1=- C-2=-" "$REST"
+
+REDGE=$(python3 - "$GJ" <<'PY'
+import json,sys
+e = [x for x in json.load(open(sys.argv[1]))["edges"] if x["kind"] == "rests"]
+print(json.dumps(sorted(e, key=lambda x: (x["from"], x["to"])), sort_keys=True))
+PY
+)
+chk "inbound rests edges A-1 -> B-1 / B-2, flagged" \
+    '[{"from": "A-1", "kind": "rests", "rests_on_refuted": true, "to": "B-1"}, {"from": "A-1", "kind": "rests", "rests_on_refuted": true, "to": "B-2"}]' \
+    "$REDGE"
+echo "      edge sample: $(printf '%s' "$REDGE" | cut -c1-78)"
+
+# the control pair must produce NO rests edge of any kind
+CEDGE=$(python3 - "$GJ" <<'PY'
+import json,sys
+e = json.load(open(sys.argv[1]))["edges"]
+print(sum(1 for x in e if x["kind"] == "rests" and x["to"] in ("C-2", "T-1")))
+PY
+)
+chk "control pair and the refuter draw no rests edge" 0 "$CEDGE"
+
+if grep -q "rests on refuted" "$TMP/ground.html"; then
+  ok "legend carries the 'rests on refuted' entry"
+else bad "legend entry 'rests on refuted' missing from the page"; fi
+if grep -q "RESTS-ON-REFUTED" "$TMP/ground.html"; then
+  ok "hover card says RESTS-ON-REFUTED <id>"
+else bad "the card never says RESTS-ON-REFUTED"; fi
+if grep -q "arc.rests{stroke:var(--rock);stroke-dasharray" "$TMP/ground.html"; then
+  ok "the rests edge is a dashed red arc (distinct from the rock glyph)"
+else bad "no dashed-red style for the rests edge"; fi
 
 echo "── phase E: the render gate (serve + HTTP 200) ─────────────────────────"
 if [ -x "$RC" ] || [ -f "$RC" ]; then

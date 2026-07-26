@@ -15,6 +15,8 @@ was asked, what was found, what it rests on, and how each step relates to the la
 
 Script: `scripts/index.py` (python3 stdlib, zero model tokens). Fixture: `scripts/fixture.sh`.
 
+**Router shape:** `prior-art`
+
 Store: **`archive/findings.jsonl`**, repo-root relative. One JSON record per line,
 **append-only**, written under an exclusive `flock`. Nothing in it is ever edited in place —
 not by a skill, not by the seat, not by this skill. **Never hand-edit it:** a correction is a
@@ -81,6 +83,25 @@ The last such tombstone in `ts` order wins. `--status live` filters on the *effe
 so a superseded record disappears from the live track while staying on disk, forever, with the
 record that replaced it.
 
+### RESTS-ON-REFUTED — the ground under a live record
+
+A tombstone flips **its target and nothing else**. Refute `F-3` and the `kind=decision` record
+whose `links` names `F-3` stays `live` — correctly, because only a tombstone flips a status —
+while the finding it was built on is gone. That is the store's quietest failure, so `track`
+says it out loud: **a live record whose `links` names an effectively-refuted id rests on
+refuted ground.**
+
+- **On the line:** a trailing ` · RESTS-ON-REFUTED F-3` (comma-joined when there are several).
+- **In `--json`:** `"rests_on_refuted": ["F-3"]` — present on **every** record, non-empty only
+  on an effectively-live one, so a consumer tests truthiness rather than membership.
+- **One hop**, through the links the record itself declares, resolved by the same link-walk as
+  the status. A record that is not effectively live is never flagged (its own status already
+  reports its footing), and a tombstone never rests on what it killed.
+
+The flag is a **dependency made visible, not a verdict**. It does not refute the record and it
+does not flip it: it says the evidence underneath moved, and leaves the judgment — does this
+decision survive the loss of that finding? — to the reader who has to make it.
+
 ## Commands
 
 **Write one record** (the sink every skill uses):
@@ -99,8 +120,10 @@ Prints the assigned id on success; exits 2 with the rule name on rejection. `--j
 - **Track:** `index.py track [--session S] [--kind K] [--status live] [--json] [--root .]` —
   the session's records in `ts` order, one compact line each:
   `id · kind · relation · statement-head · [labels]`, with ` · SUPERSEDED by F-n` inline on a
-  flipped record. `--json` is the machine surface (`graph` consumes it): every schema field
-  plus `effective_status` and `status_by`.
+  flipped record and ` · RESTS-ON-REFUTED F-n` on a live one whose footing was refuted.
+  `--json` is the machine surface (`graph` consumes it): every schema field plus
+  `effective_status`, `status_by`, and `rests_on_refuted`. `--kind` takes **one** kind per
+  call (chain two calls for two kinds); `--session`, `--status`, and `--kind` compose.
 - **Flip:** `index.py supersede F-3 --by F-9 [--note "…"]` ·
   `index.py refute F-3 --evidence <url|path> [--type …] [--label …]`.
 - **Search:** `index.py find "<term>" [--root .]` — matches statements and asks in the store,
@@ -110,7 +133,8 @@ Prints the assigned id on success; exits 2 with the rule name on rejection. `--j
   `*Dossier.md` and REPLACES `oracle-index.md`, adding one pointer entry each for the findings
   store, `COORD-AGENTS.md`, and `compile/candidates.md`. Idempotent; run it freely.
 - **Prove it:** `bash scripts/fixture.sh` — every kind lands, every rule turns its record away
-  with exit 2, the track round-trips, the flips resolve, `find` sees bodies. Exit 0 = green.
+  with exit 2, the track round-trips, the flips resolve, a decision linking a refuted finding
+  is flagged while its un-refuted control is not, `find` sees bodies. Exit 0 = green.
 
 ## The legacy estate stays readable
 
@@ -132,6 +156,9 @@ you `grep` the real file, and from a hit you read the transcript before citing i
 3. **Answer "what do we know about X"** from `find` + `track`, with labels and dates intact.
 4. **Correct by appending.** Wrong record? `supersede` it with the better one. Contradicted by
    evidence? `refute` it with the ref. Never delete, never rewrite.
+5. **Re-read the track after a refute.** Anything now carrying `RESTS-ON-REFUTED` is a live
+   record whose footing moved — say which, and either revisit it or state why it still stands.
+   A refutation nobody propagated is a refutation the project never actually absorbed.
 
 ## Honesty rules
 
@@ -151,6 +178,8 @@ you `grep` the real file, and from a hit you read the transcript before citing i
 - Each statement reads alone, in 1–3 sentences, with its evidence attached.
 - Corrections went in as `supersede`/`refute` tombstones; nothing on disk was edited in place.
 - Anything told to the user came from a record or dossier actually opened this turn.
+- No record carrying `RESTS-ON-REFUTED` was reported as a live finding without that flag being
+  said out loud — the flag travels with the record, the way a label does.
 - If a legacy dossier landed this session, `scan` ran after it.
 
 ## Finishing up

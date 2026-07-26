@@ -4,6 +4,12 @@ and the atomic drift-log write. The model is left with the only job that needs a
 (judging a page that actually CHANGED); everything else resolves at zero model tokens.
 
 Subcommands:
+  add   --from-findings [--root .] [--cadence C] [--today YYYY-MM-DD]
+        build watchlist rows straight from the archivist's findings store: every
+        effectively-live finding|result carrying [cited] url evidence becomes a row
+        (Source = F-<id>, so the store keeps owning the URL). Idempotent — a record any
+        row already names is skipped, and what was left off says why. exit 0.
+
   due   [--root .] [--today YYYY-MM-DD]
         parse watch/watchlist.md, print the rows whose cadence has come round.
         exit 3 = something is due (branch here in a hook) · 0 = nothing due.
@@ -240,6 +246,135 @@ def ensure_hash_column(path, lines, rows):
     write_lines(path, out)
     _p, lines2, rows2 = parse_watchlist(path.parent.parent)
     return lines2, rows2, True
+
+
+# ── add --from-findings ─────────────────────────────────────────────────────
+# The factcheck→watch handoff as one command instead of a retyping job. The store
+# already holds what was found and what it rests on; a watch row is that record plus a
+# clock. Rows are BUILT from the record, never invented — and a column the store does
+# not have (Tier) is left empty rather than guessed.
+WATCH_ID_RE = re.compile(r"^\s*W(\d+)\s*$", re.I)
+# Mirrors the archivist's tombstone grammar (index.py TOMB_RE). A status flip is
+# bookkeeping about the store, not a claim about the world, so it is never watched.
+TOMBSTONE_RE = re.compile(r"^(supersedes|refutes)\s+F-\d+\b", re.I)
+ADD_KINDS = ("finding", "result")
+COLS = ["ID", "Claim (verbatim)", "Source", "Tier", "First verified", "Last checked",
+        "Status", "Cadence", "Hash"]
+WATCHLIST_HEAD = [
+    "# watchlist — facts under watch",
+    "> Rows are APPENDED. Only `Last checked` and `Status` are edited in place, by `/watch run`.",
+    "> Never delete a row — retire it by setting Cadence to `retired`. IDs are never reused.",
+    "> Status: HOLDS · DRIFTED · DEAD-SOURCE · UNVERIFIABLE.",
+    "> Cadence: weekly · monthly · quarterly · on-demand · retired.",
+    "> A `|` inside a claim is escaped as `&#124;` so the row still parses.",
+]
+
+
+def cadence_for(n_cited):
+    """Default cadence by how many re-readable [cited] urls the record carries: a claim
+    standing on one page is one edit away from being wrong (weekly); corroboration buys
+    time. Overridable per run with --cadence."""
+    return {1: "weekly", 2: "monthly"}.get(n_cited, "quarterly")
+
+
+def watchable(rec):
+    """(url, n_cited, reason) — reason is '' when the record can become a row. The
+    filter is the watch law, not a preference: a claim with no re-readable source
+    cannot be watched, and a record the store no longer calls live is not a claim this
+    project is leaning on."""
+    status = rec.get("effective_status") or rec.get("status") or "live"
+    if status != "live":
+        return "", 0, "not effectively live (%s)" % status
+    if rec.get("kind") not in ADD_KINDS:
+        return "", 0, "kind=%s (rows come from %s)" % (rec.get("kind"), "|".join(ADD_KINDS))
+    if TOMBSTONE_RE.match(rec.get("statement", "") or ""):
+        return "", 0, "a status-flip tombstone, not a claim about the world"
+    urls = [str(e.get("ref", "")).strip() for e in (rec.get("evidence") or [])
+            if e.get("type") == "url" and e.get("label") == "cited"
+            and str(e.get("ref", "")).strip()]
+    if not urls:
+        return "", 0, "no [cited] url evidence — nothing re-readable to watch"
+    return urls[0], len(urls), ""
+
+
+def claim_cell(rec):
+    """The statement verbatim, made safe for a markdown row. Never paraphrased — a
+    paraphrase is not the claim the project is leaning on."""
+    return '"%s"' % " ".join((rec.get("statement") or "").split()).replace("|", "&#124;")
+
+
+def fid_num(fid):
+    m = FINDING_RE.search(fid or "")
+    return int(m.group(1)) if m else 0
+
+
+def cmd_add(a):
+    if not a.from_findings:
+        die("add builds rows from the findings store: watch.py add --from-findings "
+            "[--root .]. Rows from a dossier or from pasted claims are written by the "
+            "model against the table contract in SKILL.md.")
+    recs, why = findings(a.root)
+    if not recs:
+        die("nothing to add — %s" % (why or "the findings store holds no records"))
+
+    p = wdir(a.root) / "watchlist.md"
+    if p.exists():
+        p, lines, rows = parse_watchlist(a.root)
+    else:
+        lines, rows = list(WATCHLIST_HEAD), []
+
+    # Idempotence: a record already named by ANY row — in its Source cell or its `##`
+    # subject — is already watched. Re-running add is a no-op, not a duplicate row.
+    watched, top = {}, 0
+    for r in rows:
+        for m in FINDING_RE.finditer("%s %s" % (r.get("source"), r.section or "")):
+            watched.setdefault("F-%s" % m.group(1), r.id)
+        m = WATCH_ID_RE.match(r.id or "")
+        if m:
+            top = max(top, int(m.group(1)))
+
+    when, new, skipped, left = str(today(a)), [], [], []
+    for fid in sorted(recs, key=fid_num):
+        rec = recs[fid]
+        url, n_cited, reason = watchable(rec)
+        if reason:
+            left.append((fid, reason))
+            continue
+        if fid in watched:
+            skipped.append((fid, watched[fid]))
+            continue
+        top += 1
+        wid = "W%d" % top
+        # First verified is the record's own ts — the date the finding was written, not
+        # today. Last checked starts equal to it, so the cadence runs from the finding.
+        first = (rec.get("ts") or "")[:10] or when
+        cad = a.cadence or cadence_for(n_cited)
+        # Status HOLDS is the honest carry-over of the store's [cited] label, never a
+        # fresh verification: watch has not re-read anything yet. The first `/watch run`
+        # is what earns the next status.
+        new.append((wid, fid, url, cad,
+                    [" %s " % wid, " %s " % claim_cell(rec), " %s " % fid, " - ",
+                     " %s " % first, " %s " % first, " HOLDS ", " %s " % cad, "  "]))
+
+    if new:
+        block = ["", "## findings store · added %s" % when,
+                 "| " + " | ".join(COLS) + " |",
+                 "|" + "|".join("-" * (len(c) + 2) for c in COLS) + "|"]
+        block += ["|" + "|".join(cells) + "|" for _w, _f, _u, _c, cells in new]
+        p.parent.mkdir(parents=True, exist_ok=True)
+        write_lines(p, list(lines) + block)
+
+    for wid, fid, url, cad, _cells in new:
+        print("ADD   %-4s %-6s %-10s %s" % (wid, fid, cad, url))
+    for fid, wid in skipped:
+        print("SKIP  %-4s %-6s already watched — nothing appended" % (wid, fid))
+    # Never dropped silently: every record this run left off says why.
+    for fid, reason in left:
+        print("LEFT  %-11s %s" % (fid, reason))
+    print("watch: add --from-findings — %d row(s) appended, %d already watched, "
+          "%d left off (of %d record%s) · %s"
+          % (len(new), len(skipped), len(left), len(recs),
+             "" if len(recs) == 1 else "s", p))
 
 
 # ── due ─────────────────────────────────────────────────────────────────────
@@ -525,6 +660,11 @@ def main():
     ap = argparse.ArgumentParser(description="watch — due computation, source probing, "
                                              "and the atomic drift-log write")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    ad = sub.add_parser("add"); ad.add_argument("--root", default=".")
+    ad.add_argument("--from-findings", action="store_true", dest="from_findings")
+    ad.add_argument("--cadence", default="",
+                    choices=[""] + sorted(set(CADENCE_DAYS) | {"on-demand", "retired"}))
+    ad.add_argument("--today"); ad.set_defaults(f=cmd_add)
     d = sub.add_parser("due"); d.add_argument("--root", default=".")
     d.add_argument("--today"); d.set_defaults(f=cmd_due)
     pr = sub.add_parser("probe"); pr.add_argument("row_id")

@@ -1,13 +1,15 @@
 ---
 name: stepbystep
-description: Turn a goal + documents into a dependency-ordered, stress-tested action plan with a per-step "done when" check and honest confidence scores, refined by a research→critique loop until it converges (hard cap 5 rounds) — producing a background doc + executable plan dossier (or --quick). Use on /stepbystep or asks for a step-by-step / action plan, "how do I do X", a checklist or playbook, or "turn this into a plan I can execute" — technical or not.
+description: Turn a goal + documents into a dependency-ordered, stress-tested action plan with a per-step "done when" check and honest confidence scores, refined by a research→critique loop until it converges (hard cap 5 rounds) — landing a decision record + [ONE-WAY] findings (or --quick). Use on /stepbystep or asks for a step-by-step / action plan, "how do I do X", a checklist or playbook, or "turn this into a plan I can execute" — technical or not.
 ---
 
 # Step By Step
 
-Turns a goal plus its supporting documents into an action plan that is (a) correctly **ordered** by dependency, (b) **verifiable** step by step, (c) **stress-tested** before you execute it, (d) **deep-researched and iteratively refined until the findings stabilise**, and (e) honestly **confidence-scored**. An initial plan is built over six passes, then a deep-research → critique → redraft loop runs until it **converges** — until a fresh iteration stops surfacing new findings and reproduces the prior plan. The output is just **two files** — a consolidated background document and a final, conclusive executable plan, chosen as the best achievable from the documents provided at the prompt stage.
+Turns a goal plus its supporting documents into an action plan that is (a) correctly **ordered** by dependency, (b) **verifiable** step by step, (c) **stress-tested** before you execute it, (d) **deep-researched and iteratively refined until the findings stabilise**, and (e) honestly **confidence-scored**. An initial plan is built over six passes, then a deep-research → critique → redraft loop runs until it **converges** — until a fresh iteration stops surfacing new findings and reproduces the prior plan. The output is the converged plan, delivered in chat, plus **validated records** in the archivist store: one `kind=decision` for the plan shape it settled on — the riskiest dependency named as the hinge — and one `kind=finding` per `[ONE-WAY]` step the sequencing exposed. The passes are the working-out; the records are what a later session, or `/actionplan`, can act on.
 
 This skill produces a plan to inform and guide action; it is not professional advice. For high-stakes domains — medical, legal, financial, structural/electrical/gas, or anything where a mistake causes injury, legal exposure, or large loss — the plan must explicitly route the risky steps to a qualified professional rather than substitute for one.
+
+**Router shape:** `planning`
 
 ## The prompt & documents
 
@@ -17,20 +19,25 @@ If no documents are attached and the goal is thin, ask exactly one clarifying qu
 
 ## Quick mode (`--quick`)
 If the invocation includes `--quick` (or a clear equivalent — "quick", "brief", "no files", "just the summary"), run lightweight instead of the full workflow:
-- **No files.** Write nothing to disk — no background, no dossier. Skip the "Setup & output files" step entirely.
+- **No records.** Write nothing to the store. Skip the "Setup & output" step entirely.
 - **Reason, compressed.** Still work through this skill's core logic and search where it normally would, but skip the full multi-pass write-up.
 - **Output in chat only:** the **Read Me First** block this skill defines (the plain-language gist), then a short summary (a few sentences or bullets). No sources/reference list.
-- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not fully sourced or saved; run again without `--quick` for the verifiable two-file version."*
+- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not sourced into the store; run again without `--quick` for the recorded, verifiable version."*
 Quick mode is for fast exploration, not deliverables.
 
-## Setup & output files
+## Setup & output — the findings store
 
-Derive a `{topic}` slug from the goal: lowercase, hyphen-joined, punctuation stripped, max ~50 chars (e.g. "migrate our app database to Postgres" → `migrate-app-database-to-postgres`). Create an `action-plan/` directory and write exactly two files:
+**No action-plan folder. No two-file write.** The converged plan is delivered in chat (the shape is below); what lands is **records** appended to the archivist store (`archive/findings.jsonl`, append-only, validated at the door): one `kind=finding` per `[ONE-WAY]` step, and one `kind=decision` for the plan shape, written last. The passes and the refinement loop below still run in full — they are what earns a sequence; they just do not land as files.
 
-- **`action-plan/{topic}background.md`** — every pass plus all refinement iterations, as sections within this one document.
-- **`action-plan/{topic}Dossier.md`** — the final executable action plan.
+The sink:
 
-If those files already exist from a prior run, suffix the topic with `-2` (then `-3`, etc.) so you never overwrite previous work.
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{…}'
+```
+
+(Loose install: `../archivist/scripts/index.py` relative to this skill folder.) It prints the assigned `F-<n>` on success and **exits 2 naming the rule** on rejection — a decision with an empty evidence list, or a `[cited]` url that is not a URL, does not enter the store. Fix the record, re-run; never hand-append to the JSONL.
+
+**Consult the store first.** Run one `index.py find "<goal>"` before Pass 1: a prior `kind=decision` on this same goal means offer *reuse* / *extend* / *fresh* — and if this run lands on a different plan shape, that is a `supersede`, not a second plan left lying beside the first.
 
 Web search/fetch may help for steps that depend on current facts (versions, prices, procedures, regulations). Use them when the plan's correctness turns on something that could be out of date, and label what you found.
 
@@ -48,24 +55,21 @@ A confident-sounding plan that's wrong is dangerous — someone acts on it. Thes
   - **Low** — rests on an unresolved blocking unknown, is irreversible/high-cost, needs unconfirmed expertise, or leans on a shaky assumption.
   - Every **Low** step must carry a mitigation: resolve-first, test/spike, checkpoint, or expert sign-off. State what would raise the score.
 
-## The six passes — all written into `action-plan/{topic}background.md`
+## The six passes — the reasoning that earns the records
 
-Run all passes in order as sections of the single background document:
+Run all passes in order, in full, as working prose in the session. The records land late — a `[ONE-WAY]` step is only worth recording once the refinement loop has stopped moving it:
 
-```markdown
-# <Goal, as a title> — Action Plan Background
-> Working document. Initial build (Passes 1–6), then the refinement loop (Passes 7–8) iterated to convergence, then conclude. The executable plan lives in {topic}Dossier.md.
-
-## Pass 1 — Understand (goal, situation, task-type)
-## Pass 2 — Unknowns & assumptions
-## Pass 3 — Decompose & sequence
-## Pass 4 — Per-step validation
-## Pass 5 — Stress-test (dry-run / pre-mortem / red-team)
-## Pass 6 — Risk, contingency & confidence    ← produces Candidate Plan v1
-## Pass 7 — Deep research per step             ┐ repeat 7→8,
-## Pass 8 — Critic & redraft (v2, v3, …)       ┘ checking convergence each loop
-## Iteration log — v1 → v2 → … (deltas + convergence check per round)
-## Pass 9 — Conclude (the converged / capped-best plan)
+```
+Pass 1 — Understand (goal, situation, task-type)  → (reasoning — said vs assumed)
+Pass 2 — Unknowns & assumptions                   → (reasoning — blocking vs not)
+Pass 3 — Decompose & sequence                     → (reasoning — deps, critical path, [ONE-WAY] tags)
+Pass 4 — Per-step validation                      → (reasoning — every "done when")
+Pass 5 — Stress-test (dry-run/pre-mortem/red-team)→ (reasoning — what broke, what changed)
+Pass 6 — Risk, contingency & confidence           → Candidate Plan v1
+Pass 7 — Deep research per step                   ┐ repeat 7→8, checking convergence each loop
+Pass 8 — Critic & redraft (v2, v3, …)             ┘ (keep the iteration log: deltas per round)
+Pass 9 — Conclude                                 → records: kind=finding per surviving [ONE-WAY] step
+                                                    record:  kind=decision — the plan shape, hinge inside
 ```
 
 Passes 1–6 are detailed below exactly as before; Passes 7–9 add the iterative deep-research-and-critique engine.
@@ -138,16 +142,16 @@ After each redraft, run the **convergence check**:
 
 Guardrails so the loop always terminates:
 - **Hard cap: 5 iterations** by default (the user may request fewer, e.g. "max 3"). Most goals converge in 2–4.
-- If the cap is reached **without** convergence, stop anyway, finalise the best plan so far, and state plainly in the dossier that it did **not** fully stabilise and which parts are still moving.
+- If the cap is reached **without** convergence, stop anyway, finalise the best plan so far, and state plainly — in the delivered plan *and* inside the decision record's statement — that it did **not** fully stabilise and which parts are still moving.
 - **Each iteration must narrow,** not widen. If iterations keep expanding scope, the goal or documents are underspecified — stop looping and surface the blocking unknowns instead.
-- **Oscillation guard:** if a redraft reverts toward a version you already produced (the plan is flip-flopping A→B→A rather than settling), stop iterating — this is not non-convergence to push through, it means two defensible answers exist. Present both as viable approaches with their tradeoff in the dossier rather than burning iterations bouncing between them.
+- **Oscillation guard:** if a redraft reverts toward a version you already produced (the plan is flip-flopping A→B→A rather than settling), stop iterating — this is not non-convergence to push through, it means two defensible answers exist. Present both as viable approaches with their tradeoff in the delivered plan, and land them as one `kind=conflict` record, rather than burning iterations bouncing between them.
 
 ### Pass 9 — Conclude
-Lock the converged (or capped-best) candidate as the final plan. Record how many iterations it took, whether it **converged or hit the cap**, and what stabilised. This is the conclusive plan — the best achievable from the documents available at the prompt stage — and it is what the dossier renders.
+Lock the converged (or capped-best) candidate as the final plan. Record how many iterations it took, whether it **converged or hit the cap**, and what stabilised. This is the conclusive plan — the best achievable from the documents available at the prompt stage — and it is what the delivered plan renders and what the `kind=decision` record fixes.
 
-## The dossier — `action-plan/{topic}Dossier.md`
+## The plan — delivered in chat
 
-Write this **after** the background doc is complete, so it renders the **converged** plan from the refinement loop (Passes 7–9). It's the self-contained, executable plan — a doer should be able to act from this file alone. Synthesize; don't paste the passes in. Keep labels and confidence intact. **Read Me First and At-a-Glance up top, then Before You Start, then The Plan.**
+Deliver it **after** Pass 9, so it renders the **converged** plan from the refinement loop (Passes 7–9). It's the self-contained, executable plan — a doer should be able to act from this message alone. Synthesize; don't paste the passes in. Keep labels and confidence intact. **Read Me First and At-a-Glance up top, then Before You Start, then The Plan.**
 
 ```markdown
 # <Goal, as a title> — Action Plan
@@ -160,9 +164,7 @@ Plain-language, no jargon. 3–5 bullets a busy person can skim in 20 seconds.
 - **The catch:** <the single biggest risk or unknown to watch>
 - **Before you dive in:** <the one thing to sort out first, if any>
 
-**How this is laid out — two files:**
-- **`{topic}background.md`** — all the working-out: understanding, unknowns, sequencing, validation, the stress-test, the per-step deep research, and every refinement round (v1 → vN). Read this for the *why* behind the steps.
-- **`{topic}Dossier.md`** (this file) — the plan to execute. Sections: **At a Glance**, **Before You Start**, **The Plan** (ordered phases, each step with a "done when" check), **Checkpoints**, **If Things Go Wrong**, **Confidence**, **Sources**.
+**What lands where:** the working-out — understanding, unknowns, sequencing, the stress-test, the per-step deep research, every refinement round (v1 → vN) — stays in this session as prose; the plan below is what you execute; the store keeps the shape decision and every `[ONE-WAY]` step (`index.py track --kind decision`). Sections here: **At a Glance**, **Before You Start**, **The Plan** (ordered phases, each step with a "done when" check), **Checkpoints**, **If Things Go Wrong**, **Confidence**, **Sources**.
 
 ---
 
@@ -215,11 +217,54 @@ Ordered phases. Show dependencies and what can run in parallel. Where the path f
 > 4. **Switch the application's connection string to the Postgres primary and deploy.** Done when: the app boots, health checks pass, and a read-and-write smoke test against three core tables succeeds. [ONE-WAY] (rolling back means re-syncing rows written after cutover) · [high-risk] · confidence [M] — rises to [H] once the dry-run cutover in staging has passed.
 >    - depends on: replication lag under 1s (step 3); maintenance window announced (step 1).
 
+## The output — the records
+
+**One `kind=finding` per `[ONE-WAY]` step, then one `kind=decision` for the plan shape.** Write them after Pass 9, so they carry the convergence: recording a step the loop is still moving is recording a draft.
+
+- **Each `[ONE-WAY]` step that survived to the final plan:** `kind=finding`, `relation=toward` — the statement says what becomes irreversible, its "done when", and the rollback (or the explicit "cannot be undone"). These are the steps a doer cannot take back, so they are the ones worth finding a year later.
+- **The plan shape:** `kind=decision`, `relation=toward`, written last. The statement carries the approach in one line, the confidence, whether it **converged after N iterations or hit the cap**, and **the hinge — the riskiest dependency**: the one thing that, if it fails or turns out false, re-sequences the whole plan. A plan recorded without its hinge is a plan nobody can audit when it breaks. `links` names the `[ONE-WAY]` records it rests on.
+- **An approach the critic killed mid-loop:** `kind=backtrack`, `relation=back` — the v1 that lost to v3 is a finding.
+- **Two defensible plans the oscillation guard exposed:** `kind=conflict`, `relation=lateral` — both approaches with their tradeoff, never a coin-flip presented as a decision.
+- **A prior plan for this goal that this run replaces:** `index.py supersede F-<old> --by F-<new>`.
+
+### The snippet, filled
+
+*(The same Postgres cutover, recorded.)*
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "session":"stepbystep-2026-07-25",
+  "skill":"stepbystep",
+  "kind":"finding",
+  "ask":"migrate the production database to PostgreSQL",
+  "statement":"[ONE-WAY] Phase 2 step 4 — switching the app connection string to the Postgres primary. Done when: app boots, health checks pass, read-and-write smoke test across three core tables succeeds. Rolling back means re-syncing every row written after cutover, so the rollback is a restore, not an undo. Confidence M, rises to H once the staging dry-run cutover passes.",
+  "evidence":[{"type":"path","ref":"docs/migration-brief.md","label":"cited"},
+              {"type":"command","ref":"psql -c \"SELECT pg_last_wal_receive_lsn()\"","label":"estimate"},
+              {"type":"url","ref":"https://www.postgresql.org/docs/current/logical-replication.html","label":"cited"}],
+  "relation":"toward",
+  "links":[]}'
+```
+
+Then the decision record, last, with the hinge inside it:
+
+```bash
+… add --root . --json '{"session":"stepbystep-2026-07-25","skill":"stepbystep","kind":"decision",
+  "ask":"migrate the production database to PostgreSQL",
+  "statement":"Plan shape: logical-replication cutover in a 20-minute window, 4 phases, 2 [ONE-WAY] doors — chosen over dump-and-restore (8h downtime) and dual-write (2 weeks of app work). Converged after 3 refinement rounds; confidence M. THE HINGE — the riskiest dependency: replication lag holding under 1s at production write volume. If it does not, the whole sequence reverts to dump-and-restore with a maintenance window, so prove the lag in staging before Phase 2.",
+  "evidence":[{"type":"path","ref":"docs/migration-brief.md","label":"cited"},
+              {"type":"command","ref":"pgbench -c 32 -T 300 staging","label":"estimate"}],
+  "relation":"toward","links":["F-71","F-72"]}'
+```
+
+Each `add` prints its `F-<n>`. A non-zero exit means the record was turned away with its rule named — fix it and re-run.
+
 ## Self-check before finishing
-Before declaring done, verify the dossier and fix any miss:
+Before declaring done, verify the records and fix any miss:
+- **Records validated at the door (`add` exited 0)** — every id was printed by the script, nothing hand-appended.
 - Every step has a concrete "done when…" verification — no unverifiable steps.
 - Dependencies are stated; no step needs an output a later step produces (re-run the dry-run mentally).
-- Every [ONE-WAY] step has a rollback note or an explicit "cannot be undone" warning.
+- Every [ONE-WAY] step has a rollback note or an explicit "cannot be undone" warning — and its own `kind=finding` record.
+- **The hinge is in the `kind=decision` statement**, named as the riskiest dependency, with the convergence status beside it.
 - Every Low-confidence step has a mitigation and what would raise it.
 - High-stakes steps are flagged [needs expert] rather than given false DIY authority.
 - Convergence status is stated (converged after N, or capped and still moving on X).
@@ -227,7 +272,7 @@ Before declaring done, verify the dossier and fix any miss:
 
 ## Finishing up
 
-Write `{topic}background.md` first (the six build passes plus every refinement round), then `{topic}Dossier.md`. Give the user a short chat summary: the goal, the overall confidence, **how many iterations it took to converge (or that it hit the cap)**, the single biggest risk, and the paths to both files — point them to the dossier as the thing to execute from. Don't paste the files into chat. Offer to dig deeper on any pass, to expand any phase into finer steps — or to chain onward: `/actionplan` to turn the dossier into a copy-paste runbook, `/critic` to attack the plan before executing it.
+Run the passes and the refinement loop, deliver the converged plan in chat in the shape above, then emit the `[ONE-WAY]` records and the `kind=decision` last. Close with the goal, the overall confidence, **how many iterations it took to converge (or that it hit the cap)**, the single biggest risk, and the record ids — plus `index.py track --kind decision` as the one command that shows every plan shape this project has settled on. Offer to dig deeper on any pass, to expand any phase into finer steps — or to chain onward: `/actionplan` to turn the decision record into a copy-paste runbook, `/critic` to attack the plan before executing it.
 
 ## Notes on tone and rigor
 
@@ -238,4 +283,4 @@ Write `{topic}background.md` first (the six build passes plus every refinement r
 - Sequencing is the value. If you're unsure of an ordering dependency, say so rather than guessing confidently.
 - A plan that's mostly checkpoints and contingencies for a risky task is a *good* plan, not an over-cautious one.
 - It's valid to conclude "this isn't ready to plan yet — resolve these blocking unknowns first," and hand back the unknowns instead of a shaky plan.
-- If a pass produces little, say so honestly in the background doc rather than padding it.
+- If a pass produces little, say so honestly in the session and write no record for it — padding the store is worse than a thin track.

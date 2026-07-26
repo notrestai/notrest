@@ -14,7 +14,12 @@ having to ask for it.
 
 The other half of "on the fly" is *reliability*: a generated game that throws a
 console error on load is worse than useless because the user can't debug it. So
-this skill always **runs the game before handing it over** and fixes what it finds.
+this skill always **runs the game before handing it over** and fixes what it finds
+— and when the playtest comes back green, that green is banked as a record in the
+archivist store, with the screenshot and the invocation as its evidence. "I ran it"
+is a claim; a `kind=result` record carrying the exit-0 command is a receipt.
+
+**Router shape:** none (invoked by name)
 
 ## The workflow
 
@@ -59,7 +64,9 @@ start coding is the most common way games come out mediocre.
    `GAMEFORGE_SMOKETEST` auto-quit hook (see `references/pygame.md` — the template
    already has it) and run headless with `SDL_VIDEODRIVER=dummy` to confirm the
    loop, update, and render all execute without crashing. Do not deliver a game
-   you have not run.
+   you have not run. **When the playtest exits 0, write the record** (see "The
+   receipt" below) — never before, and never on a run you patched afterwards
+   without re-running.
 
 7. **Deliver as one self-contained file.** Browser games ship as a single `.html`
    with all CSS/JS inline and no external CDNs or asset URLs — this is what makes
@@ -112,6 +119,42 @@ game-loop, juice, and audio references are genre-agnostic and enough to build fr
 - **Genre mechanics:** `references/genres/*.md`
 - **Starter code:** `assets/engine.html`, `assets/engine.py`
 - **Verify it runs:** `scripts/playtest.mjs`
+
+## The receipt — one record when the playtest goes green
+
+A green playtest is the only evidence this skill produces, so it gets written down.
+After `playtest.mjs` (or the pygame smoketest) **exits 0**, append one `kind=result`
+record to the archivist store (`archive/findings.jsonl`, append-only, validated at
+the door):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "session":"game-forge-2026-07-25",
+  "skill":"game-forge",
+  "kind":"result",
+  "ask":"make a little game about a cat dodging rain",
+  "statement":"Shipped rain-dodger.html — single-file HTML5 canvas: fixed-timestep loop, pointer + keyboard input, WebAudio blip per dodge, screen shake and particles on a hit. Playtest exited 0 with no console or page errors, and the screenshot shows the cat, four raindrops mid-fall and a live score — not a blank canvas. Untested: mobile Safari, which the headless run does not cover.",
+  "evidence":[{"type":"command","ref":"node scripts/playtest.mjs rain-dodger.html --keys Space,ArrowLeft","label":"cited"},
+              {"type":"path","ref":"rain-dodger.playtest.png","label":"cited"},
+              {"type":"path","ref":"rain-dodger.html","label":"cited"}],
+  "relation":"toward",
+  "links":[]}'
+```
+
+(Loose install: `../archivist/scripts/index.py` relative to this skill folder.) The
+rules that matter here:
+
+- **The command and the screenshot are both evidence.** `type=command` is the
+  invocation that exited 0; `type=path` is the screenshot you actually looked at.
+  A record without the screenshot is "it ran"; with it, it's "it rendered".
+- **Say what you did not test.** Mobile browsers, gamepads, long sessions — the
+  headless playtest covers none of them. That belongs in the statement, not in the
+  user's first bug report.
+- **A failed playtest is not a record — it's a fix.** Only exit 0 earns the write;
+  if you patched the game after the green run, re-run it and record the new one.
+- `add` prints the assigned `F-<n>` and **exits 2 naming the rule** on rejection —
+  an empty evidence list, or a `[cited]` url that isn't a URL, does not enter the
+  store. Fix the record, re-run; never hand-append to the JSONL.
 
 ## Anti-patterns to avoid
 

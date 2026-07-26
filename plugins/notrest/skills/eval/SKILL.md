@@ -12,6 +12,10 @@ python3 plugins/notrest/skills/eval/scripts/eval.py check --root .
 That is the whole ship gate. Add `--json` for machine output. Exit **0** all pass ·
 **5** warnings only · **6** any FAIL · **2** usage.
 
+**Router shape:** `law-check` — the UserPromptSubmit router (`hooks/router.sh`) nudges a
+prompt here when it looks like *"check the laws"* or *"conformance check"*. *"health check"*
+is a different shape and goes to `/doctor`: doctor checks the INSTALL, eval checks the LAWS.
+
 ## The doctrine: check the fingerprint, not the behavior
 
 **A law that is well-encoded leaves a static fingerprint in the shipped text.** If the
@@ -30,7 +34,7 @@ model-last — the model is the *last* instrument you reach for, not the first.
 Every check names the law it guards, cites the **file and line** it judged, and carries
 a fix hint. A finding you cannot act on is a bug in this skill.
 
-## The ten checks
+## The twelve checks
 
 | Check | The law |
 |---|---|
@@ -44,6 +48,8 @@ a fix hint. A finding you cannot act on is a bug in this skill.
 | `SAFETY-LAWS` | draft: *a draft is never sent*. watch: *a dead source is never a refutation*. compile: *never auto-install*. fable-director: the tombstone/metered-key scope |
 | `HOOK-CONTRACT` | every hook is silent-on-failure — no `set -e`, always ends `exit 0` — and `hooks.json` references only files that exist |
 | `ROUTER` | the routing law has an enforcer: `hooks/router.sh` is registered under **UserPromptSubmit**, `bash -n` accepts it, it is silent-on-failure, and every `/notrest:<skill>` its table can emit names a skill directory that exists |
+| `ROUTE-TABLE-PARITY` | the routing table's **two authorities agree**: every verb `router.sh` can emit is named in oracle's `**Route to the right tool:**` bullet and vice-versa (a verb in one and not the other is a FAIL — the user is *told* one route and *nudged* another), and every routed skill acknowledges the shape that lands on it with a body line ``**Router shape:** `<shape>` `` (a token that drifted from the router arm is a WARN; a verb with no skill dir is left to `ROUTER`, so one defect never lights two checks) |
+| `ROUTE-CONFORMANCE` | **WARN-grade, never a gate.** Every `routed to /<skill>` line the estate recorded left downstream evidence — a later COORD line naming that skill, a `skill=` record in `archive/findings.jsonl`, or a `COORD-AGENTS.md` entry. The newest **3** ledger lines are a grace window (a lane routed a minute ago has landed nothing yet), a route the line itself *declines* ("not routed to …") is the law being applied deliberately, and an estate with no route lines SKIPs |
 
 A line that names sonnet, haiku or `fork` **alongside a negation** is the law being
 stated, not a breach of it; the checker reads the line before judging it.
@@ -119,17 +125,26 @@ bash plugins/notrest/skills/eval/scripts/fixture.sh           # exit 0 = every a
 bash plugins/notrest/skills/eval/scripts/router-fixture.sh    # exit 0 = the routing law holds
 ```
 
-`fixture.sh` builds a synthetic mini-harness that passes clean, then injects one violation
-per check and asserts each flips exactly its own check to FAIL with exit 6. Run it after
-any edit to `eval.py` — a conformance suite that cannot be falsified is decoration. It also
-asserts the two boundaries that keep findings actionable: a deleted `.py` stays
-`SCRIPT-OWNS-SCANNING`'s alone (never also `REFERENCES-CITED`), and `--baseline` adds a
-section without moving the exit code — unchanged, regressed, and missing-file all asserted.
+`fixture.sh` (28 assertions) builds a synthetic mini-harness that passes clean, then injects
+one violation per check and asserts each flips exactly its own check to FAIL with exit 6. Run
+it after any edit to `eval.py` — a conformance suite that cannot be falsified is decoration.
+It also asserts the boundaries that keep findings actionable: a deleted `.py` stays
+`SCRIPT-OWNS-SCANNING`'s alone (never also `REFERENCES-CITED`); a ghost verb moved through
+*both* authorities stays `ROUTER`'s alone (never also `ROUTE-TABLE-PARITY`); a drifted shape
+token WARNs instead of failing; `ROUTE-CONFORMANCE` warns on an unbacked route but stays
+silent for one a later line, a findings record, or the 3-line grace window covers, and for one
+the ledger says was deliberately declined; and `--baseline` adds a section without moving the
+exit code — unchanged, regressed, and missing-file all asserted.
 
-`router-fixture.sh` is the one behavior fixture in the suite that costs nothing: it pipes
-real `UserPromptSubmit` payloads through `hooks/router.sh` and asserts each shape reaches
-its verb, each suppression stays silent, and malformed stdin never breaks a prompt. Run it
-after any edit to the routing table — a table nobody fires is a table nobody trusts.
+`router-fixture.sh` (31 assertions) is the one behavior fixture in the suite that costs
+nothing: it pipes real `UserPromptSubmit` payloads through `hooks/router.sh` and asserts each
+shape reaches its verb, each suppression stays silent, and malformed stdin never breaks a
+prompt. It also pins **first-match order** — a history question ("how did we get here") must
+fall past the instrument arms to `/recap`, and a research question mentioning health checks
+must reach `/researcher` — and the **self-named arms** (`project graph`, `spend report`),
+where the trigger phrase contains the verb's own name and the "already named it" suppression
+would otherwise leave the arm permanently dead. Run it after any edit to the routing table —
+a table nobody fires is a table nobody trusts.
 
 **Chains:** `/doctor` for install and estate integrity → `/eval` for law conformance →
 release. `/compile` when a check keeps finding the same violation by hand. `/spend` to

@@ -5,9 +5,11 @@ description: Adversarial review of any document, plan, argument, or prior dossie
 
 # Critic
 
-An adversarial review skill. It takes a document (or argument, plan, proposal) and subjects it to the hardest, fairest scrutiny possible: understand it charitably, attack every part, try to prove its core claim wrong, find approaches that beat it, and deliver a severity-ranked verdict. The reasoning runs through six passes; the output is **two files** — a consolidated background document and a final critique dossier.
+An adversarial review skill. It takes a document (or argument, plan, proposal) and subjects it to the hardest, fairest scrutiny possible: understand it charitably, attack every part, try to prove its core claim wrong, find approaches that beat it, and deliver a severity-ranked verdict. The reasoning runs through six passes; the output is **validated records** in the archivist store — one `kind=conflict` per 🔴 fatal objection, a `kind=finding` per 🟠 serious and 🟡 minor one, and a single `kind=result` carrying the fair verdict. The passes are the working-out, the records are what the author has to answer.
 
 The aim is to make the work better and find the truth — not to "win" and not to wound. Target the argument and the artifact, never the author; intensity here is about rigor, not cruelty. (If the document is clearly someone's personal or creative writing and the user hasn't asked for a brutal teardown, calibrate to constructive but honest, and check what depth they want.)
+
+**Router shape:** `red-team`
 
 ## The prompt & document
 
@@ -15,10 +17,10 @@ The aim is to make the work better and find the truth — not to "win" and not t
 
 ## Quick mode (`--quick`)
 If the invocation includes `--quick` (or a clear equivalent — "quick", "brief", "no files", "just the summary"), run lightweight instead of the full workflow:
-- **No files.** Write nothing to disk — no background, no dossier. Skip the "Setup & output files" step entirely.
+- **No records.** Write nothing to the store, and no files. Skip the "Setup & output" step entirely.
 - **Reason, compressed.** Still work through this skill's core logic and search where it normally would, but skip the full multi-pass write-up.
 - **Output in chat only:** the **Read Me First** block this skill defines (the plain-language gist), then a short summary (a few sentences or bullets). No sources/reference list.
-- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not fully sourced or saved; run again without `--quick` for the verifiable two-file version."*
+- **Stay honest anyway.** Don't fabricate; still flag a claim inline as `[recall]`/`[unverified]` if it is. End with one line: *"Quick read — not sourced into the store; run again without `--quick` for the recorded, verifiable version."*
 Quick mode is for fast exploration, not deliverables.
 
 ## Panel mode (`--panel`, or any high-stakes document)
@@ -35,14 +37,19 @@ inherits `claude-fable-5` and bills Fable credit, so never spawn a lens without 
 A finding that survives multiple lenses outranks any single lens's severity call; a finding only one
 lens produces is flagged as perspective-dependent in the dossier.
 
-## Setup & output files
+## Setup & output — the findings store
 
-Derive a `{topic}` slug from the document's subject or title: lowercase, hyphen-joined, punctuation stripped, max ~50 chars. Create a `critique/` directory and write exactly two files:
+**No critique folder by default. No two-file write.** This skill's output is **records** appended to the archivist store (`archive/findings.jsonl`, append-only, validated at the door): one per objection as Pass 6 tiers it, plus one `kind=result` verdict. The six passes below still run in full — they are what earns an objection; they just do not land as files.
 
-- **`critique/{topic}background.md`** — all six passes, as sections within this one document.
-- **`critique/{topic}Dossier.md`** — the final critique with the verdict.
+The sink:
 
-If those files already exist from a prior run, suffix the topic with `-2` (then `-3`, etc.) so you never overwrite previous work.
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{…}'
+```
+
+(Loose install: `../archivist/scripts/index.py` relative to this skill folder.) It prints the assigned `F-<n>` on success and **exits 2 naming the rule** on rejection — an objection with an empty evidence list, or a `[cited]` url that is not a URL, does not enter the store. Fix the record, re-run; never hand-append to the JSONL.
+
+**`--dossier` (kept, opt-in).** The tiered critique read top-to-bottom — steelman, then 🔴/🟠/🟡, then what it gets right — is what an author actually reads before revising, so the legacy two-file write survives behind a flag. With `--dossier`, *also* derive a `{topic}` slug from the document's subject or title (lowercase, hyphen-joined, punctuation stripped, max ~50 chars), create `critique/`, and write `critique/{topic}background.md` (all six passes as sections) and `critique/{topic}Dossier.md` (the template below), suffixing the topic `-2`, `-3`, … if they already exist. The records are emitted either way; the files never replace them.
 
 Use web search/fetch to check the document's factual and empirical claims — a critic who asserts "that's wrong" without verifying is just opinion. Label what you find.
 
@@ -59,18 +66,19 @@ A critique is only as strong as it is fair. Violate these and the whole review i
 - **Stay in scope.** Critique what the document actually claims and is trying to do. Don't fault it for not being a different document with a different goal.
 - **Anticipate the rebuttal.** For your strongest objections, state the best defense the author could mount — and whether the objection survives it. A critique that survives the author's reply is the durable one.
 
-## The six passes — all written into `critique/{topic}background.md`
+## The six passes — the reasoning that earns the records
 
-```markdown
-# <Document title> — Critique Background
-> Working document. All six passes. The verdict lives in {topic}Dossier.md.
+Run all six in order, in full, as working prose in the session (under `--dossier`, also as sections of the background document). Objections are tiered in Pass 6, so the records land there — one per objection, then the verdict.
 
-## Pass 1 — Comprehend & steelman
-## Pass 2 — Interrogate every part
-## Pass 3 — Disconfirm (prove it the other way)
-## Pass 4 — Alternatives (other ways to the objective)
-## Pass 5 — Failure modes, risks & blind spots
-## Pass 6 — Adjudicate (severity, strengths, verdict)
+```
+Pass 1 — Comprehend & steelman        → (reasoning — the case you must defeat)
+Pass 2 — Interrogate every part       → (reasoning — every issue flagged, untiered)
+Pass 3 — Disconfirm (the other way)   → (reasoning — the best shot at the thesis)
+Pass 4 — Alternatives                 → (reasoning — ≥3-5 genuine other routes)
+Pass 5 — Failure modes & blind spots  → (reasoning — the pre-mortem)
+Pass 6 — Adjudicate                   → records: kind=conflict per 🔴 · kind=finding per 🟠/🟡
+                                        kind=backtrack for an objection you withdrew
+                                        record:  kind=result — the fair verdict, last
 ```
 
 ### Pass 1 — Comprehend & steelman
@@ -100,9 +108,50 @@ Pre-mortem: if the reader acts on this document, what goes wrong? Surface uninte
 ### Pass 6 — Adjudicate (severity, strengths, verdict)
 Now be the fair judge. Tier every objection (🔴/🟠/🟡), separating real flaws from taste. Name the document's genuine strengths. Identify the **single strongest objection** — the one that does the most damage if correct — and state the author's best rebuttal and whether it survives. Render an overall verdict and state what it would take to fix everything Serious-and-above.
 
-## The dossier — `critique/{topic}Dossier.md`
+## The output — the objection records
 
-Write this **after** the background doc is complete. Self-contained — a reader gets the whole critique from this file alone. Synthesize; don't paste the passes in. Keep severity tiers and evidence labels intact. **Read Me First and the verdict up top, the steelman before the attack.**
+**One record per objection, plus one `kind=result` verdict.** A record is not a jab: the `statement` must lead with its severity, name the claim it attacks, carry the *why*, and — for the strongest ones — the author's best rebuttal and whether the objection survives it. It has to read alone a month from now, without the passes beside it.
+
+- **A 🔴 fatal objection:** `kind=conflict`, `relation=lateral` — fatal means the document's claim and your objection are two live positions until the author answers, so the statement names *both*, never just yours. One record per fatal objection.
+- **A 🟠 serious or 🟡 minor objection:** `kind=finding`, `relation=toward` — severity leads the statement, and the fix (or "no fix within the current approach") closes it.
+- **An objection the rebuttal killed:** `kind=backtrack`, `relation=back` — a withdrawn objection is a finding about your own reading, and hiding it is how a critique becomes advocacy.
+- **Under `--panel`:** say in the statement how many lenses produced it — a finding that survives multiple lenses outranks any single lens's severity call, and a single-lens finding is recorded as perspective-dependent.
+- **The verdict, last:** `kind=result`, `relation=toward` — the overall call (holds up / holds up with fixes / seriously flawed / fundamentally broken), the genuine strengths, and the shortest path to sound; `links` naming every objection record it counts.
+
+### The snippet, filled
+
+*(The same fatal objection the tiered example below states in prose — a memo claiming "we should rewrite the service in Rust to fix our latency problems".)*
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "session":"critic-2026-07-25",
+  "skill":"critic",
+  "kind":"conflict",
+  "ask":"critique the memo: rewrite the service in Rust to fix latency",
+  "statement":"🔴 FATAL — the memo asserts \"Rust will fix our latency\", but its own appendix puts 80% of p99 in database wait, which a language rewrite does not touch. Steelmanned, the claim is \"Rust removes GC pauses\" — true, and GC is not in this latency budget. Author best rebuttal: \"Rust also improves tail predictability\"; it does not survive — predictability over 20% of the budget cannot fix a problem living in the other 80%. Fix: profile by component first.",
+  "evidence":[{"type":"path","ref":"memos/rust-rewrite.md","label":"cited"},
+              {"type":"command","ref":"grep -n p99 memos/rust-rewrite.md","label":"cited"},
+              {"type":"url","ref":"https://www.brendangregg.com/usemethod.html","label":"cited"}],
+  "relation":"lateral",
+  "links":[]}'
+```
+
+Then the verdict record, fair about what held:
+
+```bash
+… add --root . --json '{"session":"critic-2026-07-25","skill":"critic","kind":"result",
+  "ask":"critique the memo: rewrite the service in Rust to fix latency",
+  "statement":"Verdict: seriously flawed — 1 fatal, 2 serious, 2 minor. The central justification does not survive its own appendix, but the maintenance-cost argument is sound and the migration sequencing is genuinely good. Shortest path to sound: profile p99 by component, then re-argue the rewrite on maintenance alone — where it may well win.",
+  "evidence":[{"type":"path","ref":"memos/rust-rewrite.md","label":"cited"},
+              {"type":"url","ref":"https://www.brendangregg.com/usemethod.html","label":"cited"}],
+  "relation":"toward","links":["F-51","F-52","F-53"]}'
+```
+
+Each `add` prints its `F-<n>`. A non-zero exit means the record was turned away with its rule named — fix it and re-run. Never soften a statement to get it past the door; the door checks shape, not severity.
+
+## The `--dossier` output — `critique/{topic}Dossier.md`
+
+Only under `--dossier`, and only after the background doc is complete. Self-contained — a reader gets the whole critique from this file alone. Synthesize; don't paste the passes in. Keep severity tiers and evidence labels intact. **Read Me First and the verdict up top, the steelman before the attack.**
 
 ```markdown
 # <Document title> — Critique
@@ -166,7 +215,8 @@ Objections, ordered by severity. Each: the claim, the objection, why (with evide
 > - **"Rust will fix our latency."** — The memo never measures *where* the latency comes from; its own appendix shows 80% of p99 is database wait, which a language rewrite doesn't touch [from the document]. Steelmanned, the claim is "Rust removes GC pauses," which is real — but GC isn't in the latency budget here, so the central justification doesn't survive. Author's best rebuttal: "Rust also improves tail predictability." Survives? No — predictability of 20% of the budget can't fix a problem that lives in the other 80%. Fix: profile first; the evidence points at query/index work, not a rewrite.
 
 ## Self-check before finishing
-Before declaring done, verify the dossier and fix any miss:
+Before declaring done, verify the records and fix any miss:
+- **Records validated at the door (`add` exited 0)** — every id was printed by the script, nothing hand-appended.
 - Pass 1 steelman is present and fair — no objection attacks a strawman.
 - Every objection is severity-tiered and states *why*, not just *that*.
 - Empirical claims you dispute were actually checked and labeled; no fabricated counter-evidence.
@@ -174,14 +224,15 @@ Before declaring done, verify the dossier and fix any miss:
 - At least 3–5 real alternatives are given.
 - The strongest objection has the author's best rebuttal and a survives/doesn't ruling.
 - Flaws are separated from matters of taste; the verdict matches the severity of what was found.
+- Every 🔴 landed as `kind=conflict` with the document's position in the statement, not only yours; withdrawn objections landed as `kind=backtrack`.
 
 ## Finishing up
 
-Write `{topic}background.md` first (all six passes), then `{topic}Dossier.md`. Give the user a short chat summary: the verdict, the single strongest objection, the biggest strength, and the paths to both files — point them to the dossier. Don't paste the files into chat. Offer to go deeper on any objection, or to run the critique against a revised version once they've fixed things.
+Run the six passes, emit one record per objection as Pass 6 tiers it, and write the `kind=result` verdict last (under `--dossier`, write `{topic}background.md` then `{topic}Dossier.md` after the records, never instead of them). Give the user a short chat summary: the verdict, the single strongest objection, the biggest strength, and the record ids — plus `index.py track --status live` as the one command that shows the whole trail. Don't paste the records into chat. Offer to go deeper on any objection, or to run the critique against a revised version once they've fixed things — a re-run that withdraws an objection `supersede`s its record rather than leaving both live.
 
 ## Notes on tone and rigor
 
-- Pairs with the other skills: pointing `/critic` at a `researcher` or `stepbystep` dossier is a strong way to red-team a recommendation before acting on it.
+- Pairs with the other skills: pointing `/critic` at a `researcher` record trail (`index.py track --status live`) or a `stepbystep` plan is a strong way to red-team a recommendation before acting on it. `/refuter` attacks a single record; `/critic` attacks the whole artifact.
 - Harsh on ideas, fair to people. The most damaging critique is the calm, well-evidenced one — not the loudest.
 - A short, devastating critique beats a long, padded one. Lead with what matters.
 - If after honest effort the document mostly holds up, say so plainly — "I tried hard to break this and it survived" is a real and valuable verdict, not a failure to criticize.

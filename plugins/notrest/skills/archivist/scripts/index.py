@@ -8,7 +8,8 @@ effective status by walking links.
 
 Subcommands:
   add        validate one finding record at the door and append it; prints its id
-  track      print the session track in ts order (--json for machines)
+  track      print the session track in ts order (--json for machines); a live record
+             whose links name an effectively-refuted id carries RESTS-ON-REFUTED
   supersede  append a tombstone flipping a record to superseded
   refute     append a tombstone flipping a record to refuted, with evidence
   scan       rebuild oracle-index.md from every *Dossier.md found (legacy estate)
@@ -249,6 +250,31 @@ def resolve(records):
     return eff
 
 
+def rests_on_refuted(rec, eff):
+    """THE RESTS-ON-REFUTED RULE. A record that is itself effectively LIVE, and whose
+    `links` names an id whose EFFECTIVE status is `refuted`, is standing on ground the
+    store has already knocked out — a live decision resting on a refuted finding. It is
+    NOT flipped by this (only a tombstone flips a status); it is FLAGGED, so the reader
+    sees the dependency the link-walk already knows about.
+
+    Exactly one hop: the links this record itself declares, resolved through `resolve`.
+    A record that is not effectively live is never flagged — a superseded record's
+    footing is already reported by its own status. A tombstone does not rest on what it
+    killed: the target of this record's own `supersedes`/`refutes` head is skipped.
+    Returns the flagged ids in link order (possibly empty)."""
+    if eff.get(rec.get("id"), (rec.get("status", "live"), None))[0] != "live":
+        return []
+    own = TOMB_RE.match(rec.get("statement", "") or "")
+    killed = own.group(2).upper() if own else None
+    out = []
+    for lid in rec.get("links") or []:
+        if lid == killed or lid in out:
+            continue
+        if eff.get(lid, (None, None))[0] == "refuted":
+            out.append(lid)
+    return out
+
+
 def head(text, width=90):
     one = " ".join((text or "").split())
     return one if len(one) <= width else one[:width - 1] + "…"
@@ -265,6 +291,9 @@ def labels_of(rec):
 def track_line(rec, eff):
     status, by = eff.get(rec.get("id"), (rec.get("status", "live"), None))
     tail = "" if status == "live" else " · %s by %s" % (status.upper(), by or "?")
+    rests = rests_on_refuted(rec, eff)
+    if rests:
+        tail += " · RESTS-ON-REFUTED %s" % ",".join(rests)
     return "%s · %s · %s · %s · [%s]%s" % (
         rec.get("id", "F-?"), rec.get("kind", "?"), rec.get("relation", "?"),
         head(rec.get("statement", "")), labels_of(rec), tail)
@@ -454,6 +483,9 @@ def cmd_track(a):
             item = dict(r)
             item["effective_status"] = status
             item["status_by"] = by
+            # Always present, so a consumer can test truthiness instead of membership.
+            # Non-empty only on an effectively-live record (see rests_on_refuted).
+            item["rests_on_refuted"] = rests_on_refuted(r, eff)
             payload["records"].append(item)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
