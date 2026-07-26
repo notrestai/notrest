@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 plugins/notrest/skills/doctor/scripts/doctor.py check --root .)",
+      "Bash(python3 plugins/notrest/skills/doctor/scripts/doctor.py check *)",
+      "Bash(python3 plugins/notrest/skills/eval/scripts/eval.py check --root .)",
+      "Bash(python3 plugins/notrest/skills/eval/scripts/eval.py check *)",
+      "Bash(python3 plugins/notrest/skills/spend/scripts/spend.py report *)",
+      "Bash(python3 plugins/notrest/skills/archivist/scripts/index.py track *)",
+      "Bash(python3 plugins/notrest/skills/archivist/scripts/index.py find *)",
+      "Bash(python3 plugins/notrest/skills/watch/scripts/watch.py due *)",
+      "Bash(python3 plugins/notrest/skills/compile/scripts/compile.py report *)",
+      "Bash(python3 plugins/notrest/skills/graph/scripts/graph.py links *)",
+      "Bash(python3 plugins/notrest/skills/graph/scripts/graph.py orphans *)",
+      "Bash(python3 plugins/notrest/skills/graph/scripts/graph.py stale *)",
+      "Bash(claude plugin list *)",
+      "Bash(claude plugin list)",
+      "Bash(claude plugin details *)",
+      "Bash(claude plugin validate *)"
+    ]
+  }
+}

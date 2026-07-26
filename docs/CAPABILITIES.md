@@ -16,6 +16,10 @@ script; toolset entries are seat-written from the day's live work.
 > Entries below describe the pre-3.8.0 state where they conflict with this note;
 > still-open upgrades remain accurate. Remaining dossier writers (marketresearcher,
 > critic, explainer, recap) migrate to the findings sink next.
+>
+> **The successor backlog lives in [JOURNEY.md](JOURNEY.md):** its journey-gaps
+> section (G1–G18) supersedes the priority list below where they overlap — the
+> journeys expose the missing handoffs the register could not see.
 
 ## The law this register serves
 
