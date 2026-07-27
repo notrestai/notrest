@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>file graph — notrest</title>
+<style>
+:root{
+  --surface-0:#f7f6f2; --surface-1:#ffffff; --border:#e6e3da; --border-strong:#d2cfc4;
+  --text-primary:#20201d; --text-secondary:#57564f; --text-muted:#86857b;
+  --edge:#b9b6aa; --edge-hi:#20201d;
+  --c-estate:#7F77DD; --c-doc:#1D9E75; --c-code:#D89A3A; --c-config:#8f8e84;
+  --c-other:#a8a69a; --c-external:#C2607A; --c-project:#4A8FD4;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --surface-0:#141413; --surface-1:#1f1f1d; --border:#37362e; --border-strong:#4b4a40;
+    --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+    --edge:#4a493f; --edge-hi:#f2f1ea;
+    --c-estate:#9a92ea; --c-doc:#3fc79c; --c-code:#e6b45c; --c-config:#9d9c92;
+    --c-other:#76756c; --c-external:#dd7f97; --c-project:#6fa9e6;
+  }
+}
+:root[data-theme="dark"]{
+  --surface-0:#141413; --surface-1:#1f1f1d; --border:#37362e; --border-strong:#4b4a40;
+  --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+  --edge:#4a493f; --edge-hi:#f2f1ea;
+  --c-estate:#9a92ea; --c-doc:#3fc79c; --c-code:#e6b45c; --c-config:#9d9c92;
+  --c-other:#76756c; --c-external:#dd7f97; --c-project:#6fa9e6;
+}
+*{box-sizing:border-box}
+html{height:100%;width:100%}
+body{margin:0;width:100vw;height:100vh;background:var(--surface-0);color:var(--text-primary);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center;padding:.6rem .9rem;
+  border-bottom:1px solid var(--border);background:var(--surface-1)}
+h1{font-size:14px;font-weight:500;margin:0}
+.sub{font-size:12px;color:var(--text-muted)}
+.path{max-width:52ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.grow{flex:1}
+input[type=search]{font:inherit;font-size:12px;padding:.3rem .55rem;border-radius:999px;
+  border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);width:190px}
+input[type=search]:focus{outline:none;border-color:var(--border-strong)}
+button{background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border);
+  border-radius:999px;padding:.3rem .7rem;font-size:12px;cursor:pointer;font-family:inherit}
+button:hover{border-color:var(--border-strong)}
+main{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+#stage{flex:1;position:relative;min-width:0;min-height:0;overflow:hidden}
+/* the canvas is sized in JS (CSS px + backing store + transform together) — never
+   by percentages, so its intrinsic attribute size can't feed back into layout */
+canvas{position:absolute;left:0;top:0;display:block;cursor:grab}
+canvas.drag{cursor:grabbing}
+#legend{position:absolute;left:.7rem;bottom:.7rem;pointer-events:none;background:var(--surface-1);
+  border:1px solid var(--border);border-radius:10px;padding:.45rem .6rem;font-size:11.5px;
+  color:var(--text-secondary);display:flex;flex-wrap:wrap;gap:.25rem .7rem;max-width:min(560px,80%)}
+#legend span{display:inline-flex;align-items:center;gap:.3rem}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+#tip{position:absolute;pointer-events:none;background:var(--surface-1);border:1px solid var(--border-strong);
+  border-radius:7px;padding:.25rem .5rem;font-size:12px;display:none;max-width:60ch;
+  box-shadow:0 2px 10px rgba(0,0,0,.14);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#panel{width:290px;flex:none;border-left:1px solid var(--border);background:var(--surface-1);
+  padding:.7rem .8rem;overflow:auto;font-size:12.5px}
+#panel h2{font-size:13px;margin:.1rem 0 .3rem;word-break:break-all;font-weight:500}
+#panel .meta{color:var(--text-muted);font-size:11.5px;margin-bottom:.6rem}
+#panel .lbl{font-size:11px;letter-spacing:.03em;color:var(--text-secondary);margin:.7rem 0 .25rem}
+#panel ul{list-style:none;margin:0;padding:0}
+#panel li{padding:.16rem 0;border-bottom:1px solid var(--border);word-break:break-all;cursor:pointer;
+  color:var(--text-secondary)}
+#panel li:hover{color:var(--text-primary)}
+#panel li .k{color:var(--text-muted);font-size:10.5px}
+.empty{color:var(--text-muted)}
+@media (max-width:720px){#panel{display:none}#panel.open{display:block;position:absolute;right:0;top:0;bottom:0;z-index:5}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>file graph — <span class="mono">notrest</span></h1>
+    <div class="sub mono path" title="/Users/ethanabot/Desktop/oracle-suite-plugin/plugins/notrest">/Users/ethanabot/Desktop/oracle-suite-plugin/plugins/notrest</div>
+  </div>
+  <div class="sub">121 nodes · 195 edges · generated 2026-07-27 01:38Z</div>
+  <span class="grow"></span>
+  <input id="q" type="search" placeholder="filter nodes…" autocomplete="off">
+  <span id="qn" class="sub"></span>
+  <button id="fit" type="button">fit</button>
+  <button id="reheat" type="button">re-layout</button>
+  <button id="theme" type="button">light / dark</button>
+</header>
+<main>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="tip"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="panel"><div class="empty">Click a node to pin it and see what it links to.<br><br>
+    Drag a node to move it · drag the background to pan · scroll to zoom.</div></aside>
+</main>
+<script>
+(function(){
+var DATA = {"generated":"2026-07-27 01:38Z","root":"/Users/ethanabot/Desktop/oracle-suite-plugin/plugins/notrest","listing":"git","skipped":0,"nodes":[{"id":".claude-plugin/plugin.json","type":"config","size":4366,"mtime":1785115428,"degree":6},{"id":"README.md","type":"doc","size":9565,"mtime":1785109262,"degree":2},{"id":"evals-legacy-external-runner/01-offload-policy/graders/opus-on-every-lane.md","type":"doc","size":590,"mtime":1784956016,"degree":1},{"id":"evals-legacy-external-runner/01-offload-policy/graders/refuses-the-fork.md","type":"doc","size":596,"mtime":1784956021,"degree":1},{"id":"evals-legacy-external-runner/01-offload-policy/graders/states-opus.md","type":"doc","size":103,"mtime":1784956022,"degree":1},{"id":"evals-legacy-external-runner/01-offload-policy/prompt.md","type":"doc","size":857,"mtime":1784956013,"degree":0},{"id":"evals-legacy-external-runner/02-coord-discipline/graders/evidence-is-checkable.md","type":"doc","size":1118,"mtime":1784962419,"degree":0},{"id":"evals-legacy-external-runner/02-coord-discipline/graders/ledger-line-shape.md","type":"doc","size":108,"mtime":1784956030,"degree":0},{"id":"evals-legacy-external-runner/02-coord-discipline/graders/names-the-ledger.md","type":"doc","size":89,"mtime":1784956041,"degree":0},{"id":"evals-legacy-external-runner/02-coord-discipline/prompt.md","type":"doc","size":1063,"mtime":1784962406,"degree":0},{"id":"evals-legacy-external-runner/03-honesty-labels/graders/label-token-present.md","type":"doc","size":112,"mtime":1784956054,"degree":0},{"id":"evals-legacy-external-runner/03-honesty-labels/graders/labels-not-assertion.md","type":"doc","size":1236,"mtime":1784962426,"degree":0},{"id":"evals-legacy-external-runner/03-honesty-labels/graders/no-fabricated-sourcing.md","type":"doc","size":1076,"mtime":1784962433,"degree":0},{"id":"evals-legacy-external-runner/03-honesty-labels/prompt.md","type":"doc","size":713,"mtime":1784962410,"degree":0},{"id":"evals-legacy-external-runner/04-routing-intake/graders/one-question-at-a-time.md","type":"doc","size":630,"mtime":1784956065,"degree":0},{"id":"evals-legacy-external-runner/04-routing-intake/graders/oracle-skill-loaded.md","type":"doc","size":85,"mtime":1784962440,"degree":0},{"id":"evals-legacy-external-runner/04-routing-intake/graders/starts-intake-not-answer.md","type":"doc","size":692,"mtime":1784956062,"degree":0},{"id":"evals-legacy-external-runner/04-routing-intake/prompt.md","type":"doc","size":480,"mtime":1784956056,"degree":0},{"id":"evals-legacy-external-runner/05-graph-zero-tokens/graders/names-graph-scanner.md","type":"doc","size":102,"mtime":1784956079,"degree":0},{"id":"evals-legacy-external-runner/05-graph-zero-tokens/graders/no-manual-repo-scan.md","type":"doc","size":71,"mtime":1784956082,"degree":0},{"id":"evals-legacy-external-runner/05-graph-zero-tokens/graders/reaches-for-the-scanner.md","type":"doc","size":740,"mtime":1784956078,"degree":1},{"id":"evals-legacy-external-runner/05-graph-zero-tokens/prompt.md","type":"doc","size":855,"mtime":1784962445,"degree":1},{"id":"evals-legacy-external-runner/README.md","type":"doc","size":7322,"mtime":1784966218,"degree":4},{"id":"hooks/agent-ledger.sh","type":"code","size":17330,"mtime":1785114620,"degree":5},{"id":"hooks/coord-nudge.sh","type":"code","size":401,"mtime":1784967874,"degree":2},{"id":"hooks/hooks.json","type":"config","size":1426,"mtime":1785107553,"degree":7},{"id":"hooks/pre-compact.sh","type":"code","size":653,"mtime":1784957823,"degree":1},{"id":"hooks/pretool-gate.sh","type":"code","size":7426,"mtime":1785107549,"degree":2},{"id":"hooks/router.sh","type":"code","size":4530,"mtime":1785037228,"degree":15},{"id":"hooks/session-end.sh","type":"code","size":9604,"mtime":1784966001,"degree":3},{"id":"hooks/session-start.sh","type":"code","size":7148,"mtime":1785113521,"degree":6},{"id":"skills/actionplan/SKILL.md","type":"doc","size":16773,"mtime":1785037321,"degree":1},{"id":"skills/agentswarm/SKILL.md","type":"doc","size":18257,"mtime":1785114772,"degree":1},{"id":"skills/archivist/SKILL.md","type":"doc","size":24091,"mtime":1785112792,"degree":5},{"id":"skills/archivist/scripts/fixture.sh","type":"code","size":46291,"mtime":1785112718,"degree":3},{"id":"skills/archivist/scripts/index.py","type":"code","size":74256,"mtime":1785112712,"degree":21},{"id":"skills/beam/SKILL.md","type":"doc","size":15591,"mtime":1785108815,"degree":3},{"id":"skills/beam/scripts/beam.py","type":"code","size":44471,"mtime":1785108921,"degree":3},{"id":"skills/beam/scripts/fixture.sh","type":"code","size":25055,"mtime":1785108749,"degree":3},{"id":"skills/chatroom/SKILL.md","type":"doc","size":7223,"mtime":1785108145,"degree":2},{"id":"skills/chatroom/scripts/fixture.sh","type":"code","size":7344,"mtime":1785011286,"degree":2},{"id":"skills/chatroom/scripts/room.py","type":"code","size":14295,"mtime":1785011312,"degree":5},{"id":"skills/compile/SKILL.md","type":"doc","size":22076,"mtime":1785037069,"degree":5},{"id":"skills/compile/references/compiler-doctrine.md","type":"doc","size":13712,"mtime":1784959637,"degree":5},{"id":"skills/compile/scripts/compile.py","type":"code","size":51698,"mtime":1785036674,"degree":12},{"id":"skills/compile/scripts/fixture.sh","type":"code","size":18004,"mtime":1785036716,"degree":4},{"id":"skills/critic/SKILL.md","type":"doc","size":21095,"mtime":1785036878,"degree":1},{"id":"skills/decider/SKILL.md","type":"doc","size":13279,"mtime":1785108133,"degree":2},{"id":"skills/director/SKILL.md","type":"doc","size":24225,"mtime":1785108141,"degree":2},{"id":"skills/director/scripts/director.py","type":"code","size":20379,"mtime":1785036519,"degree":2},{"id":"skills/director/scripts/fixture.sh","type":"code","size":9100,"mtime":1785036498,"degree":2},{"id":"skills/doctor/SKILL.md","type":"doc","size":17201,"mtime":1785111313,"degree":14},{"id":"skills/doctor/scripts/coord-volume-fixture.sh","type":"code","size":8295,"mtime":1784966151,"degree":1},{"id":"skills/doctor/scripts/doctor.py","type":"code","size":45849,"mtime":1785011297,"degree":8},{"id":"skills/doctor/scripts/fixture.sh","type":"code","size":17974,"mtime":1785011552,"degree":4},{"id":"skills/doctor/scripts/gategrep.sh","type":"code","size":2006,"mtime":1784965302,"degree":2},{"id":"skills/doctor/scripts/pulse-fixture.sh","type":"code","size":17874,"mtime":1785111121,"degree":3},{"id":"skills/doctor/scripts/pulse.sh","type":"code","size":12072,"mtime":1785111003,"degree":6},{"id":"skills/doctor/scripts/render-check.sh","type":"code","size":3857,"mtime":1784965290,"degree":5},{"id":"skills/doctor/scripts/seat-tax-fixture.sh","type":"code","size":19576,"mtime":1785114727,"degree":5},{"id":"skills/draft/SKILL.md","type":"doc","size":16942,"mtime":1785036741,"degree":2},{"id":"skills/draft/references/formats.md","type":"doc","size":5503,"mtime":1784961431,"degree":1},{"id":"skills/eval/SKILL.md","type":"doc","size":11354,"mtime":1785107981,"degree":5},{"id":"skills/eval/scripts/eval.py","type":"code","size":39941,"mtime":1785036662,"degree":13},{"id":"skills/eval/scripts/fixture.sh","type":"code","size":14825,"mtime":1785036887,"degree":2},{"id":"skills/eval/scripts/pretool-fixture.sh","type":"code","size":9251,"mtime":1785107684,"degree":2},{"id":"skills/eval/scripts/router-fixture.sh","type":"code","size":5646,"mtime":1785036724,"degree":2},{"id":"skills/explainer/SKILL.md","type":"doc","size":14858,"mtime":1785037319,"degree":1},{"id":"skills/fable-director/SKILL.md","type":"doc","size":8929,"mtime":1784968637,"degree":5},{"id":"skills/fable-director/references/KICKOFF-DIRECTOR.md","type":"doc","size":2656,"mtime":1784951287,"degree":1},{"id":"skills/fable-director/references/PLAN-FABLE-DIRECTOR-V4.md","type":"doc","size":16260,"mtime":1784951283,"degree":6},{"id":"skills/fable-director/references/coord-scaffold.md","type":"doc","size":4423,"mtime":1784145395,"degree":3},{"id":"skills/fable-director/references/spawn-lanes.md","type":"doc","size":3541,"mtime":1784145395,"degree":2},{"id":"skills/fable-director/scripts/fable-launcher.sh","type":"code","size":1664,"mtime":1783626089,"degree":1},{"id":"skills/fable-director/scripts/new-fable-project.sh","type":"code","size":8188,"mtime":1784146358,"degree":3},{"id":"skills/fable-mode/SKILL.md","type":"doc","size":19111,"mtime":1785114355,"degree":3},{"id":"skills/factcheck/SKILL.md","type":"doc","size":14724,"mtime":1785108138,"degree":2},{"id":"skills/game-forge/SKILL.md","type":"doc","size":10596,"mtime":1785036847,"degree":12},{"id":"skills/game-forge/assets/engine.html","type":"code","size":9019,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/assets/engine.py","type":"code","size":7107,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/references/audio.md","type":"doc","size":3531,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/references/game-loop.md","type":"doc","size":4556,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/references/genres/arcade.md","type":"doc","size":2496,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/references/genres/platformer.md","type":"doc","size":2668,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/references/genres/puzzle.md","type":"doc","size":2262,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/references/genres/shooter.md","type":"doc","size":2280,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/references/juice.md","type":"doc","size":3983,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/references/pygame.md","type":"doc","size":3367,"mtime":1783729897,"degree":1},{"id":"skills/game-forge/scripts/playtest.mjs","type":"code","size":4445,"mtime":1783729897,"degree":1},{"id":"skills/gpt/SKILL.md","type":"doc","size":10201,"mtime":1785011847,"degree":2},{"id":"skills/gpt/scripts/fixture.sh","type":"code","size":6813,"mtime":1785011796,"degree":2},{"id":"skills/gpt/scripts/gpt.sh","type":"code","size":6111,"mtime":1785011762,"degree":2},{"id":"skills/graph/SKILL.md","type":"doc","size":30617,"mtime":1785115230,"degree":9},{"id":"skills/graph/scripts/graph.py","type":"code","size":157288,"mtime":1785115181,"degree":18},{"id":"skills/graph/scripts/journey-fixture.sh","type":"code","size":10758,"mtime":1785109189,"degree":3},{"id":"skills/graph/scripts/river-fixture.sh","type":"code","size":27504,"mtime":1785115144,"degree":3},{"id":"skills/introspect/SKILL.md","type":"doc","size":11039,"mtime":1785037096,"degree":3},{"id":"skills/introspect/references/example-ledger.md","type":"doc","size":3353,"mtime":1784146434,"degree":1},{"id":"skills/introspect/scripts/fixture.sh","type":"code","size":8116,"mtime":1785036832,"degree":2},{"id":"skills/introspect/scripts/score_snapshot.py","type":"code","size":13253,"mtime":1785036791,"degree":2},{"id":"skills/marketresearcher/SKILL.md","type":"doc","size":21538,"mtime":1785037318,"degree":1},{"id":"skills/oracle/SKILL.md","type":"doc","size":17888,"mtime":1785111319,"degree":9},{"id":"skills/oracle/references/claude-foundation-template.md","type":"doc","size":6874,"mtime":1784951761,"degree":1},{"id":"skills/recap/SKILL.md","type":"doc","size":23499,"mtime":1785036504,"degree":3},{"id":"skills/recap/assets/decision-map-template.html","type":"code","size":20946,"mtime":1784957823,"degree":1},{"id":"skills/refuter/SKILL.md","type":"doc","size":13139,"mtime":1785036900,"degree":3},{"id":"skills/refuter/references/brief-template.md","type":"doc","size":3534,"mtime":1784964991,"degree":1},{"id":"skills/refuter/scripts/brief.py","type":"code","size":6157,"mtime":1785011919,"degree":4},{"id":"skills/refuter/scripts/fixture.sh","type":"code","size":7294,"mtime":1785012382,"degree":2},{"id":"skills/refuter/scripts/verdict_lint.py","type":"code","size":6500,"mtime":1785012330,"degree":2},{"id":"skills/researcher/SKILL.md","type":"doc","size":13594,"mtime":1785111559,"degree":2},{"id":"skills/sessionend/SKILL.md","type":"doc","size":20238,"mtime":1785111207,"degree":5},{"id":"skills/sessionend/references/claude-foundation-template.md","type":"doc","size":6874,"mtime":1784951763,"degree":1},{"id":"skills/sessionend/references/live-handoff-template.md","type":"doc","size":10138,"mtime":1784955491,"degree":1},{"id":"skills/spend/SKILL.md","type":"doc","size":8497,"mtime":1785114754,"degree":3},{"id":"skills/spend/scripts/fixture.sh","type":"code","size":13264,"mtime":1785036952,"degree":2},{"id":"skills/spend/scripts/spend.py","type":"code","size":14807,"mtime":1785036911,"degree":23},{"id":"skills/stepbystep/SKILL.md","type":"doc","size":25582,"mtime":1785037320,"degree":1},{"id":"skills/watch/SKILL.md","type":"doc","size":23848,"mtime":1785036615,"degree":1},{"id":"skills/watch/scripts/fixture.sh","type":"code","size":16927,"mtime":1785036550,"degree":2},{"id":"skills/watch/scripts/watch.py","type":"code","size":30841,"mtime":1785107975,"degree":8}],"edges":[{"from":"README.md","to":"skills/eval/scripts/eval.py","kind":"mention"},{"from":"README.md","to":"skills/doctor/scripts/doctor.py","kind":"mention"},{"from":"evals-legacy-external-runner/05-graph-zero-tokens/graders/reaches-for-the-scanner.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"evals-legacy-external-runner/05-graph-zero-tokens/prompt.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"evals-legacy-external-runner/README.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"evals-legacy-external-runner/README.md","to":"evals-legacy-external-runner/01-offload-policy/graders/opus-on-every-lane.md","kind":"mention"},{"from":"evals-legacy-external-runner/README.md","to":"evals-legacy-external-runner/01-offload-policy/graders/refuses-the-fork.md","kind":"mention"},{"from":"evals-legacy-external-runner/README.md","to":"evals-legacy-external-runner/01-offload-policy/graders/states-opus.md","kind":"mention"},{"from":"hooks/agent-ledger.sh","to":"hooks/hooks.json","kind":"mention"},{"from":"hooks/agent-ledger.sh","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"hooks/pretool-gate.sh","to":"skills/doctor/scripts/doctor.py","kind":"mention"},{"from":"hooks/router.sh","to":"skills/oracle/SKILL.md","kind":"mention"},{"from":"hooks/router.sh","to":"skills/eval/scripts/eval.py","kind":"mention"},{"from":"hooks/session-end.sh","to":"hooks/agent-ledger.sh","kind":"mention"},{"from":"hooks/session-end.sh","to":"skills/chatroom/scripts/room.py","kind":"mention"},{"from":"hooks/session-start.sh","to":".claude-plugin/plugin.json","kind":"mention"},{"from":"hooks/session-start.sh","to":"hooks/coord-nudge.sh","kind":"mention"},{"from":"hooks/session-start.sh","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"hooks/session-start.sh","to":"skills/fable-director/references/PLAN-FABLE-DIRECTOR-V4.md","kind":"mention"},{"from":"skills/actionplan/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/agentswarm/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/archivist/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/archivist/SKILL.md","to":"skills/archivist/scripts/fixture.sh","kind":"mention"},{"from":"skills/archivist/SKILL.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/archivist/SKILL.md","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/archivist/SKILL.md","to":"skills/watch/scripts/watch.py","kind":"mention"},{"from":"skills/archivist/scripts/fixture.sh","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/archivist/scripts/fixture.sh","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/archivist/scripts/index.py","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/archivist/scripts/index.py","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/archivist/scripts/index.py","to":"skills/watch/scripts/watch.py","kind":"mention"},{"from":"skills/beam/SKILL.md","to":"skills/beam/scripts/beam.py","kind":"mention"},{"from":"skills/beam/SKILL.md","to":"skills/beam/scripts/fixture.sh","kind":"mention"},{"from":"skills/beam/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/beam/scripts/beam.py","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/beam/scripts/fixture.sh","to":"skills/beam/scripts/beam.py","kind":"mention"},{"from":"skills/beam/scripts/fixture.sh","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/chatroom/SKILL.md","to":"skills/chatroom/scripts/room.py","kind":"mention"},{"from":"skills/chatroom/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/chatroom/scripts/fixture.sh","to":"skills/chatroom/scripts/room.py","kind":"mention"},{"from":"skills/chatroom/scripts/fixture.sh","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/chatroom/scripts/room.py","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/compile/SKILL.md","to":"skills/compile/references/compiler-doctrine.md","kind":"mention"},{"from":"skills/compile/SKILL.md","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/compile/SKILL.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/compile/SKILL.md","to":"skills/compile/scripts/fixture.sh","kind":"mention"},{"from":"skills/compile/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/compile/references/compiler-doctrine.md","to":"hooks/agent-ledger.sh","kind":"mention"},{"from":"skills/compile/references/compiler-doctrine.md","to":"hooks/session-start.sh","kind":"mention"},{"from":"skills/compile/references/compiler-doctrine.md","to":"hooks/pre-compact.sh","kind":"mention"},{"from":"skills/compile/references/compiler-doctrine.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/compile/scripts/compile.py","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/compile/scripts/compile.py","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/compile/scripts/fixture.sh","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/compile/scripts/fixture.sh","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/compile/scripts/fixture.sh","to":".claude-plugin/plugin.json","kind":"mention"},{"from":"skills/critic/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/decider/SKILL.md","to":"hooks/router.sh","kind":"mention"},{"from":"skills/decider/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/director/SKILL.md","to":"skills/director/scripts/director.py","kind":"mention"},{"from":"skills/director/SKILL.md","to":"skills/director/scripts/fixture.sh","kind":"mention"},{"from":"skills/director/scripts/fixture.sh","to":"skills/director/scripts/director.py","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/doctor/scripts/doctor.py","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"hooks/router.sh","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":".claude-plugin/plugin.json","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"hooks/hooks.json","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/doctor/scripts/pulse.sh","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/eval/scripts/eval.py","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/watch/scripts/watch.py","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/doctor/scripts/render-check.sh","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/doctor/scripts/gategrep.sh","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/doctor/scripts/seat-tax-fixture.sh","kind":"mention"},{"from":"skills/doctor/SKILL.md","to":"skills/doctor/scripts/coord-volume-fixture.sh","kind":"mention"},{"from":"skills/doctor/scripts/doctor.py","to":".claude-plugin/plugin.json","kind":"mention"},{"from":"skills/doctor/scripts/doctor.py","to":"hooks/hooks.json","kind":"mention"},{"from":"skills/doctor/scripts/doctor.py","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/doctor/scripts/doctor.py","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/doctor/scripts/fixture.sh","to":"skills/doctor/scripts/doctor.py","kind":"mention"},{"from":"skills/doctor/scripts/fixture.sh","to":"hooks/hooks.json","kind":"mention"},{"from":"skills/doctor/scripts/fixture.sh","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/doctor/scripts/fixture.sh","to":".claude-plugin/plugin.json","kind":"mention"},{"from":"skills/doctor/scripts/pulse-fixture.sh","to":"skills/doctor/scripts/pulse.sh","kind":"mention"},{"from":"skills/doctor/scripts/pulse-fixture.sh","to":"skills/watch/scripts/watch.py","kind":"mention"},{"from":"skills/doctor/scripts/pulse-fixture.sh","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/doctor/scripts/pulse.sh","to":"skills/watch/scripts/watch.py","kind":"mention"},{"from":"skills/doctor/scripts/pulse.sh","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/doctor/scripts/seat-tax-fixture.sh","to":"hooks/agent-ledger.sh","kind":"mention"},{"from":"skills/doctor/scripts/seat-tax-fixture.sh","to":"skills/doctor/scripts/render-check.sh","kind":"mention"},{"from":"skills/doctor/scripts/seat-tax-fixture.sh","to":"skills/doctor/scripts/gategrep.sh","kind":"mention"},{"from":"skills/doctor/scripts/seat-tax-fixture.sh","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/draft/SKILL.md","to":"skills/draft/references/formats.md","kind":"mention"},{"from":"skills/draft/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/eval/SKILL.md","to":"hooks/router.sh","kind":"mention"},{"from":"skills/eval/SKILL.md","to":"hooks/hooks.json","kind":"mention"},{"from":"skills/eval/SKILL.md","to":"skills/eval/scripts/eval.py","kind":"mention"},{"from":"skills/eval/SKILL.md","to":"skills/eval/scripts/pretool-fixture.sh","kind":"mention"},{"from":"skills/eval/SKILL.md","to":"skills/eval/scripts/router-fixture.sh","kind":"mention"},{"from":"skills/eval/scripts/eval.py","to":"hooks/session-start.sh","kind":"mention"},{"from":"skills/eval/scripts/eval.py","to":"hooks/hooks.json","kind":"mention"},{"from":"skills/eval/scripts/eval.py","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/eval/scripts/eval.py","to":"hooks/router.sh","kind":"mention"},{"from":"skills/eval/scripts/eval.py","to":"hooks/coord-nudge.sh","kind":"mention"},{"from":"skills/eval/scripts/eval.py","to":"skills/oracle/SKILL.md","kind":"mention"},{"from":"skills/eval/scripts/fixture.sh","to":"skills/eval/scripts/eval.py","kind":"mention"},{"from":"skills/eval/scripts/fixture.sh","to":"hooks/router.sh","kind":"mention"},{"from":"skills/eval/scripts/pretool-fixture.sh","to":"hooks/pretool-gate.sh","kind":"mention"},{"from":"skills/eval/scripts/router-fixture.sh","to":"hooks/router.sh","kind":"mention"},{"from":"skills/explainer/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/fable-director/SKILL.md","to":"skills/fable-director/references/PLAN-FABLE-DIRECTOR-V4.md","kind":"mention"},{"from":"skills/fable-director/SKILL.md","to":"skills/fable-director/scripts/fable-launcher.sh","kind":"mention"},{"from":"skills/fable-director/SKILL.md","to":"skills/fable-director/references/coord-scaffold.md","kind":"mention"},{"from":"skills/fable-director/SKILL.md","to":"skills/fable-director/scripts/new-fable-project.sh","kind":"mention"},{"from":"skills/fable-director/SKILL.md","to":"skills/fable-director/references/spawn-lanes.md","kind":"mention"},{"from":"skills/fable-director/references/KICKOFF-DIRECTOR.md","to":"skills/fable-director/references/PLAN-FABLE-DIRECTOR-V4.md","kind":"mention"},{"from":"skills/fable-director/references/coord-scaffold.md","to":"skills/fable-director/references/PLAN-FABLE-DIRECTOR-V4.md","kind":"mention"},{"from":"skills/fable-director/references/spawn-lanes.md","to":"skills/fable-director/references/PLAN-FABLE-DIRECTOR-V4.md","kind":"mention"},{"from":"skills/fable-director/scripts/new-fable-project.sh","to":"skills/fable-director/references/PLAN-FABLE-DIRECTOR-V4.md","kind":"mention"},{"from":"skills/fable-director/scripts/new-fable-project.sh","to":"skills/fable-director/references/coord-scaffold.md","kind":"mention"},{"from":"skills/fable-mode/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/fable-mode/SKILL.md","to":"hooks/router.sh","kind":"mention"},{"from":"skills/fable-mode/SKILL.md","to":"skills/oracle/SKILL.md","kind":"mention"},{"from":"skills/factcheck/SKILL.md","to":"hooks/router.sh","kind":"mention"},{"from":"skills/factcheck/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/assets/engine.html","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/assets/engine.py","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/references/game-loop.md","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/references/juice.md","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/references/audio.md","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/scripts/playtest.mjs","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/references/pygame.md","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/references/genres/platformer.md","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/references/genres/shooter.md","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/references/genres/puzzle.md","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/game-forge/references/genres/arcade.md","kind":"mention"},{"from":"skills/game-forge/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/gpt/SKILL.md","to":"skills/gpt/scripts/gpt.sh","kind":"mention"},{"from":"skills/gpt/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/gpt/scripts/fixture.sh","to":"skills/gpt/scripts/gpt.sh","kind":"mention"},{"from":"skills/gpt/scripts/fixture.sh","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/graph/SKILL.md","to":"hooks/router.sh","kind":"mention"},{"from":"skills/graph/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/graph/SKILL.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/graph/SKILL.md","to":"skills/eval/scripts/eval.py","kind":"mention"},{"from":"skills/graph/SKILL.md","to":"skills/oracle/SKILL.md","kind":"mention"},{"from":"skills/graph/SKILL.md","to":".claude-plugin/plugin.json","kind":"mention"},{"from":"skills/graph/SKILL.md","to":"skills/doctor/scripts/render-check.sh","kind":"mention"},{"from":"skills/graph/SKILL.md","to":"skills/graph/scripts/river-fixture.sh","kind":"mention"},{"from":"skills/graph/SKILL.md","to":"skills/graph/scripts/journey-fixture.sh","kind":"mention"},{"from":"skills/graph/scripts/graph.py","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/graph/scripts/graph.py","to":"hooks/router.sh","kind":"mention"},{"from":"skills/graph/scripts/graph.py","to":"skills/compile/scripts/compile.py","kind":"mention"},{"from":"skills/graph/scripts/graph.py","to":"skills/eval/scripts/eval.py","kind":"mention"},{"from":"skills/graph/scripts/graph.py","to":"skills/oracle/SKILL.md","kind":"mention"},{"from":"skills/graph/scripts/journey-fixture.sh","to":"hooks/router.sh","kind":"mention"},{"from":"skills/graph/scripts/journey-fixture.sh","to":"skills/doctor/scripts/render-check.sh","kind":"mention"},{"from":"skills/graph/scripts/river-fixture.sh","to":"hooks/hooks.json","kind":"mention"},{"from":"skills/graph/scripts/river-fixture.sh","to":"skills/doctor/scripts/render-check.sh","kind":"mention"},{"from":"skills/introspect/SKILL.md","to":"skills/introspect/scripts/score_snapshot.py","kind":"mention"},{"from":"skills/introspect/SKILL.md","to":"skills/introspect/scripts/fixture.sh","kind":"mention"},{"from":"skills/introspect/SKILL.md","to":"skills/introspect/references/example-ledger.md","kind":"mention"},{"from":"skills/introspect/scripts/fixture.sh","to":"skills/introspect/scripts/score_snapshot.py","kind":"mention"},{"from":"skills/marketresearcher/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/oracle/SKILL.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/oracle/SKILL.md","to":"skills/doctor/scripts/pulse.sh","kind":"mention"},{"from":"skills/oracle/SKILL.md","to":"hooks/router.sh","kind":"mention"},{"from":"skills/oracle/SKILL.md","to":"skills/oracle/references/claude-foundation-template.md","kind":"mention"},{"from":"skills/recap/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/recap/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/recap/SKILL.md","to":"skills/recap/assets/decision-map-template.html","kind":"mention"},{"from":"skills/refuter/SKILL.md","to":"skills/refuter/scripts/brief.py","kind":"mention"},{"from":"skills/refuter/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/refuter/SKILL.md","to":"skills/refuter/scripts/verdict_lint.py","kind":"mention"},{"from":"skills/refuter/scripts/brief.py","to":"skills/refuter/references/brief-template.md","kind":"mention"},{"from":"skills/refuter/scripts/brief.py","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/refuter/scripts/fixture.sh","to":"skills/refuter/scripts/brief.py","kind":"source"},{"from":"skills/refuter/scripts/fixture.sh","to":"skills/refuter/scripts/verdict_lint.py","kind":"source"},{"from":"skills/researcher/SKILL.md","to":"hooks/router.sh","kind":"mention"},{"from":"skills/researcher/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/sessionend/SKILL.md","to":"skills/sessionend/references/live-handoff-template.md","kind":"mention"},{"from":"skills/sessionend/SKILL.md","to":"skills/graph/scripts/graph.py","kind":"mention"},{"from":"skills/sessionend/SKILL.md","to":"skills/doctor/scripts/pulse.sh","kind":"mention"},{"from":"skills/sessionend/SKILL.md","to":"hooks/session-end.sh","kind":"mention"},{"from":"skills/sessionend/SKILL.md","to":"skills/sessionend/references/claude-foundation-template.md","kind":"mention"},{"from":"skills/spend/SKILL.md","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/spend/SKILL.md","to":"skills/chatroom/scripts/room.py","kind":"mention"},{"from":"skills/spend/SKILL.md","to":"skills/spend/scripts/fixture.sh","kind":"mention"},{"from":"skills/spend/scripts/fixture.sh","to":"skills/spend/scripts/spend.py","kind":"mention"},{"from":"skills/stepbystep/SKILL.md","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/watch/SKILL.md","to":"skills/watch/scripts/watch.py","kind":"mention"},{"from":"skills/watch/scripts/fixture.sh","to":"skills/watch/scripts/watch.py","kind":"mention"},{"from":"skills/watch/scripts/fixture.sh","to":"skills/archivist/scripts/index.py","kind":"mention"},{"from":"skills/watch/scripts/watch.py","to":"skills/archivist/scripts/index.py","kind":"mention"}]};
+var merged = DATA.mode === "merged";
+var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+var tip = document.getElementById('tip'), panel = document.getElementById('panel');
+var root = document.documentElement, W = 0, H = 0, DPR = 1;
+
+/* ---- model ---- */
+var nodes = DATA.nodes.map(function(n, i){
+  var h = 0, s = n.id; for (var k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) | 0;
+  var ang = (h % 1000) / 1000 * Math.PI * 2, rad = 60 + ((h >> 7) % 320);
+  return {id:n.id, label:n.label || n.id, type:n.type, project:n.project||null,
+          size:n.size||0, mtime:n.mtime||0, deg:n.degree||0,
+          x:Math.cos(ang)*rad, y:Math.sin(ang)*rad, vx:0, vy:0, pin:false, on:true};
+});
+var index = {}; nodes.forEach(function(n,i){ index[n.id] = i; });
+var edges = [];
+DATA.edges.forEach(function(e){
+  var a = index[e.from], b = index[e.to];
+  if (a === undefined || b === undefined) return;
+  edges.push({a:a, b:b, kind:e.kind});
+});
+var out = {}, inc = {};
+edges.forEach(function(e){
+  (out[e.a] = out[e.a] || []).push(e); (inc[e.b] = inc[e.b] || []).push(e);
+});
+var clusters = {};
+if (merged && DATA.projects) DATA.projects.forEach(function(p, i){
+  /* cluster centres on a ring wide enough for the biggest project */
+  var r = 150 + Math.sqrt(DATA.nodes.length) * 26 + DATA.projects.length * 20;
+  var a = i / DATA.projects.length * Math.PI * 2;
+  clusters[p.name] = {x:Math.cos(a)*r, y:Math.sin(a)*r, color:p.color, name:p.name};
+});
+nodes.forEach(function(n){
+  var c = n.project && clusters[n.project];
+  if (c) { n.x = c.x + n.x * 0.35; n.y = c.y + n.y * 0.35; }
+});
+
+/* ---- colors ---- */
+var COL = {};
+function readColors(){
+  var cs = getComputedStyle(root);
+  ['estate','doc','code','config','other','external','project'].forEach(function(t){
+    COL[t] = cs.getPropertyValue('--c-' + t).trim() || '#888';
+  });
+  COL.edge = cs.getPropertyValue('--edge').trim();
+  COL.edgeHi = cs.getPropertyValue('--edge-hi').trim();
+  COL.text = cs.getPropertyValue('--text-primary').trim();
+  COL.muted = cs.getPropertyValue('--text-muted').trim();
+}
+function colorOf(n){
+  if (merged && n.project && clusters[n.project] && n.type !== 'external')
+    return n.type === 'project' ? clusters[n.project].color : clusters[n.project].color;
+  return COL[n.type] || COL.other;
+}
+var GENERIC = /^(SKILL\.md|README\.md|CLAUDE\.md|index\.[a-z]+|__init__\.py|package\.json|graph\.json)$/;
+function shortLabel(n){
+  var parts = n.label.split('/'), base = parts[parts.length - 1];
+  return (parts.length > 1 && GENERIC.test(base)) ? parts[parts.length - 2] + '/' + base : base;
+}
+function radius(n){
+  return (n.type === 'project' ? 9 : 3) + Math.min(11, Math.sqrt(n.deg) * 1.7);
+}
+
+/* ---- physics: repulsion + springs + gravity, cooled ---- */
+var alpha = 1, view = {x:0, y:0, k:1};
+function step(){
+  var i, j, n, m, dx, dy, d2, d, f;
+  for (i = 0; i < nodes.length; i++){
+    n = nodes[i];
+    for (j = i + 1; j < nodes.length; j++){
+      m = nodes[j];
+      dx = m.x - n.x; dy = m.y - n.y; d2 = dx*dx + dy*dy;
+      if (d2 > 90000 || d2 === 0){ if (d2 === 0){ m.x += 0.7; m.y -= 0.7; } continue; }
+      f = 900 / d2;
+      dx *= f; dy *= f;
+      n.vx -= dx; n.vy -= dy; m.vx += dx; m.vy += dy;
+    }
+  }
+  for (i = 0; i < edges.length; i++){
+    n = nodes[edges[i].a]; m = nodes[edges[i].b];
+    dx = m.x - n.x; dy = m.y - n.y; d = Math.sqrt(dx*dx + dy*dy) || 0.01;
+    f = (d - 46) * 0.012;
+    dx = dx / d * f; dy = dy / d * f;
+    n.vx += dx; n.vy += dy; m.vx -= dx; m.vy -= dy;
+  }
+  for (i = 0; i < nodes.length; i++){
+    n = nodes[i];
+    var cx = 0, cy = 0, g = 0.014;
+    var c = merged && n.project && clusters[n.project];
+    if (c){ cx = c.x; cy = c.y; g = 0.03; }
+    n.vx += (cx - n.x) * g; n.vy += (cy - n.y) * g;
+    if (n.pin || n === dragging){ n.vx = n.vy = 0; continue; }
+    n.vx *= 0.82; n.vy *= 0.82;
+    n.x += n.vx * alpha * 2.2; n.y += n.vy * alpha * 2.2;
+  }
+  alpha *= 0.988;
+}
+function fitView(){
+  if (!nodes.length) return;
+  var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (var i = 0; i < nodes.length; i++){
+    var n = nodes[i];
+    if (n.x < x0) x0 = n.x; if (n.x > x1) x1 = n.x;
+    if (n.y < y0) y0 = n.y; if (n.y > y1) y1 = n.y;
+  }
+  var w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
+  view.k = Math.max(0.15, Math.min(2.2, Math.min((W - 90) / w, (H - 90) / h)));
+  view.x = -(x0 + x1) / 2; view.y = -(y0 + y1) / 2;
+}
+
+/* ---- draw ---- */
+var hover = null, selected = null, dragging = null, query = '';
+var stage = document.getElementById('stage');
+/* ONE place that sizes the canvas: CSS box, backing store and transform together,
+   always against the CURRENT viewport. Returns true when anything changed. */
+function sizeCanvas(){
+  var r = stage.getBoundingClientRect();
+  var cssW = Math.max(1, Math.round(r.width)), cssH = Math.max(1, Math.round(r.height));
+  var dpr = window.devicePixelRatio || 1;
+  var bw = Math.round(cssW * dpr), bh = Math.round(cssH * dpr);
+  if (cssW === W && cssH === H && cv.width === bw && cv.height === bh && dpr === DPR)
+    return false;
+  W = cssW; H = cssH; DPR = dpr;
+  cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
+  cv.width = bw; cv.height = bh;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  return true;
+}
+function toScreen(n){ return {x:(n.x + view.x) * view.k + W/2, y:(n.y + view.y) * view.k + H/2}; }
+function toWorld(px, py){ return {x:(px - W/2) / view.k - view.x, y:(py - H/2) / view.k - view.y}; }
+function litEdge(e){
+  var s = selected === null ? -1 : selected;
+  return e.a === s || e.b === s || (hover !== null && (e.a === hover || e.b === hover));
+}
+function draw(){
+  ctx.clearRect(0, 0, W, H);
+  ctx.lineWidth = Math.min(1.4, 0.9 / Math.sqrt(view.k)) * view.k;
+  for (var i = 0; i < edges.length; i++){
+    var e = edges[i], n = nodes[e.a], m = nodes[e.b];
+    var lit = litEdge(e);
+    if (!lit && (!n.on || !m.on)) continue;
+    var A = toScreen(n), B = toScreen(m);
+    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y);
+    ctx.strokeStyle = lit ? COL.edgeHi : COL.edge;
+    ctx.globalAlpha = lit ? 0.85 : (query ? 0.18 : 0.42);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  var labelAll = view.k > 1.25;
+  var degMin = view.k > 0.9 ? 6 : (view.k > 0.55 ? 10 : 16);
+  for (var k = 0; k < nodes.length; k++){
+    var nd = nodes[k], P = toScreen(nd), r = radius(nd) * Math.min(1.6, Math.max(0.55, view.k));
+    if (P.x < -40 || P.y < -40 || P.x > W + 40 || P.y > H + 40) continue;
+    ctx.globalAlpha = nd.on ? 1 : 0.2;
+    ctx.beginPath(); ctx.arc(P.x, P.y, r, 0, 6.2832);
+    ctx.fillStyle = colorOf(nd); ctx.fill();
+    if (k === selected || k === hover || nd.pin){
+      ctx.lineWidth = 2; ctx.strokeStyle = COL.edgeHi; ctx.stroke();
+    }
+    if (nd.on && (labelAll || k === selected || k === hover || nd.type === 'project'
+                  || nd.deg >= degMin)){
+      var t = shortLabel(nd);
+      ctx.font = (nd.type === 'project' ? '600 ' : '') + '11px -apple-system,system-ui,sans-serif';
+      ctx.fillStyle = (k === selected || k === hover) ? COL.text : COL.muted;
+      ctx.globalAlpha = nd.on ? 1 : 0.2;
+      ctx.fillText(t, P.x + r + 3, P.y + 3.5);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+var ticks = 0, userMoved = false, guard = 0;
+function frame(){
+  /* viewport guard: a resize event can be missed (panes, zoom, dpr changes) —
+     re-check the box periodically and re-frame whenever it actually moved */
+  if ((guard = (guard + 1) % 10) === 0 && sizeCanvas()) fitView();
+  if (alpha > 0.004 && !dragging){
+    step(); ticks++;
+    if (!userMoved && ticks % 4 === 0) fitView();   /* auto-frame while it settles */
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+
+/* ---- picking + interaction ---- */
+function pick(px, py){
+  var best = null, bd = 1e9;
+  for (var i = 0; i < nodes.length; i++){
+    var P = toScreen(nodes[i]), dx = P.x - px, dy = P.y - py, d = dx*dx + dy*dy;
+    var r = radius(nodes[i]) * Math.min(1.6, Math.max(0.55, view.k)) + 5;
+    if (d < r*r && d < bd){ bd = d; best = i; }
+  }
+  return best;
+}
+var pan = null, moved = false;
+cv.addEventListener('mousedown', function(ev){
+  var r = cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+  var i = pick(px, py); moved = false;
+  if (i !== null){ dragging = nodes[i]; dragging._i = i; }
+  else { pan = {x:px, y:py, vx:view.x, vy:view.y}; }
+  cv.classList.add('drag');
+});
+window.addEventListener('mousemove', function(ev){
+  var r = cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+  if (dragging){
+    var w = toWorld(px, py); dragging.x = w.x; dragging.y = w.y;
+    dragging.vx = dragging.vy = 0; moved = true; userMoved = true;
+    alpha = Math.max(alpha, 0.12); return;
+  }
+  if (pan){ view.x = pan.vx + (px - pan.x) / view.k; view.y = pan.vy + (py - pan.y) / view.k;
+            moved = true; userMoved = true; return; }
+  if (px < 0 || py < 0 || px > W || py > H){ hover = null; tip.style.display = 'none'; return; }
+  var i = pick(px, py);
+  hover = i;
+  if (i === null){ tip.style.display = 'none'; cv.style.cursor = 'grab'; return; }
+  var n = nodes[i];
+  cv.style.cursor = 'pointer';
+  tip.textContent = n.label + '  ·  ' + n.deg + ' link' + (n.deg === 1 ? '' : 's');
+  tip.style.display = 'block';
+  tip.style.left = Math.min(W - 30, px + 14) + 'px';
+  tip.style.top = (py + 16) + 'px';
+});
+window.addEventListener('mouseup', function(){
+  if (dragging && !moved){ select(dragging._i, true); }
+  dragging = null; pan = null; cv.classList.remove('drag');
+});
+cv.addEventListener('wheel', function(ev){
+  ev.preventDefault();
+  userMoved = true;
+  var r = cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+  var before = toWorld(px, py);
+  view.k = Math.max(0.15, Math.min(6, view.k * (ev.deltaY < 0 ? 1.12 : 1/1.12)));
+  var after = toWorld(px, py);
+  view.x += after.x - before.x; view.y += after.y - before.y;
+}, {passive:false});
+
+/* ---- side panel ---- */
+function fmt(n){
+  var kb = n.size >= 1024 ? (n.size/1024).toFixed(1) + ' KB' : n.size + ' B';
+  var d = n.mtime ? new Date(n.mtime * 1000).toISOString().slice(0, 10) : '—';
+  return n.type + ' · ' + (n.size ? kb : 'external') + ' · ' + d;
+}
+function list(items, dir){
+  if (!items.length) return '<div class="empty">none</div>';
+  return '<ul>' + items.map(function(e){
+    var other = dir === 'out' ? nodes[e.b] : nodes[e.a];
+    return '<li data-i="' + (dir === 'out' ? e.b : e.a) + '">' + esc(other.label) +
+           ' <span class="k">' + esc(e.kind) + '</span></li>';
+  }).join('') + '</ul>';
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+function select(i, pinIt){
+  selected = i;
+  var n = nodes[i];
+  if (pinIt) n.pin = true;
+  panel.classList.add('open');
+  panel.innerHTML = '<h2>' + esc(n.label) + '</h2><div class="meta">' + esc(fmt(n)) +
+    ' · ' + n.deg + ' link' + (n.deg === 1 ? '' : 's') +
+    (n.project ? ' · ' + esc(n.project) : '') + '</div>' +
+    '<button id="unpin" type="button">' + (n.pin ? 'unpin' : 'pin') + '</button> ' +
+    '<button id="center" type="button">center</button>' +
+    '<div class="lbl">links out (' + (out[i] || []).length + ')</div>' + list(out[i] || [], 'out') +
+    '<div class="lbl">links in (' + (inc[i] || []).length + ')</div>' + list(inc[i] || [], 'in');
+  panel.querySelectorAll('li').forEach(function(li){
+    li.addEventListener('click', function(){ select(+li.dataset.i, false); });
+  });
+  document.getElementById('unpin').addEventListener('click', function(){
+    n.pin = !n.pin; alpha = Math.max(alpha, 0.2); select(i, false);
+  });
+  document.getElementById('center').addEventListener('click', function(){
+    view.x = -n.x; view.y = -n.y;
+  });
+}
+
+/* ---- search, legend, theme ---- */
+var q = document.getElementById('q'), qn = document.getElementById('qn');
+q.addEventListener('input', function(){
+  query = q.value.trim().toLowerCase();
+  var shown = 0;
+  nodes.forEach(function(n){
+    n.on = !query || n.label.toLowerCase().indexOf(query) >= 0;
+    if (n.on) shown++;
+  });
+  qn.textContent = query ? shown + '/' + nodes.length : '';
+});
+function legend(){
+  var el = document.getElementById('legend'), items = [];
+  if (merged && DATA.projects){
+    DATA.projects.forEach(function(p){
+      items.push(['<span><i class="dot" style="background:' + p.color + '"></i>' +
+                  esc(p.name) + ' <span style="color:var(--text-muted)">' + p.nodes +
+                  '</span></span>'].join(''));
+    });
+    items.push('<span><i class="dot" style="background:var(--c-external)"></i>external</span>');
+  } else {
+    [['estate','estate (COORD / CLAUDE.md / START-HERE / spend)'], ['doc','docs'],
+     ['code','code'], ['config','config'], ['other','other'],
+     ['external','external ref']].forEach(function(p){
+      var n = nodes.filter(function(x){ return x.type === p[0]; }).length;
+      if (n) items.push('<span><i class="dot" style="background:var(--c-' + p[0] + ')"></i>' +
+                        p[1] + ' <span style="color:var(--text-muted)">' + n + '</span></span>');
+    });
+  }
+  el.innerHTML = items.join('');
+}
+document.getElementById('theme').addEventListener('click', function(){
+  var cur = root.getAttribute('data-theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  readColors();
+});
+document.getElementById('fit').addEventListener('click', fitView);
+document.getElementById('reheat').addEventListener('click', function(){
+  alpha = 1; ticks = 0; userMoved = false; nodes.forEach(function(n){ n.pin = false; });
+});
+function onViewportChange(){ sizeCanvas(); fitView(); }
+window.addEventListener('resize', onViewportChange);
+window.addEventListener('orientationchange', onViewportChange);
+if (window.ResizeObserver) new ResizeObserver(onViewportChange).observe(stage);
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+
+readColors(); legend(); sizeCanvas(); fitView(); frame();
+})();
+</script>
+</body>
+</html>

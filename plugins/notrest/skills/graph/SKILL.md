@@ -1,6 +1,6 @@
 ---
 name: graph
-description: "Two script-built views, self-contained HTML at zero model tokens, then OPENED: the FILE GRAPH (every file and reference — Obsidian for a codebase) and the RIVER (findings.jsonl + COORD volumes as a river toward the goal — side channels, backtrack loops, conflict rocks, milestone flags). Plus text queries over the last scan. Use on /graph, \"project graph\", \"/graph river\", \"what links to this file\", \"orphans\", \"stale files\", \"all projects graph\"."
+description: "Two script-built views, self-contained HTML at zero model tokens, then OPENED: the FILE GRAPH (every file and reference — Obsidian for a codebase) and the RIVER (findings.jsonl + COORD volumes as a river toward the goal — side channels, backtrack loops, conflict rocks, milestone flags). Plus text queries over the last scan. Use on /graph, cockpit, \"project graph\", \"/graph river\", \"what links to this file\", \"orphans\", \"stale files\", \"all projects graph\"."
 ---
 
 # graph — how this project connects, and how it got here
@@ -232,6 +232,84 @@ Flags: `--root`, `--out <file.html>` (default `graph/journey.html`; json written
 `--open` / `--no-open` (default: write only, then open with the environment-aware door above).
 Exit 2 if no directory holding `skills/` can be found under the root.
 
+## `/graph cockpit` — one page, always on
+
+The other three verbs draw a *moment*. The cockpit is the thing you leave open: a local
+page that re-reads the estate's own files every five seconds, so the work a session is
+doing right now shows up on a screen instead of in a scrollback.
+
+```bash
+python3 <graph-skill>/scripts/cockpit.py serve --root "$ROOT"      # → http://127.0.0.1:8788/
+```
+
+**Serve, then open — the same environment-aware door as the river,** with one simplification:
+the cockpit *is* a server, so there is no `file://` trap to route around. Hand the browser
+pane `http://127.0.0.1:8788/` directly; on a plain macOS CLI the command opens it for you
+(`--no-open` to suppress). **Port 8788 is reserved for it** and chosen to stay clear of
+`render-check.sh`'s 8790-8799, so a cockpit can stay up while a render is being gated on the
+same machine. It binds **127.0.0.1 only, always** — there is no flag to widen that. Stop it
+with Ctrl-C in the shell that owns it, or kill the pid that shell reports.
+
+**THE WINDOW-NOT-CONTROL-PANEL LAW.** Every route is a read except exactly one:
+`POST /room/<name>`, which posts a line to a chatroom by shelling to chatroom's own
+`room.py post`. **The no-secrets screen is chatroom's, and the cockpit neither pre-screens
+nor overrides it** — a refusal comes back as room.py's own exit 5 (HTTP 422) with nothing
+written. There is no endpoint that edits a ledger, bumps a version, runs a skill, appends a
+finding, or repairs anything. If you want the estate changed, a session changes it; the
+cockpit watches. A `POST` to any other path is a 404 on purpose.
+
+**Connect your Claude to it.** Nothing plugs in — that is the design. Sessions already write
+the estate (COORD lines, the agent ledger with its banked commissions, findings, the spend
+ledger, watch rows); the cockpit just reads those files. So a session running in this repo
+appears in the window within five seconds without knowing the window exists. The two-way wire
+is the **chatroom panel**: a session that joins a room (`/chatroom`) and a person watching the
+cockpit are in the same room, and the mail slot is how the watcher answers.
+
+| route | serves |
+|---|---|
+| `GET /` | the page (built at startup, also written to `<root>/graph/cockpit.html`) |
+| `GET /data/coord.json` | the active COORD volume's tail (40 lines, the river's own parser) |
+| `GET /data/agents.json` | `COORD-AGENTS.md` tail (30) with each commission pointer resolved |
+| `GET /data/briefs/<id>.json` | one banked commission, verbatim — root-contained |
+| `GET /data/spend.json` | `spend.py report --json`, else the captured verdict line |
+| `GET /data/pulse.json` | the newest `[pulse]` line already in COORD (never runs a pulse) |
+| `GET /data/watch.json` | watchlist rows, `watch.py due`, the newest drift block |
+| `GET /data/library.json` | the shelf's newest concepts generation + registered projects |
+| `GET /data/findings.json` | `index.py track --json` |
+| `GET /data/version.json` | manifest version + git HEAD (`+dirty` when it is) |
+| `GET /pic/{river,journey,graph}.html` | the renders, rebuilt only when their inputs moved |
+| `GET /room/<name>` | a room's tail |
+| **`POST /room/<name>`** | **the only write** — `{handle, text}` → `room.py post` |
+| anything else | 404, with the route list |
+
+**The renders stay deterministic; the cockpit is live — and the difference is deliberate.**
+`/pic/*` shells to `graph.py`, whose byte-identical law is untouched: same inputs, same page.
+A render is regenerated **only** when its input files' mtimes are newer than the output, and
+never more than once per **5 seconds** (a browser reloading in a loop must not become a render
+loop); `?force=1` overrides both. The cockpit *page* reads the wall clock — it polls every 5s
+— because a live monitor that cannot say how stale it is would be worse than none. **This does
+not dilute the byte-identical law:** the law is about *renders*, and the renders it serves are
+still deterministic. The staleness stamp is taken from the `X-Cockpit-Generated` **response
+header**, never the browser's clock, so the page reports the server's read time — a viewer
+with a skewed clock cannot make the page lie about freshness.
+
+**What the page shows.** A status bar of five chips across the top — pulse verdict + its
+timestamp, manifest version + git HEAD, spend verdict, watch due count, and recent lane
+activity. Below it, the left two-thirds is the picture stage: three tabs (river · journey ·
+file graph) over an iframe, with a `rebuild` button. The right column is four always-present
+feeds, each with its own bounded scroll so none can push the others off-screen: the **COORD
+tail** (newest first, ship/gate/correction flags), **lanes & commissions** (one row per
+agent-ledger entry, each with a ruled-sheet glyph — a filled sheet means that lane's exact
+prompt is banked, and clicking it opens the whole commission in a readable pane), the
+**library** concepts, the **chatroom** (pick a room, read its tail, post a line), and
+**findings** by status.
+
+**Honesty about the lane chip.** It counts lanes that **finished** in the last hour, not lanes
+running: the agent ledger is written at `SubagentStop`, so a lane still working is in no file
+the cockpit can read. The chip's tooltip says exactly that. The file-graph picture's rebuild
+trigger is the **git index** plus two directory mtimes, not a full repo walk — too expensive
+per request; use `rebuild` (`?force=1`) after an untracked edit you want reflected.
+
 ## Commands
 
 Installed as a plugin the script lives at
@@ -256,6 +334,10 @@ or `~/.claude/skills/…`). `<graph-skill>` below means that path.
 - **Draw the river:** `python3 <graph-skill>/scripts/graph.py river --root <project> [--session S] [--cap N] [--out graph/river.html] [--open|--no-open] [--now]`
   Prints `…/river.html: N records · C channels (M merged, D dead-end) · R rocks (K resting on refuted) · B backtracks · F milestones · mode=…`,
   then one `note:` line per honesty note (degrade mode, cap, unparseable ledger lines).
+- **Open the cockpit:** `python3 <graph-skill>/scripts/cockpit.py serve --root <project> [--port 8788] [--no-open]`
+  A loopback-only live window over the estate. Prints the URL, the page path, the bind, the
+  route list and the stop instruction, then serves until Ctrl-C. Reads everything; writes
+  exactly one thing, a chatroom post, through chatroom's own screened `room.py post`.
 - **Draw the journey:** `python3 <graph-skill>/scripts/graph.py journey --root <project> [--out graph/journey.html] [--open|--no-open]`
   Prints `…/journey.html: N skills · S router shapes · P phrases (R router, I intake) · C chain arrows · B by name only · stamp=<commit> (git-head)`,
   then one `note:` line per disclosure (no router, no chains section, prose-only hand-offs,
@@ -429,6 +511,13 @@ view you did not see.
   phases it fully owns: a plugin tree with no `router.sh` (shapes 0, disclosed, not silently
   empty) and a throwaway git repo proving the stamp is the **commit** — a touched input
   re-renders identically, an edited one turns the stamp `+dirty`. Exit 0 = all held.
+- `scripts/cockpit-fixture.sh` — the live window, asserted as a **client**: it stands a server
+  up on a scratch estate (and a scratch `CHATROOM_ROOT`), then proves the loopback bind at the
+  socket, every `/data` panel 200-and-parses against seeded files, a banked brief served
+  verbatim while an outside-root pointer is refused unread, a render rebuilt when its input
+  moves and *not* rebuilt inside the debounce, the mail slot round-tripping a post and passing
+  chatroom's exit-5 refusal through as 422 with nothing written, a POST to any other route
+  404-ing, and the server reaping its own port. Exit 0 = all held.
 
 ## Self-check before finishing
 

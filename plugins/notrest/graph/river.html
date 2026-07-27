@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>river — notrest</title>
+<style>
+:root{
+  --surface-0:#f7f6f2; --surface-1:#ffffff; --border:#e6e3da; --border-strong:#d2cfc4;
+  --text-primary:#20201d; --text-secondary:#57564f; --text-muted:#86857b;
+  --water:#5C98D6; --water-core:#9CC8F0; --water-side:#7FA8C4; --sheen:#ffffff;
+  --bank:#ddd7c6; --sand:#efeade; --rock:#C2554E; --dead:#B4633A;
+  --stone:#9a988c; --stone-edge:#6f6e64; --goal:#1D9E75;
+  --back:#D89A3A; --flag-ship:#7F77DD; --flag-gate:#1D9E75; --flag-corr:#D89A3A;
+  --lane:#a8a69a; --link:#b9b6aa; --commission:#7F77DD;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --surface-0:#141413; --surface-1:#1f1f1d; --border:#37362e; --border-strong:#4b4a40;
+    --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+    --water:#2F6FA8; --water-core:#6FA9E6; --water-side:#44718c; --sheen:#cfe6ff;
+    --bank:#332f26; --sand:#1c1b18; --rock:#DD7F77; --dead:#d98a5e;
+    --stone:#6c6b62; --stone-edge:#a7a69b; --goal:#3fc79c;
+    --back:#e6b45c; --flag-ship:#9a92ea; --flag-gate:#3fc79c; --flag-corr:#e6b45c;
+    --lane:#5d5c53; --link:#4a493f; --commission:#9a92ea;
+  }
+}
+:root[data-theme="dark"]{
+  --surface-0:#141413; --surface-1:#1f1f1d; --border:#37362e; --border-strong:#4b4a40;
+  --text-primary:#f2f1ea; --text-secondary:#b7b5a9; --text-muted:#8b8a7f;
+  --water:#2F6FA8; --water-core:#6FA9E6; --water-side:#44718c; --sheen:#cfe6ff;
+  --bank:#332f26; --sand:#1c1b18; --rock:#DD7F77; --dead:#d98a5e;
+  --stone:#6c6b62; --stone-edge:#a7a69b; --goal:#3fc79c;
+  --back:#e6b45c; --flag-ship:#9a92ea; --flag-gate:#3fc79c; --flag-corr:#e6b45c;
+  --lane:#5d5c53; --link:#4a493f; --commission:#9a92ea;
+}
+*{box-sizing:border-box}
+html{height:100%;width:100%}
+body{margin:0;width:100vw;height:100vh;background:var(--surface-0);color:var(--text-primary);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center;padding:.6rem .9rem;
+  border-bottom:1px solid var(--border);background:var(--surface-1)}
+h1{font-size:14px;font-weight:500;margin:0}
+.sub{font-size:12px;color:var(--text-muted)}
+.path{max-width:52ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.grow{flex:1}
+input[type=search]{font:inherit;font-size:12px;padding:.3rem .55rem;border-radius:999px;
+  border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);width:190px}
+input[type=search]:focus{outline:none;border-color:var(--border-strong)}
+button{background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border);
+  border-radius:999px;padding:.3rem .7rem;font-size:12px;cursor:pointer;font-family:inherit}
+button:hover{border-color:var(--border-strong)}
+main{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+#stage{flex:1;position:relative;min-width:0;min-height:0;overflow:hidden}
+svg{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;
+  touch-action:none;background:var(--surface-0)}
+svg.drag{cursor:grabbing}
+/* --- the water --- */
+.sandband{fill:var(--sand)}
+.bankline{stroke:var(--bank);stroke-width:2;fill:none}
+.band{fill:none;stroke:var(--water);stroke-linecap:round;stroke-linejoin:round;opacity:.34}
+.band.side{stroke:var(--water-side);opacity:.30}
+.core{fill:none;stroke:var(--water-core);stroke-linecap:round;stroke-linejoin:round;opacity:.75}
+.flow{fill:none;stroke:var(--sheen);stroke-linecap:round;opacity:.30;
+  stroke-dasharray:16 190;animation:drift 11s linear infinite}
+@keyframes drift{to{stroke-dashoffset:-206}}
+@media (prefers-reduced-motion: reduce){.flow{animation:none;opacity:.14}}
+.goalbank{fill:var(--goal);opacity:.14;stroke:var(--goal);stroke-opacity:.5;stroke-width:1.5}
+.goaltext{fill:var(--goal);font-size:26px;font-weight:600;letter-spacing:.22em}
+.goalsub{fill:var(--text-muted);font-size:12px}
+/* --- stones and rocks --- */
+.stone{fill:var(--stone);stroke:var(--stone-edge);stroke-width:1.1}
+.rockglyph{fill:var(--rock);stroke:var(--rock);stroke-width:1.2;fill-opacity:.85}
+.node{cursor:pointer}
+/* the halo doubles as the hit area — fill:transparent, so a stone stays easy to
+   hover when the whole river is zoomed out to a hairline */
+.node .halo{fill:transparent;stroke:var(--text-primary);stroke-width:2;opacity:0}
+.node:hover .halo{opacity:.85}
+.node:hover .halo,.node.pin .halo{opacity:.85}
+.node.st-superseded .stone{fill-opacity:.28;stroke-dasharray:3 2.5}
+.node.st-superseded .nlabel{opacity:.5;text-decoration:line-through}
+.node.st-refuted .halo{stroke:var(--rock)}
+.node.dim{opacity:.16}
+.dot{fill:var(--surface-1);opacity:.75}
+.ring{fill:none;stroke:var(--stone-edge);stroke-width:1.2;opacity:.9}
+.forkmark{fill:none;stroke:var(--water-side);stroke-width:2;stroke-linecap:round}
+.nlabel{fill:var(--text-secondary);font-size:11.5px;text-anchor:middle}
+svg.far .nlabel,svg.far .flaglabel,svg.far .deadlabel,svg.far .arclabel,
+svg.far .restlabel{display:none}
+.wake{fill:none;stroke:var(--sheen);stroke-width:1.4;opacity:.5}
+/* --- arcs --- */
+.arc{fill:none;stroke-width:2;opacity:.85}
+.arc.back{stroke:var(--back);stroke-dasharray:7 4}
+.arc.supersede{stroke:var(--text-muted);stroke-dasharray:2 4}
+.arc.refute{stroke:var(--rock);stroke-dasharray:2 4}
+/* rests-on-refuted: the same red as a rock, but a LONG dash and a forward arrow
+   — the eye must not confuse "this was refuted" with "this stands on refuted". */
+.arc.rests{stroke:var(--rock);stroke-dasharray:10 5;stroke-width:2.4;opacity:.92}
+.arc.link{stroke:var(--link);stroke-width:1.2;opacity:.55;stroke-dasharray:1 5}
+.ah-back{fill:var(--back)}.ah-sup{fill:var(--text-muted)}.ah-ref{fill:var(--rock)}
+.arclabel{fill:var(--back);font-size:11px;text-anchor:middle}
+.restlabel{fill:var(--rock);font-size:11px;text-anchor:middle}
+.restmark{fill:none;stroke:var(--rock);stroke-width:1.3;stroke-dasharray:3 3;opacity:.9}
+.deadmark{stroke:var(--dead);stroke-width:2.2;fill:none;stroke-linecap:round}
+.deadlabel{fill:var(--dead);font-size:11px}
+/* --- banks --- */
+.pole{stroke:var(--bank);stroke-width:1.6}
+.pennant.ship{fill:var(--flag-ship)}.pennant.gate{fill:var(--flag-gate)}
+.pennant.correction{fill:var(--flag-corr)}
+.flaglabel{font-size:11.5px;fill:var(--text-secondary)}
+.flag{cursor:pointer}.flag:hover .flaglabel{fill:var(--text-primary)}
+.lanetick{fill:var(--lane);opacity:.75;cursor:pointer}
+.lanetick:hover{opacity:1}
+/* COMMISSION — a lane whose exact prompt is banked on disk. Deliberately the
+   loudest thing on the bottom bank: a commission nobody can see is the failure
+   this glyph exists to make impossible. */
+.lanetick.commission{opacity:.95}
+.commsheet{fill:var(--surface-1);stroke:var(--commission);stroke-width:1.5}
+.commrule{stroke:var(--commission);stroke-width:1.3;stroke-linecap:round;opacity:.85}
+.commstem{stroke:var(--commission);stroke-width:1.1;opacity:.55}
+.lanetick.commission:hover .commsheet{fill:var(--commission);fill-opacity:.22}
+.commcount{fill:var(--commission);font-size:11px;letter-spacing:.06em}
+svg.far .commcount{display:none}
+.banklabel{fill:var(--text-muted);font-size:11px;letter-spacing:.08em}
+/* --- chrome --- */
+#legend{position:absolute;left:.7rem;bottom:.7rem;background:var(--surface-1);
+  border:1px solid var(--border);border-radius:10px;padding:.5rem .65rem;font-size:11.5px;
+  color:var(--text-secondary);max-width:min(680px,92%);max-height:42%;overflow:auto}
+#legend>summary{cursor:pointer;list-style:none;color:var(--text-muted);font-size:11px;
+  letter-spacing:.06em;margin:-.15rem 0 0}
+#legend>summary::-webkit-details-marker{display:none}
+#legend:not([open]){padding:.3rem .6rem}
+#legend:not([open])>summary{margin:0}
+#legend .row{display:flex;flex-wrap:wrap;gap:.25rem .8rem;align-items:center}
+#legend .row+.row{margin-top:.35rem;padding-top:.35rem;border-top:1px solid var(--border)}
+#legend span.it{display:inline-flex;align-items:center;gap:.32rem}
+#legend .n{color:var(--text-muted)}
+#legend .note{color:var(--text-muted);line-height:1.45}
+.sw{width:16px;height:9px;border-radius:3px;flex:none;display:inline-block}
+#card{position:absolute;display:none;max-width:min(430px,72vw);max-height:56vh;overflow:auto;
+  background:var(--surface-1);
+  border:1px solid var(--border-strong);border-radius:10px;padding:.55rem .7rem;font-size:12.5px;
+  box-shadow:0 6px 24px rgba(0,0,0,.18);pointer-events:none;z-index:6;line-height:1.45}
+#card.pinned{pointer-events:auto}
+#card .k{display:inline-block;font-size:10.5px;padding:.05rem .4rem;border-radius:999px;
+  border:1px solid var(--border);color:var(--text-secondary);margin-right:.25rem}
+#card .ask{font-weight:600;margin:.35rem 0 .15rem}
+#card .st{color:var(--text-secondary)}
+#card .lbl{font-size:10.5px;letter-spacing:.04em;color:var(--text-muted);margin:.5rem 0 .2rem}
+#card code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;
+  word-break:break-all;color:var(--text-secondary)}
+#card .evrow{display:flex;gap:.35rem;align-items:baseline;padding:.1rem 0}
+.ev{font-size:10px;padding:.03rem .35rem;border-radius:999px;flex:none;
+  border:1px solid var(--border-strong);color:var(--text-secondary)}
+.ev-cited{background:color-mix(in srgb,var(--goal) 22%,transparent);border-color:var(--goal)}
+.ev-estimate{background:color-mix(in srgb,var(--back) 22%,transparent);border-color:var(--back)}
+.ev-recall{background:color-mix(in srgb,var(--flag-ship) 20%,transparent);border-color:var(--flag-ship)}
+.ev-unverified{background:color-mix(in srgb,var(--rock) 18%,transparent);border-color:var(--rock)}
+.ev-model-opinion{background:color-mix(in srgb,var(--rock) 18%,transparent);border-color:var(--rock)}
+#card .foot{color:var(--text-muted);font-size:10.5px;margin-top:.45rem}
+#card .rests{color:var(--rock);font-weight:600;font-size:11.5px;letter-spacing:.03em;
+  margin:.4rem 0 .1rem}
+#card .brief{border-left:2px solid var(--commission);padding:.1rem 0 .1rem .5rem;
+  color:var(--text-primary);white-space:pre-wrap;font-size:12px}
+#card .nocomm{color:var(--text-muted);font-size:12px}
+.sw.dash{background:none!important;height:0;border-radius:0;border-top:3px dashed var(--rock)}
+.sw.sheet{background:var(--surface-0);border:1.4px solid var(--commission);border-radius:2px;
+  width:10px;height:13px}
+#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:var(--text-muted);font-size:13px;text-align:center;padding:2rem}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>river — <span class="mono">notrest</span></h1>
+    <div class="sub mono path" title="/Users/ethanabot/Desktop/oracle-suite-plugin/plugins/notrest">/Users/ethanabot/Desktop/oracle-suite-plugin/plugins/notrest</div>
+  </div>
+  <div class="sub">0 records · 1 channels · 0 rocks · 0 flags · COORD-only · (no dated input) <span title="stamp source">(newest-input)</span></div>
+  <span class="grow"></span>
+  <input id="q" type="search" placeholder="filter records…" autocomplete="off">
+  <span id="qn" class="sub"></span>
+  <button id="fit" type="button">fit</button>
+  <button id="zin" type="button">+</button>
+  <button id="zout" type="button">−</button>
+  <button id="theme" type="button">light / dark</button>
+</header>
+<main><div id="stage">
+  <svg id="sv" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ah-back" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="7" markerHeight="6"
+              orient="auto-start-reverse"><path class="ah-back" d="M0,0 L10,4 L0,8 z"/></marker>
+      <marker id="ah-sup" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5"
+              orient="auto-start-reverse"><path class="ah-sup" d="M0,0 L10,4 L0,8 z"/></marker>
+      <marker id="ah-ref" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="6" markerHeight="5"
+              orient="auto-start-reverse"><path class="ah-ref" d="M0,0 L10,4 L0,8 z"/></marker>
+    </defs>
+    <g id="scene"></g>
+  </svg>
+  <div id="card"></div>
+  <details id="legend" open><summary>LEGEND — click to fold</summary></details>
+  <div id="empty" hidden></div>
+</div></main>
+<script>
+(function(){
+var D = {"generated":"(no dated input)","stamp_from":"newest-input","root":"/Users/ethanabot/Desktop/oracle-suite-plugin/plugins/notrest","mode":"coord-only","session":null,"cap":500,"sources":{"findings":null,"coord":["COORD-ARCHIVE.md","COORD.md"],"agents":"COORD-AGENTS.md"},"goal":{"x":490.0,"label":"GOAL"},"bankInset":{"top":66.0,"bottom":66.0},"extent":{"x0":-130.0,"y0":-215.0,"x1":640.0,"y1":195.0},"capped":null,"notes":["archive/findings.jsonl absent \u2014 COORD-only river: every node is a ledger line, its kind and relation inferred by heuristic"],"counts":{"records":0,"total_records":0,"toward":0,"lateral":0,"back":0,"side_route":0,"conflicts":0,"rocks":0,"live":0,"superseded":0,"refuted":0,"rests_on_refuted":0,"channels":1,"side_channels":0,"merged":0,"dead_end":0,"edges":0,"milestones":0,"ships":0,"gates":0,"corrections":0,"coord_lines":0,"lanes":0,"commissions":0,"lanes_uncommissioned":0},"channels":[{"id":0,"kind":"main","origin":null,"first":null,"last":null,"outcome":"goal","merge_into":null,"nodes":[],"y":0.0,"points":[]}],"nodes":[],"edges":[],"milestones":[],"lanes":[]};
+var NS = 'http://www.w3.org/2000/svg';
+var root = document.documentElement;
+var svg = document.getElementById('sv'), scene = document.getElementById('scene');
+var stage = document.getElementById('stage'), card = document.getElementById('card');
+var nodes = D.nodes || [], byId = {}, i;
+for (i = 0; i < nodes.length; i++) byId[nodes[i].id] = nodes[i];
+var groups = [], pinned = null, view = {x:0, y:0, k:1}, userMoved = false;
+var LABELS = nodes.length <= 60;
+
+function el(tag, attrs, cls){
+  var e = document.createElementNS(NS, tag);
+  if (cls) e.setAttribute('class', cls);
+  for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function esc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function clip(s, n){ s = String(s || ''); return s.length <= n ? s : s.slice(0, n - 1) + '…'; }
+function num(v){ return Math.round(v * 100) / 100; }
+
+/* Catmull-Rom → cubic bezier: a river bends, it does not zigzag. */
+function smooth(pts){
+  if (!pts.length) return '';
+  if (pts.length === 1) return 'M' + pts[0][0] + ',' + pts[0][1];
+  var d = 'M' + pts[0][0] + ',' + pts[0][1], j;
+  for (j = 0; j < pts.length - 1; j++){
+    var p0 = pts[j - 1] || pts[j], p1 = pts[j], p2 = pts[j + 1], p3 = pts[j + 2] || p2;
+    d += 'C' + num(p1[0] + (p2[0] - p0[0]) / 6) + ',' + num(p1[1] + (p2[1] - p0[1]) / 6) +
+         ' ' + num(p2[0] - (p3[0] - p1[0]) / 6) + ',' + num(p2[1] - (p3[1] - p1[1]) / 6) +
+         ' ' + p2[0] + ',' + p2[1];
+  }
+  return d;
+}
+/* deterministic stone shape: the id hashes to the same pebble every render */
+function hash(s){
+  var h = 2166136261, j;
+  for (j = 0; j < s.length; j++){ h ^= s.charCodeAt(j); h = (h * 16777619) >>> 0; }
+  return h;
+}
+function pebble(cx, cy, r, seed, sides, jag){
+  var h = seed || 1, pts = [], j;
+  for (j = 0; j < sides; j++){
+    h = (h * 1103515245 + 12345) >>> 0;
+    var f = 1 - jag + ((h >>> 9) % 100) / 100 * (jag * 2);
+    var a = j / sides * Math.PI * 2 + ((h >>> 17) % 100) / 100 * 0.22;
+    pts.push(num(cx + Math.cos(a) * r * f) + ',' + num(cy + Math.sin(a) * r * f * 0.84));
+  }
+  return pts.join(' ');
+}
+function loopPath(x1, y1, x0, y0){
+  var lift = 74 + Math.min(150, Math.abs(x1 - x0) * 0.15);
+  var top = Math.min(y0, y1) - lift;
+  return 'M' + x1 + ',' + y1 + ' C' + num(x1 - (x1 - x0) * 0.28) + ',' + num(top) +
+         ' ' + num(x0 + (x1 - x0) * 0.28) + ',' + num(top) + ' ' + x0 + ',' + y0;
+}
+function underPath(x1, y1, x0, y0){
+  var drop = 54 + Math.min(120, Math.abs(x1 - x0) * 0.10);
+  var bot = Math.max(y0, y1) + drop;
+  return 'M' + x1 + ',' + y1 + ' C' + num(x1 - (x1 - x0) * 0.3) + ',' + num(bot) +
+         ' ' + num(x0 + (x1 - x0) * 0.3) + ',' + num(bot) + ' ' + x0 + ',' + y0;
+}
+
+/* ---------------------------------------------------------------- the scene */
+var BI = D.bankInset || {top:66, bottom:66};
+var E = D.extent, TOPY = E.y0 + BI.top, BOTY = E.y1 - BI.bottom;
+var gBank = el('g'), gWater = el('g'), gArc = el('g'), gNode = el('g'),
+    gFlag = el('g'), gLane = el('g');
+[gBank, gWater, gArc, gNode, gFlag, gLane].forEach(function(g){ scene.appendChild(g); });
+
+/* banks: sand above and below, a hairline at each waterline */
+gBank.appendChild(el('rect', {x:E.x0, y:E.y0, width:E.x1 - E.x0, height:TOPY - E.y0}, 'sandband'));
+gBank.appendChild(el('rect', {x:E.x0, y:BOTY, width:E.x1 - E.x0, height:E.y1 - BOTY}, 'sandband'));
+gBank.appendChild(el('path', {d:'M' + (E.x0 + 30) + ',' + TOPY + ' H' + (E.x1 - 30)}, 'bankline'));
+gBank.appendChild(el('path', {d:'M' + (E.x0 + 30) + ',' + BOTY + ' H' + (E.x1 - 30)}, 'bankline'));
+function bankLabel(x, y, t){
+  var e = el('text', {x:x, y:y}, 'banklabel'); e.textContent = t; gBank.appendChild(e);
+}
+bankLabel(E.x0 + 34, TOPY - 16, 'COORD MILESTONES — ships · gates · corrections');
+bankLabel(E.x0 + 34, BOTY + 24, 'LANES — COORD-AGENTS.md activity');
+bankLabel(E.x0 + 34, (TOPY + BOTY) / 2, 'upstream — where we started');
+
+/* the goal bank on the right edge: the river empties into it */
+var gx = D.goal.x;
+gBank.appendChild(el('rect', {x:gx, y:TOPY - 10, width:64, height:BOTY - TOPY + 20, rx:14}, 'goalbank'));
+var gt = el('text', {x:gx + 40, y:(TOPY + BOTY) / 2,
+  transform:'rotate(-90 ' + (gx + 40) + ' ' + ((TOPY + BOTY) / 2) + ')', 'text-anchor':'middle'}, 'goaltext');
+gt.textContent = D.goal.label; gBank.appendChild(gt);
+
+/* channels: a wide band, a bright core, a drifting sheen */
+(D.channels || []).forEach(function(c){
+  if (!c.points || c.points.length < 2) return;
+  var main = c.kind === 'main', d = smooth(c.points);
+  gWater.appendChild(el('path', {d:d, 'stroke-width':main ? 46 : 19}, 'band' + (main ? '' : ' side')));
+  gWater.appendChild(el('path', {d:d, 'stroke-width':main ? 15 : 6}, 'core'));
+  gWater.appendChild(el('path', {d:d, 'stroke-width':main ? 5 : 2.5}, 'flow'));
+  if (c.outcome === 'dead-end'){
+    var p = c.points[c.points.length - 1];
+    gWater.appendChild(el('path', {d:'M' + (p[0] - 9) + ',' + (p[1] - 9) + ' l18,18 M' +
+      (p[0] + 9) + ',' + (p[1] - 9) + ' l-18,18'}, 'deadmark'));
+    var t = el('text', {x:p[0] + 16, y:p[1] + 5}, 'deadlabel');
+    t.textContent = 'dead end — never rejoined'; gWater.appendChild(t);
+  }
+});
+
+/* arcs the bands cannot carry: backtracks upstream, supersede/refute, stray links */
+(D.edges || []).forEach(function(e){
+  if (e.kind === 'flow' || e.kind === 'branch' || e.kind === 'merge') return;
+  var a = byId[e.from], b = byId[e.to];
+  if (!a || !b) return;
+  var back = e.kind === 'back';
+  var d = back ? loopPath(a.x, a.y, b.x, b.y) : underPath(a.x, a.y, b.x, b.y);
+  var mk = back ? 'ah-back' : ((e.kind === 'refute' || e.kind === 'rests') ? 'ah-ref' : 'ah-sup');
+  var at = {d:d};
+  if (e.kind !== 'link') at['marker-end'] = 'url(#' + mk + ')';
+  gArc.appendChild(el('path', at, 'arc ' + e.kind));
+  if (back){
+    var t = el('text', {x:num((a.x + b.x) / 2), y:num(Math.min(a.y, b.y) - 74 - Math.min(150, Math.abs(a.x - b.x) * 0.15) + 26)}, 'arclabel');
+    t.textContent = 'backtrack'; gArc.appendChild(t);
+  }
+  if (e.kind === 'rests'){
+    var rl = el('text', {x:num((a.x + b.x) / 2),
+      y:num(Math.max(a.y, b.y) + 46 + Math.min(120, Math.abs(a.x - b.x) * 0.10))}, 'restlabel');
+    rl.textContent = 'rests on refuted'; gArc.appendChild(rl);
+  }
+});
+
+/* stones turned — one glyph per record, rocks where the flow hit something */
+nodes.forEach(function(n, idx){
+  var rests = !!(n.rests_on && n.rests_on.length);
+  var g = el('g', {'data-i':idx}, 'node st-' + n.effective + (n.rock ? ' rock' : '') +
+                                  (rests ? ' rests' : ''));
+  var main = n.channel === 0, r = (main ? 12 : 9.5) + (n.kind === 'decision' ? 2 : 0);
+  var seed = hash(n.id);
+  if (rests) g.appendChild(el('circle', {cx:n.x, cy:n.y, r:r + 3.6}, 'restmark'));
+  if (n.rock){
+    g.appendChild(el('polygon', {points:pebble(n.x, n.y, r + 2.5, seed, 7, 0.34)}, 'rockglyph'));
+    g.appendChild(el('path', {d:'M' + (n.x - r - 10) + ',' + (n.y + r) + ' q' + (r + 10) +
+      ',' + (-r * 1.5) + ' ' + (2 * r + 20) + ',0'}, 'wake'));
+  } else {
+    g.appendChild(el('polygon', {points:pebble(n.x, n.y, r, seed, 6, 0.16)}, 'stone'));
+  }
+  if (n.kind === 'result') g.appendChild(el('circle', {cx:n.x, cy:n.y, r:3.2}, 'dot'));
+  if (n.kind === 'decision') g.appendChild(el('circle', {cx:n.x, cy:n.y, r:r + 5}, 'ring'));
+  if (n.kind === 'side-route')
+    g.appendChild(el('path', {d:'M' + (n.x - 9) + ',' + (n.y - r - 9) + ' l9,7 l9,-7'}, 'forkmark'));
+  g.appendChild(el('circle', {cx:n.x, cy:n.y, r:r + 6}, 'halo'));
+  if (LABELS || n.rock){
+    var t = el('text', {x:n.x, y:n.y + (main ? -r - 12 : r + 18)}, 'nlabel');
+    t.textContent = clip(n.ask || n.statement || n.id, 26);
+    g.appendChild(t);
+  }
+  gNode.appendChild(g); groups.push(g);
+});
+
+/* milestone flags along the top bank */
+(D.milestones || []).forEach(function(m, idx){
+  var g = el('g', {'data-m':idx}, 'flag'), y = TOPY - 30 - (idx % 3) * 30;
+  g.appendChild(el('path', {d:'M' + m.x + ',' + y + ' V' + (TOPY - 2)}, 'pole'));
+  g.appendChild(el('path', {d:'M' + m.x + ',' + y + ' l26,7 l-26,7 z'}, 'pennant ' + m.flag));
+  var t = el('text', {x:m.x + 31, y:y + 11}, 'flaglabel');
+  t.textContent = clip(m.label, 24); g.appendChild(t);
+  gFlag.appendChild(g);
+});
+
+/* lane ticks along the bottom bank. A lane whose COMMISSION is banked gets a
+   sheet glyph on its own row BELOW the plain ticks — the point of the row is
+   that you can see, without hovering anything, how much of this river's work
+   was commissioned in the open. */
+var COMMY = BOTY + 96;                 /* the commission row's own centreline */
+var comm = 0;
+(D.lanes || []).forEach(function(l, idx){
+  var g = el('g', {'data-l':idx}, 'lanetick' + (l.commission ? ' commission' : ''));
+  if (l.commission){
+    var y = COMMY + (comm % 2) * 22;
+    comm++;
+    g.appendChild(el('path', {d:'M' + l.x + ',' + (BOTY + 12) + ' V' + (y - 8)}, 'commstem'));
+    g.appendChild(el('rect', {x:l.x - 6, y:y - 8, width:12, height:16, rx:1.8}, 'commsheet'));
+    g.appendChild(el('path', {d:'M' + (l.x - 3.2) + ',' + (y - 3.5) + ' H' + (l.x + 3.2) +
+      ' M' + (l.x - 3.2) + ',' + y + ' H' + (l.x + 3.2) +
+      ' M' + (l.x - 3.2) + ',' + (y + 3.5) + ' H' + (l.x + 1.2)}, 'commrule'));
+  } else {
+    var yp = BOTY + 14 + (idx % 3) * 8;
+    g.appendChild(el('path', {d:'M' + (l.x - 5) + ',' + (yp + 5) + ' l5,-6 l5,6 z'}));
+  }
+  gLane.appendChild(g);
+});
+/* the banner sits on its OWN line above the glyph row — a caption that overlaps
+   the thing it captions is not a caption */
+if (comm){
+  var ct = el('text', {x:E.x0 + 34, y:BOTY + 68}, 'commcount');
+  ct.textContent = 'COMMISSIONS — ' + comm + ' lane' + (comm === 1 ? '' : 's') +
+                   ' whose exact prompt is banked on disk';
+  gLane.appendChild(ct);
+}
+
+/* ------------------------------------------------------------------- cards */
+function evRows(ev){
+  if (!ev || !ev.length) return '<div class="evrow"><span class="ev">none</span>' +
+    '<span class="st">no evidence refs on this record</span></div>';
+  return ev.map(function(e){
+    return '<div class="evrow"><span class="ev ev-' + esc(e.label || 'unverified') + '">' +
+      esc(e.label || 'unverified') + '</span><span><code>' + esc(e.ref) + '</code>' +
+      (e.type ? ' <span class="st">' + esc(e.type) + '</span>' : '') + '</span></div>';
+  }).join('');
+}
+function nodeCard(n){
+  var sup = n.superseded_by && n.superseded_by.length
+    ? '<div class="foot">' + esc(n.effective) + ' by ' + esc(n.superseded_by.join(', ')) + '</div>' : '';
+  /* the standing-on-refuted-ground warning: this record is live, but something it
+     cites has been refuted. One hop only — the river says what the links say. */
+  var rest = (n.rests_on && n.rests_on.length)
+    ? '<div class="rests">RESTS-ON-REFUTED ' + esc(n.rests_on.join(', ')) + '</div>' : '';
+  return '<div><span class="k">' + esc(n.kind) + '</span><span class="k">' + esc(n.relation) +
+    '</span><span class="k">' + esc(n.effective) + '</span>' +
+    (n.inferred ? '<span class="k">inferred</span>' : '') + '</div>' +
+    '<div class="ask">' + esc(clip(n.ask, 300) || '(no ask recorded)') + '</div>' +
+    (n.statement ? '<div class="st">' + esc(clip(n.statement, 420)) + '</div>' : '') + rest +
+    '<div class="lbl">EVIDENCE</div>' + evRows(n.evidence) + sup +
+    '<div class="foot">' + esc(n.ts) + ' · ' + esc(n.session || '—') + ' · ' +
+    esc(n.skill || '—') + ' · channel ' + n.channel + ' · <code>' + esc(n.ref) + '</code>' +
+    (n.links && n.links.length ? ' · links: ' + esc(n.links.join(', ')) : '') + '</div>';
+}
+function flagCard(m){
+  return '<div><span class="k">COORD ' + esc(m.flag) + '</span><span class="k">' +
+    esc(m.lane || '—') + '</span></div>' +
+    '<div class="ask">' + esc(m.ask || '(no ask)') + '</div>' +
+    (m.landed ? '<div class="st">→ ' + esc(m.landed) + '</div>' : '') +
+    (m.evidence ? '<div class="lbl">EVIDENCE (the ledger\'s own claim)</div><div class="st"><code>' +
+      esc(m.evidence) + '</code></div>' : '') +
+    '<div class="foot">' + esc(m.ts) + ' · <code>' + esc(m.ref) + '</code></div>';
+}
+function laneCard(l){
+  /* THE COMMISSION. Banked → the head of the prompt itself plus the path to the
+     whole of it. Not banked → said plainly, never dressed up: a pointer with no
+     file behind it is a worse lie than an admitted gap. */
+  var c;
+  if (l.commission){
+    c = '<div class="lbl">COMMISSION — the exact prompt this lane was given</div>' +
+        '<div class="brief">' + esc(l.brief_head || '(the brief file is empty)') + '</div>' +
+        '<div class="foot">full text: <code>' + esc(l.brief) + '</code></div>';
+  } else {
+    c = '<div class="lbl">COMMISSION</div><div class="nocomm">not banked' +
+        (l.brief ? ' — the receipt points at <code>' + esc(l.brief) +
+                   '</code> but that file is not readable from here'
+                 : ' (pre-v3.13 lane: its receipt carries no brief pointer)') + '</div>';
+  }
+  return '<div><span class="k">lane</span><span class="k">' + esc(l.model) + '</span>' +
+    (l.commission ? '<span class="k">commissioned</span>' : '') + '</div>' +
+    '<div class="ask">' + esc(l.agent) + '</div>' +
+    '<div class="st">' + esc(l.last || '(no last line recorded)') + '</div>' + c +
+    '<div class="foot">' + esc(l.ts) + ' · <code>' + esc(l.ref) + '</code></div>';
+}
+function showCard(html, ev){
+  card.innerHTML = html + (pinned ? '<div class="foot">pinned — click the background to release</div>' : '');
+  card.style.display = 'block';
+  var r = stage.getBoundingClientRect(), w = card.offsetWidth, h = card.offsetHeight;
+  var x = ev.clientX - r.left + 16, y = ev.clientY - r.top + 16;
+  if (x + w > r.width - 8) x = Math.max(8, ev.clientX - r.left - w - 16);
+  if (y + h > r.height - 8) y = Math.max(8, r.height - h - 8);
+  card.style.left = x + 'px'; card.style.top = y + 'px';
+}
+function hideCard(){ if (!pinned) card.style.display = 'none'; }
+function bodyFor(g){
+  if (g.hasAttribute('data-i')) return nodeCard(nodes[+g.getAttribute('data-i')]);
+  if (g.hasAttribute('data-m')) return flagCard(D.milestones[+g.getAttribute('data-m')]);
+  return laneCard(D.lanes[+g.getAttribute('data-l')]);
+}
+function hitTarget(t){
+  while (t && t !== scene){
+    if (t.hasAttribute && (t.hasAttribute('data-i') || t.hasAttribute('data-m') ||
+        t.hasAttribute('data-l'))) return t;
+    t = t.parentNode;
+  }
+  return null;
+}
+svg.addEventListener('mousemove', function(ev){
+  if (drag.on) return;
+  var g = hitTarget(ev.target);
+  if (g && !pinned){ showCard(bodyFor(g), ev); } else if (!pinned) hideCard();
+});
+svg.addEventListener('mouseleave', hideCard);
+function unpin(){
+  if (pinned) pinned.classList.remove('pin');
+  pinned = null; card.classList.remove('pinned'); card.style.display = 'none';
+}
+svg.addEventListener('click', function(ev){
+  if (drag.moved) return;
+  var g = hitTarget(ev.target);
+  if (!g){ unpin(); return; }
+  if (pinned === g){ unpin(); return; }
+  unpin(); pinned = g; g.classList.add('pin'); card.classList.add('pinned');
+  showCard(bodyFor(g), ev);
+});
+document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') unpin(); });
+
+/* ------------------------------------------------------- pan · zoom · fit */
+function apply(){
+  scene.setAttribute('transform', 'translate(' + num(view.x) + ',' + num(view.y) +
+                     ') scale(' + (Math.round(view.k * 1e4) / 1e4) + ')');
+  svg.classList.toggle('far', view.k < 0.34);      /* labels would be noise here */
+}
+/* A river is long. Fitting its whole length into the pane makes every stone a
+   hairline, so `fit` fits the HEIGHT (channels, banks, both shores legible) and
+   anchors upstream — you read it by panning downstream. Zoom out for the whole
+   course when you want the shape rather than the records. */
+function fit(){
+  var r = stage.getBoundingClientRect();
+  var w = Math.max(1, E.x1 - E.x0), h = Math.max(1, E.y1 - E.y0);
+  view.k = Math.max(0.02, Math.min(1.15, r.height / h));
+  view.x = (w * view.k <= r.width) ? (r.width - w * view.k) / 2 - E.x0 * view.k
+                                   : 24 - E.x0 * view.k;
+  view.y = (r.height - h * view.k) / 2 - E.y0 * view.k;
+  userMoved = false; apply();
+}
+function zoomAt(cx, cy, f){
+  var k = Math.max(0.02, Math.min(6, view.k * f));
+  view.x = cx - (cx - view.x) * (k / view.k);
+  view.y = cy - (cy - view.y) * (k / view.k);
+  view.k = k; userMoved = true; apply();
+}
+var drag = {on:false, moved:false, x:0, y:0};
+svg.addEventListener('mousedown', function(ev){
+  drag.on = true; drag.moved = false; drag.x = ev.clientX; drag.y = ev.clientY;
+  svg.classList.add('drag');
+});
+window.addEventListener('mousemove', function(ev){
+  if (!drag.on) return;
+  var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  view.x += dx; view.y += dy; drag.x = ev.clientX; drag.y = ev.clientY;
+  userMoved = true; apply();
+});
+window.addEventListener('mouseup', function(){
+  drag.on = false; svg.classList.remove('drag');
+  setTimeout(function(){ drag.moved = false; }, 0);
+});
+svg.addEventListener('wheel', function(ev){
+  ev.preventDefault();
+  var r = stage.getBoundingClientRect();
+  zoomAt(ev.clientX - r.left, ev.clientY - r.top, ev.deltaY < 0 ? 1.12 : 1 / 1.12);
+}, {passive:false});
+document.getElementById('fit').addEventListener('click', fit);
+document.getElementById('zin').addEventListener('click', function(){
+  var r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.25);
+});
+document.getElementById('zout').addEventListener('click', function(){
+  var r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.25);
+});
+document.getElementById('theme').addEventListener('click', function(){
+  var cur = root.getAttribute('data-theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+});
+window.addEventListener('resize', function(){ if (!userMoved) fit(); });
+/* the script runs before layout settles, so the first fit() can read a stage
+   that is not its final size — re-fit on the next frame and on every resize of
+   the stage itself (a wrapped header changes it without a window resize) */
+if (window.ResizeObserver) new ResizeObserver(function(){ if (!userMoved) fit(); }).observe(stage);
+window.requestAnimationFrame(function(){ if (!userMoved) fit(); });
+
+/* ------------------------------------------------------------ filter · legend */
+var q = document.getElementById('q'), qn = document.getElementById('qn');
+q.addEventListener('input', function(){
+  var s = q.value.trim().toLowerCase(), shown = 0;
+  nodes.forEach(function(n, idx){
+    var hay = (n.ask + ' ' + n.statement + ' ' + n.id + ' ' + n.kind + ' ' +
+               n.skill + ' ' + n.session).toLowerCase();
+    var on = !s || hay.indexOf(s) >= 0;
+    groups[idx].classList.toggle('dim', !on);
+    if (on) shown++;
+  });
+  qn.textContent = s ? shown + '/' + nodes.length : '';
+});
+(function legend(){
+  var c = D.counts, L = document.getElementById('legend');
+  function sw(v){ return '<i class="sw" style="background:' + v + '"></i>'; }
+  var glyphs = [
+    sw('var(--water)') + 'main channel — toward the goal <span class="n">' + c.toward + '</span>',
+    sw('var(--water-side)') + 'side channel <span class="n">' + c.lateral + '</span>',
+    sw('var(--back)') + 'backtrack loop <span class="n">' + c.back + '</span>',
+    sw('var(--rock)') + 'rock — conflict / refuted <span class="n">' + c.rocks + '</span>',
+    '<i class="sw dash"></i>rests on refuted — a live record citing refuted ground ' +
+      '<span class="n">' + c.rests_on_refuted + '</span>',
+    sw('var(--stone)') + 'stone turned <span class="n">' + c.records + '</span>',
+    sw('var(--flag-ship)') + 'COORD flag <span class="n">' + c.milestones + '</span>',
+    "<i class=\"sw sheet\"></i>commission — every marked lane's exact prompt is on disk; " +
+      'click the tick for the path <span class="n">' + c.commissions + '</span>',
+    sw('var(--goal)') + 'goal bank'
+  ];
+  var tallies = [
+    'channels <span class="n">' + c.channels + '</span>',
+    'merged back <span class="n">' + c.merged + '</span>',
+    'dead ends <span class="n">' + c.dead_end + '</span>',
+    'forks <span class="n">' + c.side_route + '</span>',
+    'superseded <span class="n">' + c.superseded + '</span>',
+    'refuted <span class="n">' + c.refuted + '</span>',
+    'ships/gates/corrections <span class="n">' + c.ships + '/' + c.gates + '/' + c.corrections + '</span>',
+    'lanes <span class="n">' + c.lanes + '</span>',
+    'commissioned <span class="n">' + c.commissions + '/' + c.lanes + '</span>'
+  ];
+  var notes = (D.notes || []).slice();
+  notes.push(D.mode === 'coord-only'
+    ? 'COORD-only river: findings.jsonl was absent, so every node is a ledger line and its kind/relation is INFERRED from the line\'s words — side channels rejoin at the next forward line by chronology, not because the ledger says so.'
+    : 'nodes come from ' + esc(D.sources.findings) + '; COORD flags and lane ticks are overlaid from the ledger volumes.');
+  notes.push('stamped ' + esc(D.generated) + ' from the ' + esc(D.stamp_from) +
+             ' — identical inputs render an identical page.');
+  L.innerHTML = '<summary>LEGEND — click to fold</summary>' +
+    '<div class="row">' + glyphs.map(function(g){ return '<span class="it">' + g + '</span>'; }).join('') + '</div>' +
+    '<div class="row">' + tallies.map(function(t){ return '<span class="it">' + t + '</span>'; }).join('') + '</div>' +
+    '<div class="row"><span class="note">' + notes.map(esc).join('<br>') + '</span></div>';
+})();
+
+if (!nodes.length){
+  var em = document.getElementById('empty');
+  em.hidden = false;
+  em.textContent = 'No records to draw — no archive/findings.jsonl and no COORD ledger ' +
+    'lines under this root. Run a session, or point --root at the repo that has them.';
+}
+fit();
+})();
+</script>
+</body>
+</html>

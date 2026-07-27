@@ -1,5 +1,28 @@
 # Changelog — the notrest harness
 
+## 3.14.0 — 2026-07-27
+
+**The cockpit — the harness gets a face: one page, always on, the estate watching itself.**
+
+- `/graph cockpit` → `cockpit.py serve` (1,063 lines, stdlib, 127.0.0.1:8788 only — no
+  flag widens the bind): a one-page live app. Status bar (pulse · version+HEAD · spend ·
+  watch-due · lane activity), the three pictures as tabs (river · journey · file graph,
+  each self-rebuilding on input mtime, debounced, zero model tokens), and five live
+  feeds: COORD tail, lanes & commissions (every banked prompt one click away — the
+  transparency value on screen), library concepts, chatroom (read + post), findings.
+- **The window-not-control-panel law:** the cockpit's ONLY write is the chatroom post,
+  which shells through room.py's secret screen (exit 5 → HTTP 422) — it adds no powers
+  and bypasses no gate. Brief containment is graph.py's own rule, imported not copied.
+- Honest chips: "lanes running" is not knowable from a stop-event ledger, so the chip
+  reads "N in 60m" and says why; the refresh stamp comes from the response header, never
+  the browser clock. Renders stay deterministic; the cockpit page is live by declared
+  exception.
+- "Connect your Claude" = the estate contract: sessions write files, the cockpit watches
+  files — every session on the machine is connected by construction; the chatroom panel
+  is the two-way wire.
+- Fixture: 60/0 (endpoints, containment refusal, regen debounce, secret-refusal
+  round-trip, loopback assert, reap). Budget after description touch: 3,515/3,600.
+
 ## 3.13.0 — 2026-07-27
 
 **Commission transparency, by construction — the owner's core value in three surfaces.**
