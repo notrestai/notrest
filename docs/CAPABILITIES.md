@@ -307,6 +307,34 @@ actually invoke researcher? — routing measured, not asserted). Rung 3: Chains 
 for the 8 skills without them; the prose-only handoffs made mechanical. Rung 4:
 multi-machine estate (the PM cross-project view proven, then the estate syncs).
 
+## The library doctrine (owner-ratified 2026-07-26)
+
+Reusability is a core value; the library is its instrument — **the compile doctrine
+applied to knowledge**: compile detects repeated WORK and moves its stable parts into
+scripts; the library detects repeated and converging KNOWLEDGE and moves it into
+settled, reusable truths. Three storeys above the federation core:
+
+1. **Concepts** — records clustered into named concepts (compile.py's df-weighted
+   clustering is the donor machinery), each with the clear mapping the owner asked for:
+   the asks it answers (why invoked) · the settled statement (what it does/found) · the
+   member records across projects. Script clusters; the model names and bounds.
+2. **The updater** — library-wide re-verification, on request and on intervals
+   (watch.py's probe/hash machinery is the donor): url-evidenced records probed at zero
+   model tokens (STANDS / DRIFTED / DEAD-SOURCE), drifted statements re-judged in
+   session ("still true? better solution now?"), command/path-evidenced records flagged
+   for session re-check rather than blindly re-executed. The scheduled pulse surfaces
+   drift counts as workload data.
+3. **Convergence** — when member records from multiple sessions/projects agree on one
+   solution and nothing live contests it, a **crown record** (the tombstone pattern,
+   inverted) marks the concept CONVERGED; `library find` surfaces the settled answer
+   first. Live disagreement inside a concept = CONTESTED, surfaced never smoothed.
+
+Status: federation core SHIPPED v3.11.0 (live-proven: this repo registered, cross-project
+find returning prefixed records, PM registry fed — the last never-proven claim closed);
+concepts/updater/convergence = phase 2, same builder lane, in flight toward v3.12.0.
+Known seam for phase 2: RESTS-ON-REFUTED is one hop inside a single store — a refuted
+record in project A does not yet flag a citing record in project B.
+
 ## Build priority (owner-redlineable)
 
 1. **Router hook** — SHIPPED v3.7.0: the enforcement layer for "use the suite's verbs".

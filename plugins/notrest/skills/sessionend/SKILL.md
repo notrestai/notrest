@@ -92,6 +92,22 @@ One-command closes, run after the files are written:
   never pop a browser. If either command is missing its script or exits non-zero, **note it in
   `HANDOFF.md` and close anyway**: a refreshed picture is a courtesy to the next session, never
   a gate on this one's close.
+- **doctor** installed → bank a closing heartbeat, guarded exactly like the graph block above:
+  ```bash
+  P="${CLAUDE_PLUGIN_ROOT}/skills/doctor/scripts/pulse.sh"
+  if [ -f "$P" ]; then bash "$P" --if-stale 1 --root .
+  else echo "pulse.sh absent — pulse skipped"; fi
+  ```
+  `--if-stale 1` because a pulse banked within the last hour is still the truth about this
+  estate: the door prints `pulse: fresh (…)` and returns without running one instrument.
+  Otherwise it runs every read-only instrument and appends its own `[pulse]` line to `COORD.md`,
+  so the ledger's last word on this session is a measured verdict rather than a claim. Exit 1
+  means an instrument wants a human — **note that line in `HANDOFF.md` and close anyway**, same
+  rule as the graph refresh. **The overlap with the block above is deliberate:** a full pulse
+  re-runs `river` and `scan`, both idempotent and both zero model tokens, so the repeat costs a
+  few seconds and changes nothing. Restructuring the phase to dodge a harmless repeat would cost
+  more than the repeat does — and the redundancy means the close still gets its pictures if
+  either caller is ever skipped.
 Skip silently only when the skills aren't installed.
 - A **recap** was produced this session → put its map/dossier paths in `HANDOFF.md` (the
   decision track is part of the handoff).

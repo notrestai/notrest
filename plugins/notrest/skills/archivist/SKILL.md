@@ -45,8 +45,9 @@ new record, and `track` resolves what is currently true.
 - **`session` · `skill`** — who wrote it. **`ask`** — the question it was answering.
 - **`kind`** — `finding` · `result` · `decision` · `conflict` · `backtrack` · `side-route`.
 - **`statement`** — the finding itself, 1–3 sentences. Self-contained: it must read alone.
-- **`evidence`** — `[{type: url|path|command|coord-line, ref, label}]`, label one of
-  `cited` · `estimate` · `recall` · `unverified` · `model-opinion`.
+- **`evidence`** — `[{type: url|path|command|coord-line|record, ref, label}]`, label one of
+  `cited` · `estimate` · `recall` · `unverified` · `model-opinion`. A `record` ref cites
+  another record: `F-<n>` here, `<project>:F-<n>` anywhere on the library shelf.
 - **`relation`** — `toward` (progress on the ask) · `lateral` (sideways) · `back` (a retreat).
 - **`links`** — ids this record answers, extends, or corrects. **`status`** — `live` ·
   `superseded` · `refuted` (as written; the *effective* status is resolved, see below).
@@ -66,6 +67,8 @@ what it rests on does not enter the store.
 | `cited-url-needs-url` | a `[cited]` url evidence ref is not a real URL (`scheme://host`) |
 | `evidence-required` | `kind=finding\|result\|decision` with an empty evidence list |
 | `links-unknown` · `links-shape` | links names an id the store does not hold, or is not a list |
+| `record-ref-shape` | a `record` evidence ref is not `F-<n>` or `<project>:F-<n>` |
+| `record-ref-unknown` | a local `F-<n>` is not in this store, or a **reachable** project's store has no such id |
 | `unknown-field` · `id-assigned` · `ts-format` · `field-type` | the schema is pinned; ids and shapes are the store's |
 | `json-parse` · `record-object` · `no-input` · `store-corrupt` | the input or the store is not what it claims |
 
@@ -132,9 +135,71 @@ Prints the assigned id on success; exits 2 with the rule name on rejection. `--j
 - **Legacy index:** `index.py scan [--root .]` — walks the known output folders for every
   `*Dossier.md` and REPLACES `oracle-index.md`, adding one pointer entry each for the findings
   store, `COORD-AGENTS.md`, and `compile/candidates.md`. Idempotent; run it freely.
+- **Library:** `index.py library register|list|find|track` — the cross-project shelf (above).
 - **Prove it:** `bash scripts/fixture.sh` — every kind lands, every rule turns its record away
   with exit 2, the track round-trips, the flips resolve, a decision linking a refuted finding
-  is flagged while its un-refuted control is not, `find` sees bodies. Exit 0 = green.
+  is flagged while its un-refuted control is not, `find` sees bodies, and the shelf registers
+  idempotently, finds across two scratch repos, survives a deleted third, and validates every
+  `record` ref. Exit 0 = green (it runs on a scratch shelf; the real one is never touched).
+
+## The library — one shelf, many stores
+
+A store that only its own session can read is a notebook. **The library makes every
+project's store readable from every other project** — this machine's, today's and last
+month's, the one running in a parallel lane right now.
+
+**The federation law: stores stay where they live; the library only indexes them.** A
+project's `archive/findings.jsonl` never moves, never gets copied to a central pile, and
+never gets rewritten by the shelf. It stays in its repo — versioned with the code it
+describes, and beam-able with it. The shelf is one append-only registry naming *where
+the stores are*: `~/.claude/notrest-library/registry.jsonl`, one `{root, name, ts}` JSON
+line per project (`$NOTREST_LIBRARY_ROOT` moves the whole shelf; `--library-root` moves
+it for one call). Nothing else is central, so nothing else can rot, and a project you
+delete simply reads as `missing` instead of corrupting a shared index.
+
+**Registering feeds two consumers.** `library register` appends to the registry *and* to
+`~/.claude/oracle-projects.txt` — graph.py's cross-project registry, the file `graph.py
+all` reads to draw the estate-wide view. One registration, both surfaces; both writes
+are independently idempotent.
+
+```bash
+IDX="${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py"
+python3 "$IDX" library register [--root .] [--name <shelf-name>]  # idempotent; says so
+python3 "$IDX" library list                                       # name · root · records · reachable
+python3 "$IDX" library find <terms…> [--kind K] [--json]          # every store, seconds, 0 tokens
+python3 "$IDX" library track --project <name> [--kind K] [--status live]
+```
+
+- **`register`** — the shelf name defaults to the repo's dirname; `--name` overrides it.
+  Re-registering the same root is a **no-op that says so**. A name is refused if it is
+  already taken by another root (`library-name-taken`) or contains a `:` or anything
+  outside `[A-Za-z0-9._-]` (`library-name-shape`) — the name is half of every citation.
+- **`find`** — searches **every registered project's** statements and asks (all terms must
+  match), plus each repo's legacy `oracle-index.md` heads. One line per hit:
+  `<project>:F-<n> · kind · statement-head · [labels]`, with ` · REFUTED by …` inline so a
+  dead answer can never travel as a live one. `--json` is the machine surface: whole `ask`
+  and whole `statement`, plus a citable `ref`. Unreachable roots are **reported, never
+  fatal**.
+- **`track`** — another project's whole track, read where it lives. No `cd`, no copy.
+
+### Citing across the shelf
+
+```json
+{"type": "record", "ref": "notrest:F-5", "label": "cited"}
+```
+
+`F-<n>` cites this store (the id must exist, exactly like `links`). `<project>:F-<n>`
+cites the shelf: the id is **checked when that project is reachable** and rejected if that
+store has no such record — and when the project is unregistered or its repo is offline,
+the ref is **accepted with a note on stderr**. Federation that fails closed is federation
+nobody can use: another machine's repo being absent is not evidence that the record is
+wrong. The note says the ref went in unverified; the reader gets to see that.
+
+**The reuse law: a question the library already answers is a search budget you do not
+spend.** Before a researcher / factcheck / marketresearcher fan-out, `library find` runs
+first. A strong cross-project hit is cited as `record` evidence and the budget shrinks.
+Re-deriving what another project already recorded is not thoroughness — it is the same
+token spent twice.
 
 ## The legacy estate stays readable
 
@@ -149,8 +214,9 @@ you `grep` the real file, and from a hit you read the transcript before citing i
 ## The workflow
 
 1. **Consult before spending.** About to run researcher / factcheck / decider / explainer? One
-   `find` first. On a hit, surface it — id or path, date, statement — and offer the real
-   choices: *reuse*, *extend* (seed the run with it), or *fresh* (it moved on). The user picks.
+   `find` first, then one `library find` — this project, then every project on the shelf. On a
+   hit, surface it — id or `<project>:F-<n>`, date, statement — and offer the real choices:
+   *reuse*, *extend* (seed the run with it), or *fresh* (it moved on). The user picks.
 2. **Emit as you go, not at the end.** A record per thing learned, written when it is learned.
    A track assembled afterwards is a memory, not a record.
 3. **Answer "what do we know about X"** from `find` + `track`, with labels and dates intact.
@@ -169,7 +235,10 @@ you `grep` the real file, and from a hit you read the transcript before citing i
 - **Validation is not verification.** `add` exiting 0 means the record is well-formed and says
   what it rests on — not that the claim is right.
 - **Empty result ≠ never investigated.** The store only sees what was written under the scanned
-  root. Say where you looked.
+  root — and the library only sees the projects that are **registered and reachable**. Say
+  where you looked, and say which roots were unreachable when they were.
+- **A cross-project ref accepted with a note is unverified.** The store said "that project is
+  not on this machine right now", not "that record exists". Quote the note when you lean on it.
 
 ## Self-check before finishing
 
@@ -181,6 +250,8 @@ you `grep` the real file, and from a hit you read the transcript before citing i
 - No record carrying `RESTS-ON-REFUTED` was reported as a live finding without that flag being
   said out loud — the flag travels with the record, the way a label does.
 - If a legacy dossier landed this session, `scan` ran after it.
+- Before any search fan-out, `library find` ran — and if this project is not on the shelf yet,
+  `library register` ran, so the next session (here or anywhere) can read what this one learned.
 
 ## Finishing up
 

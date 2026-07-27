@@ -58,6 +58,21 @@ the last scan found. A ripe row that matches the stated Objective is worth one l
 user: this project keeps doing this, and `/compile <slug>` can move its stable parts into
 code. Say nothing when the file is absent or nothing is ripe.
 
+**Estate pulse (script-only, and usually free).** Between the foundation load and question 1,
+take the estate's temperature: `bash "${CLAUDE_PLUGIN_ROOT}/skills/doctor/scripts/pulse.sh"
+--if-stale 6 --root .` — existence-guarded like every sibling call; if the script is absent, say
+so in one line and carry on, because **intake never dies on a missing sibling**. The `--if-stale`
+window is what keeps this cheap: a pulse banked within six hours answers `pulse: fresh (…)` and
+returns without running a single instrument, so only the first session of the day pays for the
+sweep. Read the line it prints. If anything **health-grade** is red — a non-zero `doctor=` or
+`eval=`, a `spend=` word that isn't CLEAN, or exit 1 — surface it **before question 1**: *"the
+estate has a red: `<line>` — fix that first, or proceed?"* — and take the user's answer either
+way. Say so plainly when the red is **carried** rather than measured: a `pulse: fresh (…)` line
+reports the estate as of that stamp, up to six hours old, so offer the live re-check
+(`pulse.sh --root .`, no window) instead of asserting the red is still true. Workload data
+(`watch-due=`, `compile=`) is never a red; that's the estate doing its job, and it does not
+interrupt an intake.
+
 If there's **no `CLAUDE.md`**, you'll **always** scaffold one after the intake (see When done) — no matter how much was answered or skipped. The intake answers are foundation material: **Architecture** → how you work, **Leverage** → tooling, **Content** → the project/situation.
 
 ## How to run it

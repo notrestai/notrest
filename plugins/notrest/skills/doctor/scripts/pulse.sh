@@ -6,7 +6,7 @@
 # reader with a single append, so a scheduler can run it every morning without ever
 # wondering what it changed.
 #
-#   bash pulse.sh [--root .] [--strict] [--no-coord]
+#   bash pulse.sh [--root .] [--strict] [--no-coord] [--if-stale <hours>]
 #
 # Silent-fail-open, per the hook law: no `set -e`, no instrument's crash becomes
 # pulse's crash, a missing file is reported as `-` rather than a stack trace. The exit
@@ -29,11 +29,25 @@
 #
 # `--strict` restores the literal reading — ANY non-zero instrument exits 1 — for a
 # caller who wants the unnuanced gate.
+#
+# ── --if-stale <hours>: the freshness door ──────────────────────────────────────────
+# The rhythm flag. A skill that wants the estate checked at a natural moment (oracle's
+# intake, sessionend's close) calls pulse with a window instead of a schedule: if the
+# newest `[pulse]` line already in COORD.md is younger than <hours>, print one `fresh`
+# line and exit 0 WITHOUT running a single instrument — otherwise run the full pulse.
+# So a session that follows another pays nothing, and an estate nobody has checked all
+# day gets checked at the first door it walks through.
+#
+# The door FAILS OPEN TOWARD CHECKING: no COORD.md, no pulse line, an unparseable
+# stamp, a stamp in the future, a non-numeric window, no python3 — every one of them
+# runs the full pulse. The only path that skips work is a stamp that positively parses
+# and is positively young. Timestamps are read and written UTC only.
 set -u
 
 ROOT="."
 STRICT=0
 NO_COORD=0
+IF_STALE=""
 SELF="$(cd "$(dirname "$0")" && pwd)"
 SKILLS="$(cd "$SELF/../.." && pwd)"
 
@@ -41,9 +55,20 @@ usage() {
     sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
 }
 
+# A value-taking flag checks that its value is THERE before shifting past it: `shift 2`
+# with one argument left fails, does not shift, and spins this loop forever — a hang is
+# the worst failure mode an unattended heartbeat can have.
+need_val() {
+    if [ "$2" -lt 2 ]; then
+        echo "pulse: $1 needs a value (try --help)" >&2
+        exit 2
+    fi
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --root)     ROOT="${2:-.}"; shift 2 ;;
+        --root)     need_val --root "$#";     ROOT="$2";     shift 2 ;;
+        --if-stale) need_val --if-stale "$#"; IF_STALE="$2"; shift 2 ;;
         --strict)   STRICT=1; shift ;;
         --no-coord) NO_COORD=1; shift ;;
         -h|--help)  usage; exit 0 ;;
@@ -56,6 +81,66 @@ if [ ! -d "$ROOT" ]; then
     exit 2
 fi
 ROOT="$(cd "$ROOT" && pwd)"
+
+# ── the freshness door ──────────────────────────────────────────────────────────────
+# Everything below this block costs real seconds; this is the one gate that can skip it.
+# It reads COORD.md and writes nothing.
+# The probe prints the `fresh` line itself and signals with its exit code (0 = fresh) —
+# no command substitution, because bash 3.2 mis-parses a heredoc nested inside `$( )`.
+if [ -n "$IF_STALE" ]; then
+    PULSE_COORD="$ROOT/COORD.md" PULSE_HOURS="$IF_STALE" python3 - <<'PY' 2>/dev/null
+import os, re, sys
+from datetime import datetime, timedelta, timezone
+
+# Exit 0 + one line on stdout = fresh, skip the sweep. Any other exit = run the pulse.
+try:
+    hours = float(os.environ["PULSE_HOURS"])
+except Exception:
+    sys.exit(1)                      # a window we cannot read is not a licence to skip
+if hours <= 0:
+    sys.exit(1)                      # --if-stale 0 means "no window" — always run
+
+try:
+    with open(os.environ["PULSE_COORD"], encoding="utf-8", errors="replace") as f:
+        text = f.read()
+except Exception:
+    sys.exit(1)                      # no COORD.md / unreadable → run
+
+# The ledger's own line shape, UTC only: `- [YYYY-MM-DD HH:MMZ] [pulse] <verdict>`.
+pat = re.compile(r"^-\s+\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})Z\]\s+\[pulse\]\s*(.*)$")
+newest = None
+for raw in text.splitlines():
+    m = pat.match(raw.strip())
+    if not m:
+        continue
+    try:
+        ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+    except Exception:
+        continue                     # one unparseable stamp never hides a good one
+    if newest is None or ts >= newest[0]:
+        newest = (ts, m.group(2))
+if newest is None:
+    sys.exit(1)                      # never pulsed here → run
+
+age = datetime.now(timezone.utc) - newest[0]
+if age < timedelta(0) or age >= timedelta(hours=hours):
+    sys.exit(1)                      # stale — or a stamp from the future (skewed clock)
+
+mins = int(age.total_seconds() // 60)
+age_s = "%dm old" % mins if mins < 60 else "%dh%02dm old" % (mins // 60, mins % 60)
+
+verdict = newest[1].strip()
+if verdict.startswith("estate pulse ->"):
+    verdict = verdict[len("estate pulse ->"):].strip()
+verdict = verdict.split("| evidence:")[0].strip()[:120] or "(no verdict on the line)"
+
+print("pulse: fresh (%s, last: %s)" % (age_s, verdict))
+sys.exit(0)
+PY
+    if [ $? -eq 0 ]; then
+        exit 0
+    fi
+fi
 
 RED=0          # anything that wants a human
 NOTES=""       # human-readable trailer, one clause per unhappy instrument

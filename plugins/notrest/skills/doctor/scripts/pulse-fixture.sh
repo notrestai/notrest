@@ -29,19 +29,30 @@ cp "$PULSE_SRC" "$SK/doctor/scripts/pulse.sh"
 PULSE="$SK/doctor/scripts/pulse.sh"
 
 # Stubs read their exit code and payload from the environment, so a single tree serves
-# every scenario and no assertion depends on rewriting a file mid-run.
+# every scenario and no assertion depends on rewriting a file mid-run. Each one also
+# LOGS ITS OWN CALL to $FIX_CALLS — that counter is what makes "the freshness door ran
+# no instruments" a measurement instead of a hope. It lives in $W, outside every fake
+# estate, so the read-only assertion below still hashes an untouched tree.
+export FIX_CALLS="$W/calls.log"
+: > "$FIX_CALLS"
+calls_reset(){ : > "$FIX_CALLS"; }
+calls_n(){ local n; n="$(wc -l < "$FIX_CALLS" 2>/dev/null | tr -d ' ')"; [ -n "$n" ] || n=0; echo "$n"; }
+
 cat > "$SK/doctor/scripts/doctor.py" <<'PY'
 import os, sys
+open(os.environ.get("FIX_CALLS", "/dev/null"), "a").write("doctor\n")
 print("doctor: OK — 10 checks · 10 pass, 0 warn, 0 fail, 0 skip")
 sys.exit(int(os.environ.get("FIX_DOCTOR_RC", "0")))
 PY
 cat > "$SK/eval/scripts/eval.py" <<'PY'
 import os, sys
+open(os.environ.get("FIX_CALLS", "/dev/null"), "a").write("eval\n")
 print("SUMMARY PASS — 28 skills, 12 checks, 0 fail, 0 warn, 0.10s, 0 model tokens")
 sys.exit(int(os.environ.get("FIX_EVAL_RC", "0")))
 PY
 cat > "$SK/watch/scripts/watch.py" <<'PY'
 import os, sys
+open(os.environ.get("FIX_CALLS", "/dev/null"), "a").write("watch\n")
 if os.environ.get("FIX_WATCH_GARBAGE"):
     print("watch: no watchlist — run /watch add first")
 else:
@@ -50,18 +61,22 @@ sys.exit(int(os.environ.get("FIX_WATCH_RC", "3")))
 PY
 cat > "$SK/compile/scripts/compile.py" <<'PY'
 import os, sys
+open(os.environ.get("FIX_CALLS", "/dev/null"), "a").write("compile\n")
 n = os.environ.get("FIX_COMPILE_N", "4")
 print("[compile] %s ripe candidate(s) not yet ruled on — /compile <slug> reconstructs it." % n)
 sys.exit(int(os.environ.get("FIX_COMPILE_RC", "3")))
 PY
 cat > "$SK/spend/scripts/spend.py" <<'PY'
 import os, sys
+open(os.environ.get("FIX_CALLS", "/dev/null"), "a").write("spend\n")
 print("routing: %s — policy 2026-07-15: opus-only offload (41 checked, 0 violations)"
       % os.environ.get("FIX_SPEND_WORD", "CLEAN"))
 sys.exit(int(os.environ.get("FIX_SPEND_RC", "0")))
 PY
 cat > "$SK/graph/scripts/graph.py" <<'PY'
 import os, sys
+verb = sys.argv[1] if len(sys.argv) > 1 else "?"
+open(os.environ.get("FIX_CALLS", "/dev/null"), "a").write("graph-%s\n" % verb)
 if len(sys.argv) > 1 and sys.argv[1] == "river":
     print("/tmp/river.html: 2 records · 1 channels · 1 rocks · mode=findings+coord")
     sys.exit(int(os.environ.get("FIX_RIVER_RC", "0")))
@@ -81,6 +96,14 @@ newroot(){  # newroot <name> — a root with a COORD.md, returns its path on std
 count(){ local n; n="$(grep -F -c -- "$2" "$1" 2>/dev/null)"; [ -n "$n" ] || n=0; echo "$n"; }
 pulse_lines(){ count "$1/COORD.md" "[pulse] estate pulse ->"; }
 occurrences(){ count "$1/COORD.md" "$2"; }
+
+# ── seeding the ledger for the --if-stale door ──────────────────────────────────────
+# `ago <minutes>` is computed in python3, not `date`: BSD wants -v-30M and GNU wants
+# -d '30 minutes ago', and this fixture has to run on either. UTC, like the ledger.
+ago(){ python3 -c 'import sys, datetime; print((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=float(sys.argv[1]))).strftime("%Y-%m-%d %H:%MZ"))' "$1"; }
+seed_pulse(){  # seed_pulse <root> <stamp> — one real-shaped pulse line, already banked
+    printf '%s\n' "- [$2] [pulse] estate pulse -> doctor=0 eval=0 watch-due=1 compile=none spend=CLEAN river=coord-only | evidence: pulse.sh" >> "$1/COORD.md"
+}
 
 echo "── green path ──────────────────────────────────────────────────────────────"
 R="$(newroot green)"
@@ -155,6 +178,101 @@ else
 fi
 inc "seed line survived" "$(cat "$R/COORD.md")" "[seed] existing line"
 
+echo "── --if-stale: the freshness door ──────────────────────────────────────────"
+# The in-session rhythm. A skill calls pulse with a WINDOW instead of a schedule, and the
+# door's whole value is what it does NOT do — so every case here counts stub invocations
+# ($FIX_CALLS) rather than trusting the banner. A full sweep is exactly seven calls:
+# doctor · eval · watch · compile · spend · graph river · graph scan.
+R="$(newroot fresh)"
+seed_pulse "$R" "$(ago 30)"
+calls_reset
+OUT="$(bash "$PULSE" --root "$R" --if-stale 6 2>&1)"; RC=$?
+t "a 30-minute-old pulse exits 0" "$RC" "0"
+t "and NOT ONE instrument ran" "$(calls_n)" "0"
+inc "says fresh, with the age"      "$OUT" "pulse: fresh ("
+inc "carries the age unit"          "$OUT" "m old,"
+inc "carries the last verdict"      "$OUT" "spend=CLEAN"
+inc "and the last river mode"       "$OUT" "river=coord-only"
+hasnt "summarises, not echoes (no evidence tail)" "$OUT" "evidence: pulse.sh"
+hasnt "never claims GREEN — nothing was measured" "$OUT" "pulse: GREEN"
+t "the door banks nothing" "$(pulse_lines "$R")" "1"
+
+# Newest by TIMESTAMP, not by position: a stale line appended after a young one must not
+# reopen the door. (COORD is chronological in practice; a hand-edit needn't be.)
+R="$(newroot fresh_unordered)"
+seed_pulse "$R" "$(ago 900)"
+seed_pulse "$R" "$(ago 20)"
+seed_pulse "$R" "$(ago 800)"
+calls_reset
+OUT="$(bash "$PULSE" --root "$R" --if-stale 6 2>&1)"
+t "the newest stamp wins, whatever the order" "$(calls_n)" "0"
+inc "and it is the young one" "$OUT" "pulse: fresh (20m old"
+
+R="$(newroot stale)"
+seed_pulse "$R" "$(ago 600)"   # ten hours — well outside a six-hour window
+calls_reset
+OUT="$(bash "$PULSE" --root "$R" --if-stale 6 2>&1)"; RC=$?
+t "a ten-hour-old pulse runs the full sweep" "$RC" "0"
+t "every instrument ran" "$(calls_n)" "7"
+inc "reports GREEN"      "$OUT" "pulse: GREEN"
+hasnt "and never claims fresh" "$OUT" "pulse: fresh"
+t "the sweep banks its own line" "$(pulse_lines "$R")" "2"
+
+# Boundary: the window is measured, not rounded. 90 minutes is inside 2h and outside 1h.
+R="$(newroot window_edges)"
+seed_pulse "$R" "$(ago 90)"
+calls_reset
+bash "$PULSE" --root "$R" --if-stale 2 >/dev/null 2>&1
+t "90 minutes is fresh inside a 2h window" "$(calls_n)" "0"
+calls_reset
+bash "$PULSE" --root "$R" --if-stale 1 >/dev/null 2>&1
+t "the same line is stale in a 1h window" "$(calls_n)" "7"
+
+echo "── the door fails OPEN — toward checking, never toward skipping ────────────"
+R="$(newroot badstamp)"
+printf '%s\n' "- [not-a-date] [pulse] estate pulse -> doctor=0 | evidence: pulse.sh" >> "$R/COORD.md"
+calls_reset
+OUT="$(bash "$PULSE" --root "$R" --if-stale 6 2>&1)"; RC=$?
+t "an unparseable stamp runs the pulse" "$(calls_n)" "7"
+t "and still exits cleanly" "$RC" "0"
+hasnt "no traceback from the door" "$OUT" "Traceback"
+
+# A stamp from the future is a skewed clock or a hand-edit — arithmetically "young", and
+# exactly the case where trusting the number would silence the heartbeat indefinitely.
+R="$(newroot futurestamp)"
+seed_pulse "$R" "$(ago -600)"
+calls_reset
+bash "$PULSE" --root "$R" --if-stale 6 >/dev/null 2>&1
+t "a stamp from the future runs the pulse" "$(calls_n)" "7"
+
+R="$(newroot nopulseyet)"
+calls_reset
+bash "$PULSE" --root "$R" --if-stale 6 >/dev/null 2>&1
+t "a COORD that has never been pulsed runs it" "$(calls_n)" "7"
+
+R="$W/nocoord_stale"; mkdir -p "$R"
+calls_reset
+OUT="$(bash "$PULSE" --root "$R" --if-stale 6 2>&1)"; RC=$?
+t "no COORD.md at all runs the pulse" "$(calls_n)" "7"
+t "and exits 0 with nowhere to bank" "$RC" "0"
+
+R="$(newroot window_zero)"
+seed_pulse "$R" "$(ago 1)"
+calls_reset
+OUT="$(bash "$PULSE" --root "$R" --if-stale 0 2>&1)"
+t "--if-stale 0 always runs, however young the line" "$(calls_n)" "7"
+hasnt "and never claims fresh" "$OUT" "pulse: fresh"
+calls_reset
+bash "$PULSE" --root "$R" --if-stale banana >/dev/null 2>&1
+t "a non-numeric window runs the pulse" "$(calls_n)" "7"
+
+# No flag = no door: the scheduled path and every existing caller are untouched.
+R="$(newroot nodoor)"
+seed_pulse "$R" "$(ago 1)"
+calls_reset
+bash "$PULSE" --root "$R" >/dev/null 2>&1
+t "without --if-stale a minute-old pulse still runs" "$(calls_n)" "7"
+
 echo "── pulse writes NOTHING but that one line ──────────────────────────────────"
 R="$(newroot readonly)"
 mkdir -p "$R/watch"; printf 'untouched\n' > "$R/watch/watchlist.md"
@@ -199,6 +317,23 @@ bash "$PULSE" --root "$R" --no-coord >/dev/null 2>&1
 t "--no-coord writes no line" "$(pulse_lines "$R")" "0"
 bash "$PULSE" --root "$W/does-not-exist" >/dev/null 2>&1
 t "a bad --root exits 2" "$?" "2"
+
+# A value-taking flag with no value used to SPIN: `shift 2` with one argument left fails,
+# does not shift, and the while-loop never advances. These two run under a watchdog so a
+# reintroduced hang fails the fixture in five seconds instead of wedging the gate forever.
+bounded(){  # bounded <seconds> <cmd...> — the exit code, or 124 if it outran the budget
+    local secs="$1"; shift
+    "$@" >/dev/null 2>&1 &
+    local pid=$!
+    ( sleep "$secs"; kill -9 "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    local wd=$!
+    wait "$pid" 2>/dev/null; local rc=$?
+    kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+    [ "$rc" -gt 128 ] && rc=124
+    echo "$rc"
+}
+t "--if-stale with no value exits 2, never spins" "$(bounded 5 bash "$PULSE" --if-stale)" "2"
+t "--root with no value exits 2, never spins"     "$(bounded 5 bash "$PULSE" --root)" "2"
 bash "$PULSE" --frobnicate >/dev/null 2>&1
 t "an unknown flag exits 2" "$?" "2"
 bash "$PULSE" --help >/dev/null 2>&1

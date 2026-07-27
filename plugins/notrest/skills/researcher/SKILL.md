@@ -13,7 +13,7 @@ A staged research workflow that takes a single prompt and drives it from a first
 
 The research question is everything the user passed when invoking the skill. Use `$ARGUMENTS` if it is populated; otherwise use the text the user typed after `/researcher`. If the prompt is empty or one ambiguous word, ask exactly one clarifying question before starting — otherwise begin immediately. Treat the original prompt as the fixed yardstick: every later pass is judged against *this* question, not whatever interesting tangents appear along the way.
 
-**Consult the store first.** Run one `index.py find "<topic>"` before Pass 1 — it searches the findings store, the legacy index, and dossier bodies. On a hit, surface it (id or path, date, statement) and offer *reuse* / *extend* (this run, seeded with the prior records) / *fresh* — never silently re-spend the search budget on a question this project already answered.
+**Consult the library first.** Before Pass 1 — before a single search is spent — run one `index.py find "<topic>"` (this project's store, legacy index, dossier bodies) and one `index.py library find <terms>` (every registered project's store, seconds, zero model tokens). On a hit, surface it (id or `<project>:F-<n>`, date, statement) and offer *reuse* / *extend* (this run, seeded with the prior records) / *fresh*; a strong cross-project hit is cited as `{"type":"record","ref":"<project>:F-<n>","label":"cited"}` and **shrinks this run's search budget by what it already answers** — a question the library has answered is a budget you do not spend.
 
 ## Quick mode (`--quick`)
 If the invocation includes `--quick` (or a clear equivalent — "quick", "brief", "no files", "just the summary"), run lightweight instead of the full workflow:

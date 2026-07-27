@@ -1,5 +1,40 @@
 # Changelog — the notrest harness
 
+## 3.11.0 — 2026-07-26
+
+**The estate gets a heartbeat rhythm, and the archivist becomes a library.**
+
+- **Pulse rhythm.** `pulse.sh --if-stale <hours>`: the newest `[pulse]` ledger stamp wins,
+  and every failure mode (no COORD, unparseable stamp, future stamp, bad window) runs the
+  full sweep — fail-open toward checking. oracle's intake pulses at a 6-hour window and
+  surfaces health-grade reds BEFORE question 1 — offering a live re-check rather than
+  asserting a carried red is still true; sessionend's close pulses at 1 hour so the
+  ledger's last word on a session is a measured verdict, not a claim. The daily 9:09
+  scheduled pulse (owner-authorized in plain words; consent is a ledger line) covers the
+  silence between sessions — only the first toucher of the day pays for the sweep.
+  Fixture 48→79 asserting against stub-call counters (fresh = ZERO instruments invoked,
+  measured not assumed). Found and fixed a live hang: `--root` with no value looped
+  forever; now a guarded exit 2 with watchdog-bounded regression tests.
+- **THE LIBRARY — federation core.** Every project's findings store stays in its repo
+  (local truth, versioned, beam-able); `~/.claude/notrest-library/registry.jsonl`
+  federates them. `library register|list|find|track`: cross-project knowledge search at
+  zero model tokens, hits prefixed `<project>:F-<n>`; unreachable roots reported, never
+  fatal. Registration also feeds `~/.claude/oracle-projects.txt` — the PM cross-project
+  graph has its first registered project, and **the last never-proven claim from the
+  v3.5.0 handoff is closed**. The evidence grammar gains type `record` (`F-<n>` local,
+  `<project>:F-<n>` cross-project; existence-checked when reachable, accepted-with-note
+  when offline — federation never fails closed); the river renders it, proven by live
+  render not assumption. researcher now consults the library BEFORE spending a search
+  budget: a question the library already answers is a budget you do not spend. Fixture
+  58→102, fully hermetic via NOTREST_LIBRARY_ROOT. Live-proven on the real shelf: this
+  repo registered, `library find shadow` → F-1/F-2/F-5 with prefixes.
+- **Library doctrine banked** (owner-ratified): concepts · the updater · convergence —
+  the compile doctrine applied to knowledge. Phase 2 builds in the same lane next
+  release; the federation core shipped with its hooks already in place (--json find
+  carries raw ask+statement; registry lines tolerate future keys).
+- Gate: pulse 79/0 + archivist 102/0 seat-re-run · eval 12/12 0-fail · doctor 10/10 ·
+  validate 0 · one-owner-per-file conflict audit clean.
+
 ## 3.10.0 — 2026-07-26
 
 **Teeth, a heartbeat, a proven watch, and a transporter — the four vectors' first rungs land together.**

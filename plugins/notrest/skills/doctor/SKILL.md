@@ -136,6 +136,43 @@ stack trace, and pulse's own plumbing never raises the alarm.
 Fixture: `bash plugins/notrest/skills/doctor/scripts/pulse-fixture.sh` — exit 0 = every
 assertion held.
 
+### `--if-stale <hours>` — the rhythm, without the tax
+
+A schedule checks the estate at a time; the in-session rhythm checks it at a **moment** — the
+doors a session already walks through. `--if-stale <hours>` is what makes that affordable:
+pulse reads the newest `[pulse]` line already in `COORD.md`, and **if it is younger than the
+window, prints one line and exits 0 without running a single instrument**:
+
+```
+pulse: fresh (57m old, last: doctor=5 eval=0 watch-due=0 compile=ripe spend=CLEAN river=findings+coord)
+```
+
+Otherwise it runs the full sweep and banks its line as usual. The verdict travels forward, so
+the caller learns the estate's colour either way — the second session of a morning pays
+milliseconds for the answer the first one already bought.
+
+**On the fresh path the exit code is always 0, even when the carried verdict is red** — pulse
+did not measure, so it will not claim a measurement, and a caller that gates on the exit code
+must not be told a close failed by a reading it never took. The colour is carried on the *line*,
+under the word `last:`, and a red there is a red **as of that stamp** — recent, not current.
+A consumer that needs the live answer drops the window: `pulse.sh --root .` measures now.
+
+Two skills knock on this door, and neither is a schedule (both run inside a turn the user
+started):
+
+- **`oracle`** intake — `--if-stale 6`, between the foundation load and question 1. A red is
+  surfaced *before* the six questions, because starting an hour of work on a broken estate is
+  the expensive mistake.
+- **`sessionend`** Phase 3.6 — `--if-stale 1`, so the close banks a fresh heartbeat unless one
+  landed within the hour.
+
+**The door fails OPEN, toward checking.** No `COORD.md`, no pulse line, an unparseable stamp, a
+stamp from the *future* (a skewed clock, arithmetically "young" — the one input that could
+silence the heartbeat forever), a non-numeric window, no `python3`: every one of them runs the
+full pulse. The only path that skips work is a stamp that positively parses and is positively
+young. `--if-stale 0` therefore always runs, and no flag at all means no door — the scheduled
+path is untouched. Stamps are read and written **UTC only**.
+
 ### Scheduling it is the owner's click, never the harness's
 
 pulse is what you would point a scheduler at — and **the harness never schedules itself.**
@@ -143,7 +180,13 @@ Creating, updating, pausing, or deleting a scheduled task is an owner-confirmed 
 explicit yes per action, exactly as `watch` requires for its recheck cycle: *offer*, then wait.
 Never write a fake schedule, never claim a task exists, and never imply something is running in
 the background. A cron line the owner did not approve is a background process nobody consented
-to. Run it by hand until the owner says otherwise — `bash pulse.sh --root .` is the whole ritual.
+to. Absent an approved schedule, `bash pulse.sh --root .` by hand is the whole ritual.
+
+The `--if-stale` doors above are **not** an exception to this law, and the distinction is the
+whole reason they need no separate consent: an in-session pulse runs only inside a turn the
+user themselves opened, in the foreground, printing what it did. A schedule runs when nobody
+is there. The first is a skill doing its job; the second is a standing process, and only the
+owner starts one.
 
 ## Proving it
 
