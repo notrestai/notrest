@@ -175,6 +175,16 @@ what a signed-in user gets.
 
 ### 3.4 The invariants for v0.1
 
+> **AMENDED 2026-07-27 — record F-14 supersedes F-9 (tombstone F-15).** Execution moved
+> ONLINE where a vendor sandbox exists; storage stays LOCAL. The web app's connector
+> onboarding is the front door. The user can clear online progress, and **the purge
+> returns a receipt** — the defensible claim is *nothing persists on our side*, never
+> *nothing touches the cloud*. Scope limit, ruled at CP6: the online-execution model holds
+> **Anthropic-side only** — OpenAI ships no vendor sandbox, so GPT stays **chat-only**
+> until one exists or we build OS-level sandboxing, and no onboarding copy may imply
+> parity. Read this box before the bullets below; where they conflict, this box governs
+> and the bullets record what v0.1 was specced as before the amendment.
+
 - **Estates are per-project directories, exactly as today.** A project is a folder with a
   `COORD.md` in it. No import step, no migration, no database. A user who already has this
   repo checked out is already a rig user.
