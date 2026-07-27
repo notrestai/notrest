@@ -135,12 +135,15 @@ Prints the assigned id on success; exits 2 with the rule name on rejection. `--j
 - **Legacy index:** `index.py scan [--root .]` — walks the known output folders for every
   `*Dossier.md` and REPLACES `oracle-index.md`, adding one pointer entry each for the findings
   store, `COORD-AGENTS.md`, and `compile/candidates.md`. Idempotent; run it freely.
-- **Library:** `index.py library register|list|find|track` — the cross-project shelf (above).
+- **Library:** `index.py library register|list|find|track|concepts|update|crown` (above).
 - **Prove it:** `bash scripts/fixture.sh` — every kind lands, every rule turns its record away
   with exit 2, the track round-trips, the flips resolve, a decision linking a refuted finding
-  is flagged while its un-refuted control is not, `find` sees bodies, and the shelf registers
+  is flagged while its un-refuted control is not, `find` sees bodies; the shelf registers
   idempotently, finds across two scratch repos, survives a deleted third, and validates every
-  `record` ref. Exit 0 = green (it runs on a scratch shelf; the real one is never touched).
+  `record` ref; concepts cluster across projects deterministically and survive a rebuild;
+  every crown guard refuses; and the updater walks BASELINE → STANDS → DRIFTED (twice, because
+  drift is not banked) → DEAD-SOURCE against a local http server. Exit 0 = green — on scratch
+  shelves, over 127.0.0.1 only: the real shelf and the open network are never touched.
 
 ## The library — one shelf, many stores
 
@@ -201,6 +204,125 @@ first. A strong cross-project hit is cited as `record` evidence and the budget s
 Re-deriving what another project already recorded is not thoroughness — it is the same
 token spent twice.
 
+## The three storeys
+
+**`compile` is for work; the library is for knowledge.** Same instinct — notice what
+repeats — pointed at different things: compile watches what this project keeps *doing*
+and offers to script it; the library watches what the estate keeps *learning* and offers
+to settle it. Both borrow the same clustering, which is why the shelf imports compile's
+code instead of growing its own copy of it.
+
+### 1 · CONCEPTS — what the estate keeps thinking about
+
+```bash
+python3 "$IDX" library concepts --rebuild [--sim 0.24] [--min-df 2] [--min-members 2]
+python3 "$IDX" library concepts --rebuild --dry-run --sim 0.15   # sweep, append nothing
+python3 "$IDX" library concepts                       # read the shelf
+python3 "$IDX" library concepts --name C-3 "read-path cache invalidation"
+python3 "$IDX" library find --concept C-3 [terms…]
+```
+
+`--rebuild` clusters **every record on every reachable project** with `compile.py`'s
+df-weighted average-link machinery — imported, never re-derived: its thresholds were
+swept against a real estate and its estate-stopword list exists to fix a measured
+defect. Each cluster lands in `<shelf>/concepts.jsonl` (append-only; last line per
+`C-<n>` wins):
+
+```json
+{"id": "C-1", "terms": ["cach", "path", "read", "client", "invalidation", "redi"],
+ "name": "read-path cache invalidation", "members": ["cache-a:F-1", "cache-a:F-2", "cache-b:F-1"],
+ "projects": ["cache-a", "cache-b"], "asks": ["how should the read path cache?"],
+ "cohesion": 0.58, "settled": null, "status": "OPEN", "ts": "2026-07-27T00:41:02Z"}
+```
+
+- **The script never names a concept.** `name` is emitted as `"?"` — the same contract
+  compile uses for a candidate's alias. Terms are stems, not a title; a model reads the
+  members and christens it with `--name`.
+- **A concept keeps its identity across rebuilds** when its membership is unchanged: id,
+  name, verdict and birth stamp all carry forward. A rebuild that renamed everything
+  would make every citation of `C-3` a lie.
+- **Tombstones and crowns never cluster.** Both are records *about* the store; a crown
+  that joined its own concept would change the membership the moment it was written.
+- **`cohesion`** is the mean pairwise signature overlap — ~0.5+ is one idea recorded
+  several times; ~0.15 is a loose family a reader should distrust.
+- Deterministic given identical stores. Zero model tokens. **Sweep with `--dry-run`** —
+  the shelf is append-only, so a threshold experiment you did not mean to keep is a
+  generation you cannot take back.
+
+### 2 · THE UPDATER — does the ground still hold?
+
+```bash
+python3 "$IDX" library update [--due|--all] [--project X] [--max-age 7] [--timeout 10]
+```
+
+Re-probes the `url` evidence of every **live** record across every reachable project,
+using `watch.py`'s HTTP probe — imported, not re-typed — and its one hard rule:
+**condition on a strong ETag only**, never `If-Modified-Since`, because HTTP dates have
+one-second granularity and a page edited inside the same second answers 304 while its
+bytes moved.
+
+| verdict | means |
+|---|---|
+| `BASELINE` | first sight — the hash is recorded, nothing is judged |
+| `STANDS` | the bytes are what they were |
+| `DRIFTED` | the source moved; both hashes are on the line |
+| `DEAD-SOURCE` | unreachable or 4xx/5xx — **a fact about the source, never a refutation of the claim** |
+| `NEEDS-SESSION-RECHECK` | the record's evidence is `command` / `path` / `record` — a session must re-check it |
+| `CITES-REFUTED` | a live record cites a record that another project has **refuted** |
+
+**Drift is never banked.** A DRIFTED probe leaves the stored hash and validators alone,
+so the next run reports it again — advancing them would retire the finding before a
+model ever read what changed. **Evidence is never executed:** a `command` ref is listed,
+not run. Writes an append-only dated block to `<shelf>/update-log.md` and prints one
+summary line a heartbeat could carry. Zero model tokens.
+
+`CITES-REFUTED` is the seam no single store can see: `RESTS-ON-REFUTED` walks one repo's
+links; this walks `record` evidence **across the shelf**, one hop, reachable projects
+only. An offline project is reported as *unchecked*, never as clean — and `--project`
+narrows what gets probed without ever narrowing the shelf a citation resolves against.
+
+### 3 · CONVERGENCE — the model decides, the script records
+
+```bash
+python3 "$IDX" library crown C-3 --statement "<the settled sentence>" \
+    --by cache-a:F-1,cache-b:F-1 [--contested] [--root .]
+```
+
+**`crown` does not judge convergence.** A model reads a concept's members, decides they
+say one settled thing, and writes that sentence; the script records the decision as a
+citable record and marks the concept. It appends a `kind=result` record to the **local**
+store — statement prefixed `CONVERGED:`, `links` the local members, `evidence` the cited
+members as `record` refs (`<project>:F-<n>` across the shelf) — and flips the concept to
+`CONVERGED` with its `settled` sentence.
+
+The only judgment the script makes is a **refusal**:
+
+| rule | refuses when |
+|---|---|
+| `crown-member-refuted` | a cited member is effectively refuted — the estate already knocked that ground out |
+| `crown-contested` | a cited member is `kind=conflict` or carries `RESTS-ON-REFUTED`; `--contested` marks the concept **CONTESTED** instead, and writes **no** crown record |
+| `crown-by-not-member` · `concept-unknown` | the crown does not rest on what it claims to |
+| `crown-unregistered` | the local project is not on the shelf, so the crown could never be cited as `<project>:F-<n>` |
+| `crown-unreachable` | a cited member's project cannot be read from here — **reading degrades on an offline project; asserting does not** |
+
+A crown buys no immunity: refute one of its members later and the crown itself comes
+back flagged `CITES-REFUTED` on the next `update`.
+
+### Honest limits
+
+- **The updater probes urls, and nothing else.** A `command` or `path` ref is listed as
+  `NEEDS-SESSION-RECHECK` and left for a session that can actually run it. The library
+  never executes evidence.
+- **`DEAD-SOURCE` is about the source.** It is not a refutation, and it must not be
+  reported as one.
+- **Clustering is a finding aid, not a claim.** A concept says these records share
+  vocabulary — not that they agree. Low `cohesion` means exactly that.
+- **Convergence is a model act.** The script can refuse a crown; it can never certify
+  one. `settled` says what a model decided, on a date, over members you can go read.
+- **The shelf never writes into a project.** Concepts, the update log and the probe
+  cache all live on the shelf; the only thing a library verb writes into a repo is a
+  crown record, into the local store, through the same validated door as everything else.
+
 ## The legacy estate stays readable
 
 History does not get rewritten. Dossiers written before the store still index: `scan` reads
@@ -225,6 +347,9 @@ you `grep` the real file, and from a hit you read the transcript before citing i
 5. **Re-read the track after a refute.** Anything now carrying `RESTS-ON-REFUTED` is a live
    record whose footing moved — say which, and either revisit it or state why it still stands.
    A refutation nobody propagated is a refutation the project never actually absorbed.
+6. **Settle what has stopped moving.** When `concepts` shows the same question answered
+   across projects, read the members and either crown the convergence or say why it is still
+   open. A concept that has been `OPEN` through five sessions is a question nobody finished.
 
 ## Honesty rules
 
@@ -252,6 +377,9 @@ you `grep` the real file, and from a hit you read the transcript before citing i
 - If a legacy dossier landed this session, `scan` ran after it.
 - Before any search fan-out, `library find` ran — and if this project is not on the shelf yet,
   `library register` ran, so the next session (here or anywhere) can read what this one learned.
+- Nothing was reported as CONVERGED that a model did not read the members of and decide; no
+  `DEAD-SOURCE` was passed off as a refutation; no `DRIFTED` line was called a finding before
+  someone opened the source and judged what moved.
 
 ## Finishing up
 

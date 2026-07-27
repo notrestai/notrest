@@ -19,7 +19,11 @@ FAILS=0
 # real ~/.claude/notrest-library or ~/.claude/oracle-projects.txt.
 export NOTREST_LIBRARY_ROOT="$TMP/home/.claude/notrest-library"
 
-cleanup() { rm -rf "$TMP"; }
+SRV=""
+cleanup() { stop_srv; rm -rf "$TMP"; return 0; }
+# `wait` after the kill so bash never prints its own "Terminated" job notice
+# over a green run — the gate reads this output.
+stop_srv() { [ -n "$SRV" ] && { kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null; SRV=""; }; return 0; }
 trap cleanup EXIT
 
 ok()  { PASSES=$((PASSES+1)); echo "PASS  $1"; }
@@ -463,6 +467,240 @@ refs = [e for r in d["records"] for e in r["evidence"] if e["type"] == "record"]
 assert len(refs) == 4, refs
 assert {"F-1", "beta:F-1", "ghost:F-4", "gone:F-1"} == {e["ref"] for e in refs}, refs
 ' && ok "record refs round-trip through the store unchanged" || bad "record evidence did not round-trip"
+
+# ======================================= STOREY ONE — CONCEPTS (clustering)
+# A SECOND shelf, so the storeys are asserted over a store built for them and the
+# phase-1 shelf keeps its counts. It also exercises --library-root, which the env
+# var otherwise hides. Every record here carries PATH evidence: nothing in this
+# section may reach the network (the probe tests below use 127.0.0.1 only).
+LIB2="$TMP/home2/.claude/notrest-library"
+LIB3="$TMP/home3/.claude/notrest-library"
+C1="$TMP/cache-a"; C2="$TMP/cache-b"
+mkdir -p "$C1" "$C2"
+lib2() { python3 "$IDX" library "$@" --library-root "$LIB2"; }
+
+seed() { python3 "$IDX" add --root "$1" --json "$2" >/dev/null 2>&1; }
+seed "$C1" "{\"session\":\"c\",\"skill\":\"researcher\",\"kind\":\"finding\",\"ask\":\"how should the read path cache?\",\"statement\":\"Redis client-side caching invalidates through RESP3 tracking on the read path.\",\"evidence\":$EVP}"
+seed "$C1" "{\"session\":\"c\",\"skill\":\"researcher\",\"kind\":\"finding\",\"ask\":\"how should the read path cache?\",\"statement\":\"Client-side caching on the read path needs invalidation push, not polling.\",\"evidence\":$EVP}"
+seed "$C1" "{\"session\":\"c\",\"skill\":\"decider\",\"kind\":\"decision\",\"statement\":\"Rotate the deploy signing key before the migration window closes.\",\"evidence\":$EVP}"
+seed "$C2" "{\"session\":\"c\",\"skill\":\"researcher\",\"kind\":\"finding\",\"ask\":\"what caches the read path?\",\"statement\":\"The read path caching layer must handle invalidation from Redis tracking.\",\"evidence\":$EVP}"
+seed "$C2" "{\"session\":\"c\",\"skill\":\"factcheck\",\"kind\":\"finding\",\"statement\":\"Onboarding screenshots in the tutorial are three versions behind.\",\"evidence\":$EVP}"
+lib2 register --root "$C1" >/dev/null 2>&1
+lib2 register --root "$C2" >/dev/null 2>&1
+
+lib2 concepts --rebuild > "$TMP/con1.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && grep -q "^C-1 · ? · 3 member(s) across 2 project(s)" "$TMP/con1.out" \
+  && ok "concepts clusters records ACROSS projects (3 members, 2 projects)" \
+  || { bad "clustering wrong (exit $rc)"; cat "$TMP/con1.out"; }
+grep -q "members: cache-a:F-1, cache-a:F-2, cache-b:F-1$" "$TMP/con1.out" \
+  && ok "the cluster holds exactly the cache records — the unrelated ones stayed out" \
+  || { bad "membership wrong"; grep members "$TMP/con1.out"; }
+grep -q "terms: cach" "$TMP/con1.out" && ok "terms come from the donor's stemmed vocabulary" \
+  || { bad "no terms"; cat "$TMP/con1.out"; }
+grep -q "^C-2 " "$TMP/con1.out" && bad "a second cluster formed from unrelated records" \
+  || ok "two unrelated records did not become a concept"
+
+# DETERMINISM: a third shelf over the SAME two roots must reach the same clustering.
+python3 "$IDX" library register --root "$C1" --library-root "$LIB3" >/dev/null 2>&1
+python3 "$IDX" library register --root "$C2" --library-root "$LIB3" >/dev/null 2>&1
+python3 "$IDX" library concepts --rebuild --library-root "$LIB3" >/dev/null 2>&1
+python3 - "$LIB2/concepts.jsonl" "$LIB3/concepts.jsonl" <<'PY' && ok "clustering is deterministic: two fresh shelves, identical concepts" || bad "clustering is not deterministic"
+import json, sys
+def gen(p):
+    last = {}
+    for line in open(p, encoding="utf-8"):
+        if line.strip():
+            r = json.loads(line)
+            last[r["id"]] = r
+    out = []
+    for k in sorted(last, key=lambda x: int(x.split("-")[1])):
+        r = dict(last[k]); r.pop("ts", None)          # birth stamps differ; nothing else may
+        out.append(r)
+    return out
+a, b = gen(sys.argv[1]), gen(sys.argv[2])
+assert a == b, (a, b)
+assert a and a[0]["members"], a
+PY
+
+N1="$(wc -l < "$LIB2/concepts.jsonl" | tr -d ' ')"
+lib2 concepts --rebuild >/dev/null 2>&1
+python3 - "$LIB2/concepts.jsonl" "$N1" <<'PY' && ok "a rebuild carries the id and the birth stamp forward, byte for byte" || bad "rebuild churned the concept"
+import sys
+lines = [l for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
+n = int(sys.argv[2])
+assert len(lines) == 2 * n, (len(lines), n)
+assert lines[:n] == lines[n:], "the second generation differs from the first"
+PY
+
+lib2 concepts --name C-1 "read-path cache invalidation" > "$TMP/name.out" 2>&1
+[ "$?" -eq 0 ] && grep -q "C-1 named 'read-path cache invalidation'" "$TMP/name.out" \
+  && ok "the seat christens a concept (append-style, never an edit)" || { bad "naming failed"; cat "$TMP/name.out"; }
+lib2 concepts | grep -q "^C-1 · read-path cache invalidation ·" \
+  && ok "the name is what the next read sees (last line per C-<n> wins)" || bad "name did not resolve"
+lib2 concepts --rebuild | grep -q "^C-1 · read-path cache invalidation ·" \
+  && ok "a rebuild does NOT wipe the name the seat gave" || bad "rebuild clobbered the name"
+lib2 concepts --name C-99 "nope" >"$TMP/e.out" 2>&1
+[ "$?" -eq 2 ] && grep -q "^reject: concept-unknown " "$TMP/e.out" \
+  && ok "naming an unknown concept exits 2" || { bad "unknown concept accepted"; cat "$TMP/e.out"; }
+
+[ "$(lib2 find --concept C-1 | grep -cE '^cache-[ab]:F-[0-9]+ ')" = "3" ] \
+  && ok "find --concept returns exactly the concept's members" || { bad "--concept filter wrong"; lib2 find --concept C-1; }
+lib2 find --concept C-1 redis | grep -q "cache-a:F-1" \
+  && ok "--concept composes with terms" || bad "--concept + terms wrong"
+
+# A threshold sweep must not leave a generation behind: the shelf is append-only.
+BEFORE_DRY="$(wc -l < "$LIB2/concepts.jsonl" | tr -d ' ')"
+lib2 concepts --rebuild --dry-run --sim 0.10 > "$TMP/dry.out" 2>&1
+grep -q "\[DRY RUN — nothing appended\]" "$TMP/dry.out" \
+  && [ "$(wc -l < "$LIB2/concepts.jsonl" | tr -d ' ')" = "$BEFORE_DRY" ] \
+  && ok "--dry-run sweeps thresholds without appending a generation" \
+  || { bad "--dry-run wrote to the shelf"; cat "$TMP/dry.out"; }
+
+lib2 concepts --rebuild --project cache-b > "$TMP/sparse.out" 2>&1
+grep -q "^# concepts — 0 from 2 clusterable record(s)" "$TMP/sparse.out" \
+  && grep -q "honest answer, not an error" "$TMP/sparse.out" \
+  && ok "too sparse to cluster is reported honestly, not as an error" || { bad "sparse path wrong"; cat "$TMP/sparse.out"; }
+
+# ================================= STOREY THREE — CONVERGENCE (crown guards)
+lib2 crown C-1 --statement "Read-path caching is invalidated by push, never polling." \
+  --by cache-a:F-1,cache-b:F-1 --root "$C1" > "$TMP/crown.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && grep -q "^C-1 CONVERGED — crown cache-a:F-4 written to" "$TMP/crown.out" \
+  && ok "crown writes the settled record to the LOCAL store and marks the concept" \
+  || { bad "crown failed (exit $rc)"; cat "$TMP/crown.out"; }
+python3 "$IDX" track --root "$C1" --json 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+c = [r for r in d["records"] if r["statement"].startswith("CONVERGED:")][0]
+assert c["kind"] == "result" and c["relation"] == "toward", c
+assert c["links"] == ["F-1"], c["links"]                       # local members only
+refs = sorted(e["ref"] for e in c["evidence"])
+assert refs == ["F-1", "cache-b:F-1"], refs                    # local + cross-project
+assert all(e["type"] == "record" for e in c["evidence"]), c["evidence"]
+assert c["ask"].startswith("concept C-1: read-path cache invalidation"), c["ask"]
+' && ok "the crown record is kind=result, links local, cites members as record evidence" \
+  || bad "crown record shape wrong"
+lib2 concepts | grep -q "settled: Read-path caching is invalidated by push" \
+  && ok "the concept carries the settled sentence and reads CONVERGED" || bad "concept not settled"
+lib2 concepts | grep -q "^C-1 · read-path cache invalidation · 3 member(s).*CONVERGED" \
+  && ok "a crowned concept keeps its status" || bad "crown status lost"
+lib2 concepts --rebuild | grep -q "^C-1 .*3 member(s).*CONVERGED" \
+  && ok "the crown record does NOT join its own concept (no rebuild churn)" \
+  || { bad "the crown changed the membership it was written about"; lib2 concepts --rebuild; }
+
+lib2 crown C-1 --statement "x" --by cache-a:F-3 --root "$C1" >"$TMP/e.out" 2>&1
+[ "$?" -eq 2 ] && grep -q "^reject: crown-by-not-member " "$TMP/e.out" \
+  && ok "rejects crown-by-not-member" || { bad "crowned by a non-member"; cat "$TMP/e.out"; }
+lib2 crown C-1 --statement "x" --by cache-a:F-1 --root "$TMP/beta-repo" >"$TMP/e.out" 2>&1
+[ "$?" -eq 2 ] && grep -q "^reject: crown-unregistered " "$TMP/e.out" \
+  && ok "rejects crown-unregistered (a crown nobody can cite is not a crown)" \
+  || { bad "crowned into an unshelved root"; cat "$TMP/e.out"; }
+
+# CONTESTED: a kind=conflict member is disagreement on the face of the record.
+seed "$C1" "{\"session\":\"c\",\"skill\":\"factcheck\",\"kind\":\"conflict\",\"ask\":\"how should the read path cache?\",\"statement\":\"Vendor doc and benchmark disagree on read path cache invalidation latency.\",\"evidence\":$EVP}"
+lib2 concepts --rebuild > "$TMP/con2.out" 2>&1
+CID="$(grep -oE '^C-[0-9]+ · \? · 4 member' "$TMP/con2.out" | grep -oE '^C-[0-9]+')"
+[ -n "$CID" ] && ok "the conflict record joins the concept as a new id ($CID, 4 members)" \
+  || { bad "no 4-member concept formed"; cat "$TMP/con2.out"; }
+lib2 crown "$CID" --statement "x" --by cache-a:F-1,cache-a:F-5 --root "$C1" >"$TMP/e.out" 2>&1
+[ "$?" -eq 2 ] && grep -q "^reject: crown-contested " "$TMP/e.out" && grep -q "kind=conflict" "$TMP/e.out" \
+  && ok "rejects crown-contested when a cited member is a conflict" || { bad "contested guard silent"; cat "$TMP/e.out"; }
+LINES_BEFORE="$(wc -l < "$C1/archive/findings.jsonl" | tr -d ' ')"
+lib2 crown "$CID" --statement "x" --by cache-a:F-1,cache-a:F-5 --contested --root "$C1" > "$TMP/cont.out" 2>&1
+[ "$?" -eq 0 ] && grep -q "marked CONTESTED" "$TMP/cont.out" \
+  && ok "--contested marks the concept instead of crowning it" || { bad "--contested failed"; cat "$TMP/cont.out"; }
+[ "$(wc -l < "$C1/archive/findings.jsonl" | tr -d ' ')" = "$LINES_BEFORE" ] \
+  && ok "a CONTESTED concept writes NO crown record (nothing settled to cite)" \
+  || bad "--contested wrote a record anyway"
+lib2 concepts | grep -q "^$CID .*CONTESTED" && ok "the contested verdict is what the shelf reads back" \
+  || bad "CONTESTED not persisted"
+
+# REFUTED: the hardest refusal — the ground under a cited member is gone.
+python3 "$IDX" refute F-1 --evidence "https://example.org/counter-2026" --root "$C2" >/dev/null 2>&1
+lib2 crown C-1 --statement "x" --by cache-a:F-1,cache-b:F-1 --root "$C1" >"$TMP/e.out" 2>&1
+[ "$?" -eq 2 ] && grep -q "^reject: crown-member-refuted " "$TMP/e.out" && grep -q "cache-b:F-1" "$TMP/e.out" \
+  && ok "rejects crown-member-refuted, naming the member" || { bad "crowned on refuted ground"; cat "$TMP/e.out"; }
+
+# ==================================== STOREY TWO — THE UPDATER (probes)
+# Everything below talks to 127.0.0.1 only. --project pins the probe project so no
+# fixture run can ever reach the real network.
+P_R="$TMP/probe-repo"; WWW="$TMP/www"
+mkdir -p "$P_R" "$WWW"
+echo "v1 body" > "$WWW/doc.txt"
+PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+( cd "$WWW" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1 ) &
+SRV=$!
+UP=""
+for _ in $(seq 1 40); do
+  python3 -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:$PORT/doc.txt',timeout=1)" 2>/dev/null \
+    && { UP=1; break; }
+  sleep 0.1
+done
+[ -n "$UP" ] && ok "local probe server is up on 127.0.0.1:$PORT" || bad "local http.server never came up"
+
+U="http://127.0.0.1:$PORT/doc.txt"; D="http://127.0.0.1:$PORT/no-such.txt"
+seed "$P_R" "{\"session\":\"u\",\"skill\":\"researcher\",\"kind\":\"finding\",\"statement\":\"The doc says v1.\",\"evidence\":[{\"type\":\"url\",\"ref\":\"$U\",\"label\":\"cited\"}]}"
+seed "$P_R" "{\"session\":\"u\",\"skill\":\"researcher\",\"kind\":\"finding\",\"statement\":\"A source that is not there.\",\"evidence\":[{\"type\":\"url\",\"ref\":\"$D\",\"label\":\"cited\"}]}"
+seed "$P_R" "{\"session\":\"u\",\"skill\":\"decider\",\"kind\":\"decision\",\"statement\":\"Ship after the suite passes.\",\"evidence\":[{\"type\":\"command\",\"ref\":\"pytest -q\",\"label\":\"estimate\"}]}"
+lib2 register --root "$P_R" --name probe >/dev/null 2>&1
+
+lib2 update --all --project probe > "$TMP/u1.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && grep -q "1 BASELINE" "$TMP/u1.out" \
+  && ok "first probe is BASELINE, never a verdict on a claim nobody has seen twice" \
+  || { bad "baseline run wrong (exit $rc)"; cat "$TMP/u1.out"; }
+grep -q "DEAD-SOURCE .*no-such.txt  (HTTP 404)" "$TMP/u1.out" \
+  && ok "a 404 is DEAD-SOURCE — a fact about the source, not the claim" || { bad "no DEAD-SOURCE"; cat "$TMP/u1.out"; }
+grep -q "1 NEEDS-SESSION-RECHECK" "$TMP/u1.out" \
+  && ok "command-only evidence lists as NEEDS-SESSION-RECHECK" || { bad "no NEEDS-SESSION-RECHECK"; cat "$TMP/u1.out"; }
+grep -q "never auto-executed" "$LIB2/update-log.md" \
+  && ok "the log says out loud that evidence is never auto-executed" || bad "log missing the never-executed line"
+
+lib2 update --all --project probe > "$TMP/u2.out" 2>&1
+grep -q "1 STANDS" "$TMP/u2.out" && ok "an unchanged source STANDS on the next probe" \
+  || { bad "second probe did not STAND"; cat "$TMP/u2.out"; }
+echo "v2 body, changed" > "$WWW/doc.txt"
+lib2 update --all --project probe > "$TMP/u3.out" 2>&1
+grep -q "1 DRIFTED" "$TMP/u3.out" && grep -qE "DRIFTED .*\(stored [0-9a-f]+ → now [0-9a-f]+\)" "$TMP/u3.out" \
+  && ok "changed bytes are DRIFTED, with both hashes on the line" || { bad "drift not caught"; cat "$TMP/u3.out"; }
+lib2 update --all --project probe > "$TMP/u4.out" 2>&1
+grep -q "1 DRIFTED" "$TMP/u4.out" \
+  && ok "drift is NOT banked — the next run still reports it until a model judges it" \
+  || { bad "drift was retired by the updater itself"; cat "$TMP/u4.out"; }
+
+lib2 update --project probe > "$TMP/u5.out" 2>&1
+grep -q "not due" "$TMP/u5.out" && ok "--due skips a url probed inside the age window" \
+  || { bad "--due did not skip"; cat "$TMP/u5.out"; }
+
+[ "$(grep -c '^## .* — library update' "$LIB2/update-log.md")" = "5" ] \
+  && ok "the update log is append-only: 5 runs, 5 dated blocks" \
+  || bad "log has $(grep -c '^## .* — library update' "$LIB2/update-log.md") blocks (want 5)"
+head -1 "$LIB2/update-log.md" | grep -q "^# library update log — append-only" \
+  && ok "the log names its own law in its first line" || bad "log header missing"
+grep -q "1 BASELINE" "$LIB2/update-log.md" \
+  && ok "the first run's block survives every later append" || bad "log rewrote history"
+
+# CITES-REFUTED — the seam a single store cannot see: cache-a cites cache-b:F-1,
+# which cache-b refuted above. Cross-project, one hop, resolved against the WHOLE
+# shelf even though --project narrows what gets probed.
+seed "$C1" "{\"session\":\"c\",\"skill\":\"decider\",\"kind\":\"decision\",\"statement\":\"Cap the read path cache at the tracking limit.\",\"evidence\":[{\"type\":\"record\",\"ref\":\"cache-b:F-1\",\"label\":\"cited\"}]}"
+lib2 update --project cache-a > "$TMP/u6.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] \
+  && grep -qE "CITES-REFUTED +cache-a:F-6 +\(cites cache-b:F-1 — refuted by cache-b:F-[0-9]+\)" "$TMP/u6.out" \
+  && ok "a live record citing another project's refuted record is flagged CITES-REFUTED" \
+  || { bad "cross-project refuted citation missed (exit $rc)"; cat "$TMP/u6.out"; }
+# The CROWN is flagged too, and that is the point: crowning a convergence buys no
+# immunity from the ground moving underneath it afterwards.
+grep -q "2 CITES-REFUTED" "$TMP/u6.out" \
+  && grep -qE "CITES-REFUTED +cache-a:F-4 +\(cites cache-b:F-1" "$TMP/u6.out" \
+  && ok "a crowned record is flagged when a member it cited is later refuted" \
+  || { bad "the crown escaped the cross-project flag"; cat "$TMP/u6.out"; }
+grep -q "CITES-REFUTED" "$LIB2/update-log.md" && ok "CITES-REFUTED lands in the append-only log" \
+  || bad "flag not logged"
+
+stop_srv
 
 # ------------------------------------------------------------------ verdict
 echo "----"

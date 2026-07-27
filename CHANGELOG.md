@@ -1,5 +1,44 @@
 # Changelog — the notrest harness
 
+## 3.12.0 — 2026-07-27
+
+**The library learns to think in concepts, verify itself, and crown settled answers —
+and its first mechanical discovery was the estate's own recurring wound, mid-recurrence.**
+
+- **Concepts:** `library concepts --rebuild` clusters every record across every
+  registered project with compile.py's df-weighted machinery, imported as a donor —
+  never reimplemented (39ms importlib load; exit 2 `donor-missing` rather than a silent
+  second implementation). Deterministic, zero model tokens, append-only generations at
+  the shelf; `--dry-run` exists because the builder's own threshold sweep stuck to the
+  append-only shelf (the law worked; the flag prevents the repeat). The seat christens
+  (`--name C-1 "…"`); the script only records. First real run on five records found
+  **C-1 "shadow-reinstall recurrence"** (F-1+F-5, cohesion 0.74) — minutes before the
+  fourth live recurrence (F-6) proved the concept again.
+- **The updater:** `library update [--due|--all]` re-probes every live url-evidenced
+  record shelf-wide via watch.py's fetch (donor-imported), STANDS/DRIFTED/DEAD-SOURCE at
+  zero model tokens; command/path/record evidence lists as NEEDS-SESSION-RECHECK, never
+  auto-executed. Append-only `update-log.md` with dated blocks. First real run: an
+  honest all-recheck result (five records, zero network calls) proving the honesty paths
+  on real data. Drift is never banked as the new baseline.
+- **Convergence:** `library crown C-<n> --statement … --by <members>` records a
+  CONVERGED result into the local store and flips the concept — with refusals
+  (`crown-member-refuted`, `crown-contested`, non-member `--by`) — and **a crown buys no
+  immunity**: refute a member later and the crown itself returns CITES-REFUTED.
+- **Cross-project refuted ground:** the updater walks record-evidence refs one hop —
+  a live record citing an effectively-refuted record in another reachable project flags
+  CITES-REFUTED (the seam v3.11.0 disclosed, closed).
+- Fixture 102→**144**, hermetic, deterministic across re-runs; two design defects the
+  fixture forced out (--project scope no longer narrows citation resolution; cross-
+  project tombstones print qualified ids).
+- **Plugin estate audit** (docs/PLUGIN-AUDIT-2026-07-26.md): notrest has ZERO hard
+  dependencies (grep-proven; codex binary + scheduled-tasks MCP both optional and
+  degrade-proven). The shadow mechanism identified: interactive /plugin UI installs —
+  invisible to a PreToolUse-on-Bash guard by construction. Self-collision found: nine
+  verbs triple-registered app-side, "hey oracle" claimed by three oracles. Keep/drop
+  table with owner-run commands (~2,713 always-on tokens recoverable). Next-build
+  candidates banked: SessionStart SHADOWED announcement, doctor name-collision check,
+  description mistrigger evals, hook-linter absorption.
+
 ## 3.11.0 — 2026-07-26
 
 **The estate gets a heartbeat rhythm, and the archivist becomes a library.**

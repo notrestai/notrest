@@ -28,12 +28,15 @@ Never hand-edit either one: re-run scan, or append a correcting record.
 """
 import argparse
 import fcntl
+import hashlib
+import importlib.util
 import json
 import os
 import pathlib
 import re
 import sys
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 # ---------------------------------------------------------------- legacy index
 DIRS = ["research", "market-research", "understanding", "decision", "factcheck",
@@ -86,6 +89,47 @@ PROJECTS = "oracle-projects.txt"      # graph.py's registry: one absolute root p
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 # THE CITATION GRAMMAR: `F-<n>` is this store; `<project>:F-<n>` is the library's.
 REC_REF_RE = re.compile(r"^(?:([A-Za-z0-9][A-Za-z0-9._-]*):)?F-(\d+)$")
+
+# ---------------------------------------------------------------- the storeys
+CONCEPTS = "concepts.jsonl"           # append-only; last line per C-<n> wins
+UPDATE_LOG = "update-log.md"          # append-only dated blocks (watch's drift-log shape)
+UPDATE_CACHE = "update-cache.json"    # machine-written validators; safe to delete
+CONCEPT_STATUSES = ("OPEN", "CONVERGED", "CONTESTED")
+CID_RE = re.compile(r"^C-(\d+)$")
+CROWN_RE = re.compile(r"^CONVERGED:", re.I)
+SIM_DEFAULT = 0.24     # compile.py's swept df-weighted average-link threshold
+MIN_DF_DEFAULT = 2     # records are fewer and longer than ledger lines, so the
+                       # vocabulary floor drops; compile's own default is 3
+MIN_MEMBERS = 2        # one record is not a concept, it is a record
+MAX_AGE_DAYS = 7       # --due: a url unprobed for this long is due again
+VERDICTS = ("STANDS", "DRIFTED", "DEAD-SOURCE", "BASELINE", "NEEDS-SESSION-RECHECK")
+
+_DONORS = {}
+
+
+def donor(name):
+    """Load a sibling skill's script as a module — ONE implementation, never a copy.
+
+    `compile.py` owns the df-weighted average-link clustering (its thresholds were
+    swept against this repo's real estate; its estate-stopword list was written to
+    fix a measured defect). `watch.py` owns the HTTP probe. Re-deriving either here
+    would fork drift-prone logic that has already been measured — so the library
+    imports them and says so out loud when they are missing."""
+    if name in _DONORS:
+        return _DONORS[name]
+    p = pathlib.Path(__file__).resolve().parents[2] / name / "scripts" / ("%s.py" % name)
+    if not p.is_file():
+        die("donor-missing",
+            "this verb borrows %s/scripts/%s.py and it is not at %s — the library does "
+            "not carry a second copy of that logic on purpose" % (name, name, p))
+    spec = importlib.util.spec_from_file_location("notrest_donor_%s" % name, p)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception as exc:                                    # pragma: no cover
+        die("donor-broken", "%s failed to load: %s: %s" % (p, exc.__class__.__name__, exc))
+    _DONORS[name] = mod
+    return mod
 
 
 class Reject(Exception):
@@ -363,6 +407,48 @@ def read_projects(p):
         if line and not line.startswith("#") and line not in out:
             out.append(line)
     return out
+
+
+def concepts_file(lib):
+    return lib / CONCEPTS
+
+
+def read_concepts(lib):
+    """The concept shelf, APPEND-ONLY like the store: a rename, a crown, a rebuild
+    all APPEND, and the LAST line for a `C-<n>` is the one that counts. Returns the
+    resolved concepts in id order."""
+    p = concepts_file(lib)
+    try:
+        if not p.is_file():
+            return []
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out = {}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict) and CID_RE.match(str(rec.get("id", ""))):
+            out[rec["id"]] = rec
+    return sorted(out.values(), key=lambda c: int(CID_RE.match(c["id"]).group(1)))
+
+
+def append_concepts(lib, rows):
+    p = concepts_file(lib)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            for r in rows:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
 def append_record(root, raw, lib=None, notes=None):
@@ -779,6 +865,160 @@ def project_state(entry):
     return (recs if recs is not None else []), bad, True
 
 
+def shelf_index(lib, project=None):
+    """{name: {entry, recs, eff, up}} for every registered project, resolved once.
+    An unreachable project is carried with up=False — reported, never dropped."""
+    out = {}
+    for p in read_registry(lib):
+        if project and p["name"] != project:
+            continue
+        recs, _bad, up = project_state(p)
+        recs = recs or []
+        out[p["name"]] = {"entry": p, "recs": recs, "eff": resolve(recs), "up": up}
+    return out
+
+
+# ---------------------------------------------------------------------------
+# storey one — CONCEPTS: what this estate keeps thinking about
+# ---------------------------------------------------------------------------
+def concept_members(shelf):
+    """Every clusterable record on the shelf, in a deterministic order.
+
+    Tombstones are excluded: `supersedes F-3 — replaced by F-9` is bookkeeping about
+    the store, and clustering it would name a concept after the estate's own filing
+    verbs. CROWNS are excluded for a sharper reason: a crown is a record ABOUT a
+    concept, so letting it join would change the membership the moment it is written —
+    every crowned concept would come back from the next rebuild as a new, uncrowned id.
+    Refuted records ARE included — a concept has to be able to show the ground that
+    moved, and `crown` needs to see it to refuse."""
+    rows = []
+    for name in sorted(shelf):
+        s = shelf[name]
+        if not s["up"]:
+            continue
+        for r in sorted(s["recs"], key=sort_key):
+            stmt = r.get("statement", "") or ""
+            if TOMB_RE.match(stmt) or CROWN_RE.match(stmt):
+                continue
+            rows.append((name, r, s["eff"].get(r.get("id"), ("live", None))[0]))
+    return rows
+
+
+def build_concepts(lib, sim, min_df, min_members, project=None):
+    """Cluster the shelf with compile.py's machinery. Deterministic given identical
+    stores: the input order is (project, id) and every donor step is order-stable."""
+    C = donor("compile")
+    rows = concept_members(shelf_index(lib, project))
+    if not rows:
+        return [], 0
+    items = [C.Item("record", "%s:%s" % (name, r.get("id")), r.get("ts", ""),
+                    "%s %s" % (r.get("statement", "") or "", r.get("ask", "") or ""))
+             for name, r, _st in rows]
+    df = C.procedure_vocab(items, min_df, C.BOILER)
+    for it in items:
+        it.sig = frozenset(t for t in it.toks if t in df)
+    clusters = C.agglomerate([i.sig for i in items], df, sim)
+
+    prior = {frozenset(c.get("members") or []): c for c in read_concepts(lib)}
+    used = {int(CID_RE.match(c["id"]).group(1)) for c in read_concepts(lib)}
+    nxt = (max(used) + 1) if used else 1
+    out = []
+    for members in sorted(clusters, key=lambda m: (-len(m), items[m[0]].ref)):
+        if len(members) < min_members:
+            continue
+        n = len(members)
+        counts = Counter()
+        for i in members:
+            counts.update(items[i].sig)
+        core = {t for t, c in counts.items() if c >= C.CORE_SHARE * n}
+        terms = [t for t in sorted(core or counts,
+                                   key=lambda t: (-counts[t], -df.get(t, 0), t))
+                 if t not in C.NOISE_SLUG and not t.startswith("<")][:6]
+        pairs = [(i, j) for k, i in enumerate(members) for j in members[k + 1:]]
+        cohesion = (sum(len(items[i].sig & items[j].sig) / len(items[i].sig | items[j].sig)
+                        for i, j in pairs if items[i].sig | items[j].sig)
+                    / len(pairs)) if pairs else 1.0
+        refs = sorted((items[i].ref for i in members),
+                      key=lambda r: (r.split(":")[0], int(r.split("F-")[1])))
+        asks, seen = [], set()
+        for i in sorted(members, key=lambda i: items[i].ref):
+            ask = " ".join((rows[i][1].get("ask", "") or "").split())
+            if ask and ask.lower() not in seen:
+                seen.add(ask.lower())
+                asks.append(ask)
+        # A concept KEEPS its identity across rebuilds when its membership is
+        # unchanged: the id, the name the seat gave it, its verdict and its birth
+        # stamp all carry forward. A rebuild that renamed everything would make
+        # `--name` a joke and every citation of C-3 a lie.
+        old = prior.get(frozenset(refs))
+        if old:
+            cid, ts, nm = old["id"], old.get("ts", now_z()), old.get("name", "?")
+            settled, status = old.get("settled"), old.get("status", "OPEN")
+        else:
+            cid, ts, nm, settled, status = "C-%d" % nxt, now_z(), "?", None, "OPEN"
+            nxt += 1
+        out.append({"id": cid, "terms": terms, "name": nm, "members": refs,
+                    "projects": sorted({r.split(":")[0] for r in refs}),
+                    "asks": asks, "cohesion": round(cohesion, 2),
+                    "settled": settled, "status": status, "ts": ts})
+    return out, len(items)
+
+
+def concept_line(c):
+    return ("%s · %s · %d member(s) across %d project(s) · cohesion %.2f · %s\n"
+            "    terms: %s\n    members: %s%s"
+            % (c["id"], c.get("name") or "?", len(c.get("members") or []),
+               len(c.get("projects") or []), c.get("cohesion", 0.0),
+               c.get("status", "OPEN"), ", ".join(c.get("terms") or []) or "-",
+               ", ".join(c.get("members") or []),
+               "\n    settled: %s" % c["settled"] if c.get("settled") else ""))
+
+
+def cmd_library_concepts(a):
+    lib = library_root(a)
+    if a.name:
+        cid, newname = a.name[0].upper(), a.name[1].strip()
+        cur = {c["id"]: c for c in read_concepts(lib)}
+        if cid not in cur:
+            die("concept-unknown", "no %s on the shelf (%s) — known: %s"
+                % (cid, concepts_file(lib), ", ".join(sorted(cur)) or "(none)"))
+        if not newname:
+            die("concept-name-empty", "a christening needs a name")
+        row = dict(cur[cid])
+        row["name"] = newname
+        row["ts_named"] = now_z()
+        append_concepts(lib, [row])
+        print("%s named %r (appended to %s)" % (cid, newname, concepts_file(lib)))
+        return
+
+    if not a.rebuild:
+        cs = read_concepts(lib)
+        if not cs:
+            print("no concepts yet (%s) — build them: index.py library concepts --rebuild"
+                  % concepts_file(lib))
+            return
+        print("# concepts — %d · %s" % (len(cs), concepts_file(lib)))
+        for c in cs:
+            print(concept_line(c))
+        return
+
+    cs, n_items = build_concepts(lib, a.sim, a.min_df, a.min_members, a.project)
+    if not cs:
+        print("# concepts — 0 from %d clusterable record(s) (sim %.2f · min-df %d · "
+              "min-members %d)" % (n_items, a.sim, a.min_df, a.min_members))
+        print("nothing recurred across the shelf yet — that is an honest answer, not an "
+              "error: a concept needs %d records that share vocabulary." % a.min_members)
+        return
+    if not a.dry_run:
+        append_concepts(lib, cs)
+    print("# concepts — %d from %d clusterable record(s) (sim %.2f · min-df %d) · %s%s"
+          % (len(cs), n_items, a.sim, a.min_df, concepts_file(lib),
+             "  [DRY RUN — nothing appended]" if a.dry_run else ""))
+    for c in cs:
+        print(concept_line(c))
+    print("name them: index.py library concepts --name %s \"<what this is>\"" % cs[0]["id"])
+
+
 def cmd_library_register(a):
     root = pathlib.Path(a.root).expanduser().resolve()
     if not root.is_dir():
@@ -877,12 +1117,21 @@ def cmd_library_find(a):
                           "note": msg}, ensure_ascii=False, indent=2)
               if a.json else msg)
         return
-    if not terms:
-        die("no-input", "library find needs at least one term")
+    only = None
+    if getattr(a, "concept", None):
+        cid = a.concept.upper()
+        c = next((x for x in read_concepts(lib) if x["id"] == cid), None)
+        if c is None:
+            die("concept-unknown", "no %s on the shelf (%s)" % (cid, concepts_file(lib)))
+        only = set(c.get("members") or [])
+    if not terms and only is None:
+        die("no-input", "library find needs at least one term (or --concept C-<n>)")
 
     if not a.json:
+        what = " ".join([repr(t) for t in a.terms]
+                        + (["--concept %s" % a.concept.upper()] if only is not None else []))
         print("# library find %s — %d project(s) · %s"
-              % (" ".join(repr(t) for t in a.terms), len(projects), registry_file(lib)))
+              % (what, len(projects), registry_file(lib)))
     hits, hit_projects, down = 0, 0, []
     # --json is the machine surface: ask and statement travel WHOLE (the line
     # format's 90-char head is a reading convenience, never the record).
@@ -896,6 +1145,8 @@ def cmd_library_find(a):
         eff = resolve(recs)
         for r in sorted(recs, key=sort_key):
             if a.kind and r.get("kind") != a.kind:
+                continue
+            if only is not None and "%s:%s" % (p["name"], r.get("id")) not in only:
                 continue
             hay = ("%s %s" % (r.get("statement", "") or "", r.get("ask", "") or "")).lower()
             if not all(t in hay for t in terms):
@@ -914,7 +1165,10 @@ def cmd_library_find(a):
         # the library reads across repos, so it stays cheap by construction.
         idx = pathlib.Path(p["root"]).expanduser() / INDEX
         try:
-            text = idx.read_text(encoding="utf-8", errors="replace") if idx.is_file() else ""
+            # A concept's members are RECORDS; the legacy heads are not on that shelf,
+            # and with no terms to match they would otherwise all "match" vacuously.
+            text = "" if only is not None else (
+                idx.read_text(encoding="utf-8", errors="replace") if idx.is_file() else "")
         except OSError:
             text = ""
         for block in text.split("\n### ")[1:]:
@@ -982,6 +1236,332 @@ def cmd_library_track(a):
 
 
 # ---------------------------------------------------------------------------
+# storey two — THE UPDATER: does the ground still hold?
+# ---------------------------------------------------------------------------
+def load_update_cache(lib):
+    try:
+        return json.loads((lib / UPDATE_CACHE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_update_cache(lib, cache):
+    try:
+        (lib / UPDATE_CACHE).parent.mkdir(parents=True, exist_ok=True)
+        (lib / UPDATE_CACHE).write_text(json.dumps(cache, indent=1, sort_keys=True),
+                                        encoding="utf-8")
+    except OSError:                                              # pragma: no cover
+        pass
+
+
+def is_due(val, max_age):
+    """Never probed, or probed longer ago than the window."""
+    at = str(val.get("at") or "")
+    if not at:
+        return True
+    try:
+        when = datetime.strptime(at[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    return datetime.now(timezone.utc) - when >= timedelta(days=max_age)
+
+
+def probe(W, url, val, timeout):
+    """One conditional GET → (verdict, digest, note, validators).
+
+    The probe itself is watch.py's `fetch` — imported, not re-typed. THE ONE RULE
+    RESTATED HERE (watch.py's cmd_probe embeds it in a CLI path this cannot call):
+    condition on a STRONG ETag only. `If-Modified-Since` is never sent — HTTP dates
+    have one-second granularity, so a page edited inside the same second as the last
+    check answers 304 while its bytes moved, and the watch reports UNCHANGED over
+    real drift. A weak `W/"…"` ETag promises only semantic equivalence and is refused
+    for the same reason."""
+    cond = {}
+    etag = str(val.get("etag") or "")
+    if etag and not etag.startswith("W/"):
+        cond["If-None-Match"] = etag
+    status, head, body, err = W.fetch(url, "GET", timeout, cond)
+    stored = str(val.get("sha256") or "")
+    if status is None or status >= 400:
+        # A source that cannot be read is a fact about the SOURCE, never a
+        # refutation of the claim that cited it.
+        return "DEAD-SOURCE", "", (err or "HTTP %s" % status), {}
+    if status == 304:
+        return "STANDS", stored, "304 Not Modified (strong-ETag conditional GET)", {}
+    digest = hashlib.sha256(body).hexdigest()[:16]
+    val_new = {"etag": head.get("ETag", ""), "last-modified": head.get("Last-Modified", ""),
+               "sha256": digest, "url": url, "at": now_z()[:10]}
+    if not stored:
+        return "BASELINE", digest, "first sight — baseline recorded, nothing judged", val_new
+    if stored == digest:
+        return "STANDS", digest, "", val_new
+    # DRIFT IS NOT BANKED. The baseline hash and the old validators are deliberately
+    # left in place: advancing them here would make the NEXT run report STANDS and
+    # retire the drift before any model ever read what changed.
+    return "DRIFTED", digest, "stored %s → now %s" % (stored, digest), {}
+
+
+def cites_refuted(shelf, targets=None):
+    """THE CROSS-PROJECT RESTS-ON-REFUTED WALK. A live record whose `record` evidence
+    cites a record that is effectively REFUTED — here or in another project on the
+    shelf — is standing on ground the estate has already knocked out, and no single
+    store can see it. One hop, reachable projects only, never fatal: an offline
+    project is reported as unchecked, never as clean.
+
+    `shelf` supplies the SOURCE records; `targets` resolves the refs they cite. They
+    differ under `--project`: narrowing which records are probed must never narrow the
+    shelf a citation is resolved against, or filtering would manufacture clean runs."""
+    targets = targets if targets is not None else shelf
+    out, unchecked = [], []
+    for name in sorted(shelf):
+        s = shelf[name]
+        if not s["up"]:
+            continue
+        for r in sorted(s["recs"], key=sort_key):
+            fid = r.get("id")
+            if s["eff"].get(fid, ("live", None))[0] != "live":
+                continue
+            for e in r.get("evidence") or []:
+                if e.get("type") != "record":
+                    continue
+                m = REC_REF_RE.match(str(e.get("ref", "")).strip())
+                if not m:
+                    continue
+                tproj, tid = (m.group(1) or name), "F-%s" % m.group(2)
+                t = targets.get(tproj)
+                if t is None or not t["up"]:
+                    unchecked.append(("%s:%s" % (name, fid), "%s:%s" % (tproj, tid)))
+                    continue
+                st, by = t["eff"].get(tid, (None, None))
+                if st == "refuted":
+                    # The tombstone is named project-qualified too: a bare F-3 read from
+                    # another project's line is an id in the wrong namespace.
+                    out.append(("%s:%s" % (name, fid), "%s:%s" % (tproj, tid),
+                                "%s:%s" % (tproj, by) if by else "?"))
+    return out, unchecked
+
+
+def cmd_library_update(a):
+    lib = library_root(a)
+    shelf = shelf_index(lib, a.project)
+    if not shelf:
+        die("library-unknown-project" if a.project else "library-empty",
+            "%s on the shelf (%s)"
+            % ("no project named %r" % a.project if a.project else "no projects",
+               registry_file(lib)))
+    W = donor("watch")
+    cache = load_update_cache(lib)
+    mode = "--all" if a.all else "--due"
+    counts = Counter()
+    rows, skipped = [], 0
+
+    for name in sorted(shelf):
+        s = shelf[name]
+        if not s["up"]:
+            continue
+        for r in sorted(s["recs"], key=sort_key):
+            fid, ref = r.get("id"), "%s:%s" % (name, r.get("id"))
+            if s["eff"].get(fid, ("live", None))[0] != "live":
+                continue
+            if TOMB_RE.match(r.get("statement", "") or ""):
+                continue
+            ev = r.get("evidence") or []
+            urls = [str(e.get("ref", "")).strip() for e in ev
+                    if e.get("type") == "url" and str(e.get("ref", "")).strip()]
+            others = sorted({str(e.get("type")) for e in ev if e.get("type") != "url"})
+            if not urls:
+                if others:
+                    # A command or a path can only be re-checked by a session that
+                    # runs it. The library NEVER executes evidence — it lists it.
+                    counts["NEEDS-SESSION-RECHECK"] += 1
+                    rows.append(("NEEDS-SESSION-RECHECK", ref, "",
+                                 "evidence: %s — never auto-executed" % ",".join(others),
+                                 head(r.get("statement", ""), 70)))
+                continue
+            url = urls[0]
+            key = "%s|%s" % (ref, url)
+            val = cache.get(key, {})
+            if not a.all and not is_due(val, a.max_age):
+                skipped += 1
+                continue
+            verdict, digest, note, fresh = probe(W, url, val, a.timeout)
+            counts[verdict] += 1
+            if fresh:
+                cache[key] = fresh
+            elif verdict == "DRIFTED":
+                cur = dict(val)
+                cur["drift"] = {"sha256": digest, "at": now_z()[:10]}
+                cache[key] = cur
+            rows.append((verdict, ref, url, note, head(r.get("statement", ""), 70)))
+
+    refuted, unchecked = cites_refuted(shelf, shelf_index(lib) if a.project else shelf)
+    for src, tgt, by in refuted:
+        counts["CITES-REFUTED"] += 1
+        rows.append(("CITES-REFUTED", src, "", "cites %s — refuted by %s" % (tgt, by), ""))
+    save_update_cache(lib, cache)
+
+    up = sorted(n for n in shelf if shelf[n]["up"])
+    down = sorted(n for n in shelf if not shelf[n]["up"])
+    order = {v: i for i, v in enumerate(
+        ("DRIFTED", "DEAD-SOURCE", "CITES-REFUTED", "BASELINE", "STANDS",
+         "NEEDS-SESSION-RECHECK"))}
+    rows.sort(key=lambda t: (order.get(t[0], 9), t[1]))
+
+    when = now_z()[:10]
+    block = ["## %s — library update (%s)" % (when, mode),
+             "**Shelf:** %s · %d project(s), %d reachable%s"
+             % (registry_file(lib), len(shelf), len(up),
+                " (unreachable: %s)" % ", ".join(down) if down else ""),
+             "**Result:** %s%s"
+             % (" · ".join("%d %s" % (counts.get(v, 0), v) for v in
+                           ("STANDS", "DRIFTED", "DEAD-SOURCE", "BASELINE",
+                            "NEEDS-SESSION-RECHECK", "CITES-REFUTED")),
+                " · %d not due" % skipped if skipped else "")]
+    for verdict, ref, url, note, stmt in rows:
+        block.append("- %-22s %s%s%s%s"
+                     % (verdict, ref, "  " + url if url else "",
+                        "  (%s)" % note if note else "",
+                        '  "%s"' % stmt if stmt else ""))
+    if not rows:
+        block.append("- (nothing due and nothing to list)")
+    block.append("")
+    p = lib / UPDATE_LOG
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            if p.stat().st_size == 0:
+                fh.write("# library update log — append-only; each run adds one dated "
+                         "block. Written by index.py; never hand-edit.\n\n")
+            fh.write("\n".join(block) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+    # The summary line: one row a heartbeat could carry, zero model tokens.
+    print("library update: %s%s · %d/%d project(s) reachable · log %s"
+          % (" · ".join("%d %s" % (counts.get(v, 0), v) for v in
+                        ("STANDS", "DRIFTED", "DEAD-SOURCE", "BASELINE",
+                         "NEEDS-SESSION-RECHECK", "CITES-REFUTED")),
+             " · %d not due" % skipped if skipped else "",
+             len(up), len(shelf), p))
+    for verdict, ref, url, note, _s in rows:
+        if verdict in ("DRIFTED", "DEAD-SOURCE", "CITES-REFUTED"):
+            print("  %-14s %s%s%s" % (verdict, ref, "  " + url if url else "",
+                                      "  (%s)" % note if note else ""))
+    if unchecked:
+        print("  note: %d record-evidence ref(s) point at unreachable projects — "
+              "unchecked, not clean (%s)"
+              % (len(unchecked), ", ".join("%s→%s" % u for u in unchecked[:3])))
+
+
+# ---------------------------------------------------------------------------
+# storey three — CONVERGENCE: the model decides, the script records
+# ---------------------------------------------------------------------------
+def cmd_library_crown(a):
+    """`crown` does not judge convergence. A model reads the members, decides they
+    say one settled thing, and writes that sentence; this records the decision as a
+    citable record and marks the concept. The guards below are the only judgment the
+    script makes, and they are refusals, never approvals."""
+    lib = library_root(a)
+    cid = a.concept.upper()
+    concepts = {c["id"]: c for c in read_concepts(lib)}
+    if cid not in concepts:
+        die("concept-unknown", "no %s on the shelf (%s) — known: %s"
+            % (cid, concepts_file(lib), ", ".join(sorted(concepts)) or "(none)"))
+    concept = concepts[cid]
+    members = concept.get("members") or []
+
+    root = pathlib.Path(a.root).expanduser().resolve()
+    local = next((p for p in read_registry(lib) if p["root"] == str(root)), None)
+    if local is None:
+        die("crown-unregistered",
+            "%s is not on the shelf, so a crown written here could never be cited as "
+            "<project>:F-<n> — register it first: index.py library register --root ." % root)
+
+    by = [x.strip() for x in a.by.split(",") if x.strip()]
+    for ref in by:
+        if ref not in members:
+            die("crown-by-not-member", "%s is not a member of %s (members: %s)"
+                % (ref, cid, ", ".join(members)))
+    shelf = shelf_index(lib)
+
+    # An ASSERTION may not be made over ground that cannot be read. `find` degrades on
+    # an unreachable project because reading is not claiming; crowning is claiming.
+    for ref in by:
+        proj = ref.split(":")[0]
+        if proj not in shelf or not shelf[proj]["up"]:
+            die("crown-unreachable",
+                "%s names %s, which is not reachable from here — a convergence cannot be "
+                "certified over a store this machine cannot read" % (ref, proj))
+
+    refuted, contested = [], []
+    for ref in by:
+        proj, fid = ref.split(":")[0], ref.split(":")[1]
+        s = shelf[proj]
+        rec = next((r for r in s["recs"] if r.get("id") == fid), None)
+        if rec is None:
+            die("crown-by-not-member", "%s: that project's store holds no %s" % (ref, fid))
+        st = s["eff"].get(fid, ("live", None))[0]
+        if st == "refuted":
+            refuted.append("%s (%s)" % (ref, st))
+        elif rec.get("kind") == "conflict":
+            contested.append("%s is kind=conflict" % ref)
+        elif rests_on_refuted(rec, s["eff"]):
+            contested.append("%s RESTS-ON-REFUTED %s"
+                             % (ref, ",".join(rests_on_refuted(rec, s["eff"]))))
+    if refuted:
+        die("crown-member-refuted",
+            "%s rests on refuted ground: %s — the estate already knocked that out; "
+            "supersede or drop it before crowning" % (cid, "; ".join(refuted)))
+    if contested and not a.contested:
+        die("crown-contested",
+            "%s's live members disagree: %s — re-run with --contested to mark the concept "
+            "CONTESTED, or resolve it first" % (cid, "; ".join(contested)))
+
+    stale = [m for m in members if m not in by
+             and m.split(":")[0] in shelf and shelf[m.split(":")[0]]["up"]
+             and shelf[m.split(":")[0]]["eff"].get(m.split(":")[1], ("live",))[0] == "refuted"]
+
+    if a.contested and contested:
+        row = dict(concept)
+        row.update({"status": "CONTESTED", "settled": None, "contested_by": contested,
+                    "ts_crowned": now_z()})
+        append_concepts(lib, [row])
+        print("%s marked CONTESTED (%s) — no crown record written; a contested concept "
+              "has nothing settled to cite." % (cid, "; ".join(contested)))
+        return
+
+    local_ids = [m.split(":")[1] for m in by if m.split(":")[0] == local["name"]]
+    ev = [{"type": "record", "label": "cited",
+           "ref": m.split(":")[1] if m.split(":")[0] == local["name"] else m} for m in by]
+    raw = {"ts": now_z(), "session": a.session, "skill": "archivist", "kind": "result",
+           "ask": "concept %s: %s" % (cid, concept.get("name") or ", ".join(concept.get("terms") or [])),
+           "statement": "CONVERGED: %s" % a.statement.strip(),
+           "evidence": ev, "relation": "toward", "links": local_ids, "status": "live"}
+    notes = []
+    try:
+        rid = append_record(root, raw, lib=lib, notes=notes)
+    except Reject as r:
+        die(r.rule, r.detail)
+
+    row = dict(concept)
+    row.update({"status": "CONVERGED", "settled": a.statement.strip(),
+                "crown": "%s:%s" % (local["name"], rid), "crowned_by": by,
+                "ts_crowned": now_z()})
+    append_concepts(lib, [row])
+    print(rid)
+    print("%s CONVERGED — crown %s:%s written to %s, %d member(s) cited"
+          % (cid, local["name"], rid, root / STORE, len(by)))
+    for n in notes:
+        sys.stderr.write("note: %s\n" % n)
+    if stale:
+        print("note: %d concept member(s) are refuted and were NOT cited: %s"
+              % (len(stale), ", ".join(stale)))
+
+
+# ---------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(description="archivist — findings store + dossier index")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1019,8 +1599,9 @@ def main():
           ).set_defaults(f=cmd_library_list)
 
     lf = shelf(lbs.add_parser("find", help="search every registered project's store"))
-    lf.add_argument("terms", nargs="+", help="all terms must appear (statement + ask)")
+    lf.add_argument("terms", nargs="*", help="all terms must appear (statement + ask)")
     lf.add_argument("--kind", choices=KINDS)
+    lf.add_argument("--concept", help="restrict to one concept's members (C-<n>)")
     lf.add_argument("--json", action="store_true",
                     help="machine surface: whole ask + statement, never the 90-char head")
     lf.set_defaults(f=cmd_library_find)
@@ -1031,6 +1612,36 @@ def main():
     lt.add_argument("--kind", choices=KINDS)
     lt.add_argument("--status", choices=STATUSES)
     lt.set_defaults(f=cmd_library_track)
+
+    lc = shelf(lbs.add_parser("concepts", help="what the estate keeps thinking about"))
+    lc.add_argument("--rebuild", action="store_true", help="recluster and append a generation")
+    lc.add_argument("--dry-run", action="store_true",
+                    help="show the clustering without appending it — sweep --sim/--min-df "
+                         "freely; the shelf is append-only, so an experiment would stick")
+    lc.add_argument("--name", nargs=2, metavar=("C-<n>", "NAME"), help="christen a concept")
+    lc.add_argument("--project", help="cluster one project only")
+    lc.add_argument("--sim", type=float, default=SIM_DEFAULT)
+    lc.add_argument("--min-df", type=int, default=MIN_DF_DEFAULT)
+    lc.add_argument("--min-members", type=int, default=MIN_MEMBERS)
+    lc.set_defaults(f=cmd_library_concepts)
+
+    lu = shelf(lbs.add_parser("update", help="re-probe url evidence across the shelf"))
+    lu.add_argument("--due", action="store_true", help="only urls past the age window (default)")
+    lu.add_argument("--all", action="store_true", help="every url, due or not")
+    lu.add_argument("--project")
+    lu.add_argument("--max-age", type=int, default=MAX_AGE_DAYS)
+    lu.add_argument("--timeout", type=int, default=10)
+    lu.set_defaults(f=cmd_library_update)
+
+    lk = shelf(lbs.add_parser("crown", help="record a convergence the MODEL decided"))
+    lk.add_argument("concept", help="C-<n>")
+    lk.add_argument("--statement", required=True, help="the settled sentence")
+    lk.add_argument("--by", required=True, help="<project>:F-<n>[,…] the crown rests on")
+    lk.add_argument("--contested", action="store_true",
+                    help="members disagree: mark CONTESTED instead of crowning")
+    lk.add_argument("--session", default="")
+    lk.add_argument("--root", default=".", help="the LOCAL store the crown lands in")
+    lk.set_defaults(f=cmd_library_crown)
 
     t = sub.add_parser("track", help="print the session track")
     t.add_argument("--session")
