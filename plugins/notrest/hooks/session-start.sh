@@ -11,6 +11,13 @@ if [ -n "$PLUGIN_GIT_ROOT" ]; then
   ( cd "$PLUGIN_GIT_ROOT" && git pull --ff-only --quiet >/dev/null 2>&1 & ) 2>/dev/null
 fi
 
+# ── identity: one line that answers "is notrest installed?" in every session.
+# The /plugin UI does not list skills-dir runtimes — live-proven 2026-07-26/27: the
+# owner, not finding notrest there, reinstalled a marketplace copy FOUR times, each
+# one silently shadowing this runtime. This line is the visible truth; never cut it.
+NV="$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
+echo "[notrest] v${NV:-?} @skills-dir — live from the repo tree (the /plugin UI hides skills-dir plugins; verify with: claude plugin list)"
+
 # ── fable discipline: bolted to the metal. Unconditional every session so the
 # working posture is present without anyone typing /fable-mode. The anchor is
 # always in context; the full contract is one skill-load away. Trivial single-

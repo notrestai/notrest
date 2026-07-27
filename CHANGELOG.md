@@ -1,5 +1,22 @@
 # Changelog — the notrest harness
 
+## 3.12.1 — 2026-07-27
+
+**The identity line — the shadow saga's root cause was a UI trap, and this is the vaccine.**
+
+- The shadow mystery resolved by the owner's own words: the `/plugin` UI does not list
+  skills-dir runtimes, so notrest looked uninstalled; the owner reinstalled it from the
+  marketplace four times, each copy silently shadowing the invisible real one. Nobody's
+  fault; a genuine UX trap now on record (concept C-1 in the library).
+- SessionStart now opens with one self-identity line — `[notrest] v<X> @skills-dir —
+  live from the repo tree (the /plugin UI hides skills-dir plugins; verify with:
+  claude plugin list)` — version read live from plugin.json at fire time, never stale.
+  Every session answers the question that caused four incidents, forever (~45 tok).
+- Estate slimmed on owner order (audit's drop list executed): eight never-used plugins
+  uninstalled (~2,713 always-on tokens recovered), codex orphan manifest deleted, five
+  stale July-10 skill drafts archived to ~/.claude/skills-archive/ — the stale
+  FABLE-COORD-era triggers are out of the trigger space.
+
 ## 3.12.0 — 2026-07-27
 
 **The library learns to think in concepts, verify itself, and crown settled answers —
