@@ -77,6 +77,7 @@ try:
     # zero usage objects means no number is written at all).
     model, snippet, size = "?", "?", "?"
     tok_total, tok_seen = 0, False
+    brief_text = None
     if tpath:
         p = tpath if os.path.isabs(tpath) else os.path.join(os.getcwd(), tpath)
         try:
@@ -90,6 +91,27 @@ try:
             text = ""
         if text:
             last = None
+            # ── the LANE BRIEF. The first user-role message in an agent transcript IS
+            # the prompt the seat passed — the commission, in the seat's own words.
+            # It is captured only before the first assistant turn, so tool results and
+            # follow-up turns (also role=user) can never be mistaken for the ask.
+            seen_assistant = False
+
+            def flatten(c):
+                """Content blocks → plain text; one rule for user and assistant alike."""
+                if isinstance(c, str):
+                    return c
+                if isinstance(c, list):
+                    parts = []
+                    for b in c:
+                        if isinstance(b, dict) and b.get("type") in (None, "text") \
+                                and isinstance(b.get("text"), str):
+                            parts.append(b["text"])
+                        elif isinstance(b, str):
+                            parts.append(b)
+                    return " ".join(parts)
+                return ""
+
             for line in text.splitlines():
                 line = line.strip()
                 if not line:
@@ -123,8 +145,14 @@ try:
                         if uk.endswith("_tokens") and uv >= 0:
                             tok_total += uv
                             tok_seen = True
+                # ── commission capture: the first user turn, before any assistant turn.
+                if role == "user" and brief_text is None and not seen_assistant:
+                    ut = flatten(content)
+                    if ut and ut.strip():
+                        brief_text = ut
                 if role != "assistant":
                     continue
+                seen_assistant = True
                 # model from THIS assistant line (msg-level first, then top-level);
                 # skip empty and the "<synthetic>" placeholder.
                 m_here = None
@@ -134,18 +162,7 @@ try:
                     m_here = obj.get("model")
                 if m_here and m_here.strip() and m_here.strip() != "<synthetic>":
                     model = m_here.strip()
-                txt = ""
-                if isinstance(content, str):
-                    txt = content
-                elif isinstance(content, list):
-                    parts = []
-                    for b in content:
-                        if isinstance(b, dict) and b.get("type") in (None, "text") \
-                                and isinstance(b.get("text"), str):
-                            parts.append(b["text"])
-                        elif isinstance(b, str):
-                            parts.append(b)
-                    txt = " ".join(parts)
+                txt = flatten(content)
                 if txt and txt.strip():
                     last = txt
             if last is not None:
@@ -162,8 +179,45 @@ try:
     # all-unknown row (unrecognized schema / garbage payload) is pure ledger
     # noise — skip the append entirely; a silent no-write still honors the contract.
     if not (agent_id == "?" and tdisp == "?" and snippet == "?"):
+        # ── brief extraction: make the COMMISSION estate-visible by construction.
+        # The owner can read what any lane was actually asked without asking the seat
+        # — a seat that narrows the ask can no longer do it invisibly, at any scale.
+        #
+        # Idempotent by O_CREAT|O_EXCL rather than by a lock: the filesystem itself
+        # refuses the second writer, so racing redeliveries cannot rewrite a brief and
+        # an existing brief is never touched. The pointer is set whenever the file
+        # EXISTS (freshly written or already there), so every delivery of one stop
+        # event composes a byte-identical ledger line and the dedup guard below still
+        # collapses them. Extraction failure leaves the field off entirely — a missing
+        # field is honest, a dead pointer is not.
+        brief_rel = ""
+        if brief_text and agent_id != "?":
+            bname = "agent-%s.md" % agent_id
+            bpath = os.path.join(git_root, "briefs", bname)
+            bhdr = (f"# lane brief — {bname[:-3]}\n\n"
+                    f"- extracted: {ts}\n"
+                    f"- agent: {agent_id}\n"
+                    f"- model: {model}\n"
+                    f"- transcript: {tdisp}\n\n"
+                    "Auto-extracted by the notrest SubagentStop hook: the first user-role\n"
+                    "message of the agent transcript — the exact prompt the seat passed to\n"
+                    "this lane. Reproduced verbatim below; never edited, never summarized.\n\n"
+                    "---\n\n")
+            try:
+                os.makedirs(os.path.join(git_root, "briefs"), exist_ok=True)
+                if not os.path.exists(bpath):
+                    fd = os.open(bpath, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                    with os.fdopen(fd, "w", encoding="utf-8") as bf:
+                        bf.write(bhdr + brief_text.rstrip() + "\n")
+                brief_rel = "briefs/" + bname
+            except FileExistsError:
+                brief_rel = "briefs/" + bname   # a racer won; the brief is there
+            except Exception:
+                brief_rel = ""
+
         entry = (f"- [{ts}] agent={agent_id} model={model} bytes={size} "
-                 f"| last: {snippet} | transcript: {tdisp}\n")
+                 f"| last: {snippet} | transcript: {tdisp}"
+                 + (f" | brief: {brief_rel}" if brief_rel else "") + "\n")
 
         header = (
             "# COORD-AGENTS.md — agent activity ledger (auto-written by the notrest SubagentStop hook)\n"
