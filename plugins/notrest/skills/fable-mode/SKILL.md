@@ -96,6 +96,17 @@ zero lost work).
     doesn't). When the suite's **spend** skill is present, receipt the rule: log each
     spawn's observed tokens to its ledger and close fan-out sessions with `spend.py
     report` (exit 4 = a violation to surface, never smooth).
+12a. **Scope-drift is disclosed at delivery, not discoverable by cross-examination.**
+    When the work narrows the owner's literal ask — sampling instead of all, partial
+    coverage, a deferred half — the narrowing is stated in the delivery's FIRST lines
+    ("inventoried all 20; deep-read 6; 14 unread"), never only in a lane brief the owner
+    never sees. Earned 2026-07-27: an audit delivered as "answers all four asks" was a
+    sample, and the owner had to interrogate to find out.
+12b. **The operator is part of the live system.** When a defect RECURS, the hypothesis
+    list must include "a human did it through a surface I cannot see," and the cheapest
+    probe is asking them — one question beats four forensic sweeps. Earned 2026-07-27:
+    four shadow reinstalls were the owner reinstalling through a UI that hides the
+    skills-dir runtime, while the seat probed disk four times and the human zero.
 12. **Routing law — a task shape routes to the suite's verb for it.** Research →
     `/notrest:researcher`, a choice → `/decider`, a claim → `/factcheck`, a plan →
     `/stepbystep`, commands → `/actionplan`, outbound → `/draft`, prior art →
