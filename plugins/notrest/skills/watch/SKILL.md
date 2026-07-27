@@ -1,6 +1,6 @@
 ---
 name: watch
-description: "Facts have shelf lives — watch re-verifies them on schedule: pulls the load-bearing [cited] claims out of a dossier (or inline) into watch/watchlist.md, then re-verifies the due ones with factcheck's rigor and appends a dated DRIFT REPORT to watch/drift-log.md — HOLDS / DRIFTED / DEAD-SOURCE / UNVERIFIABLE, with what was actually fetched stamped on every run. Use on /watch, \"watch this claim\", \"keep this fresh\", \"recheck weekly\", \"has anything changed since\", \"re-verify the dossier\"."
+description: "Facts have shelf lives — watch re-verifies them on schedule: pulls the load-bearing [cited] claims out of a dossier (or inline) into watch/watchlist.md, then re-verifies the due ones with factcheck's rigor and appends a dated DRIFT REPORT to watch/drift-log.md — HOLDS / DRIFTED / DEAD-SOURCE / UNVERIFIABLE, with what was actually fetched stamped on every run. Use on /watch, \"watch this claim\", \"keep this fresh\", \"recheck weekly\", \"has anything changed since\"."
 ---
 
 # watch — facts have shelf lives

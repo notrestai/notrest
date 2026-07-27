@@ -1,8 +1,8 @@
 {
   "name": "notrest",
   "displayName": "Not Rest Inc. — ORACLE session harness",
-  "version": "3.14.1",
-  "description": "A session harness by Not Rest Inc. — the scaffolding a working session runs inside: laws anchored by hooks, delegation on receipted Opus lanes, an estate that writes itself, self-grading instruments, zero-token graphs, and twenty-nine skills from intake to handoff. See README and docs/CAPABILITIES.md.",
+  "version": "3.15.0",
+  "description": "A session harness by Not Rest Inc. — the scaffolding a working session runs inside: laws anchored by hooks, delegation on receipted Opus lanes, an estate that writes itself, self-grading instruments, zero-token graphs, and thirty skills from intake to handoff. See README and docs/CAPABILITIES.md.",
   "author": {
     "name": "Not Rest Inc.",
     "url": "https://do.not.rest"

@@ -1,6 +1,6 @@
 ---
 name: recap
-description: "Walks the recorded trail — COORD.md, COORD-AGENTS.md, git history, spend/ledger.md, the dossier folders — in timestamp order and delivers the decision track: a narrated timeline, a who-was-consulted table, ships, costs, and a clickable decision map (HTML). Every claim cites a trail line, a commit, or a path; anything without one is [unverified]. Use on /recap, \"recap the project\", \"how did we get here\", \"tell me the story of this project\", \"decision history\", \"what happened here\"."
+description: "Walks the recorded trail — COORD.md, COORD-AGENTS.md, git history, spend/ledger.md, the dossier folders — in timestamp order and delivers the decision track: a narrated timeline, a who-was-consulted table, ships, costs, and a clickable decision map (HTML). Every claim cites a trail line, a commit, or a path; anything without one is [unverified]. Use on /recap, \"recap the project\", \"how did we get here\", \"decision history\", \"what happened here\"."
 ---
 
 # recap — the trail, turned into understanding

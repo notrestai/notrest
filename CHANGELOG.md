@@ -1,5 +1,43 @@
 # Changelog — the notrest harness
 
+## 3.15.0 — 2026-07-27
+
+**`/mentor` — the thirtieth skill: the ritual that raised the rig build, made repeatable.**
+
+- **Two PEER sessions in a teaching relationship** (record F-12): the mentor holds the
+  laws, the gates and the escort; the builder holds the code and its context; a chartered
+  room is the visible wire; the owner reads the room, not the traffic. Explicitly NOT a
+  lane that ends (agentswarm) and NOT a metered blackboard arrangement (fable-director) —
+  the scope negatives ship in the description so triggering never collides.
+- **The cycle, codified from the live rig arrangement** (its room file is the worked
+  example): charter → escort (engine read live, reading order existence-checked, optional
+  HOLD) → the builder's first reply (cwd state · surfaced conflicts · ONE batch of
+  questions each carrying its own default) → NUMBERED rulings, each naming the law that
+  decided it → checkpoints before any ship / owner-grade item / blocker → gates WITH
+  RIDERS → only owner-grade items escalate, with a recommendation.
+- **Correction runs both ways, as law:** a mentor who cannot be corrected is a
+  bottleneck, and the correction is posted where the owner sees it (12a applies upward).
+  Earned twice in one night — the builder caught the mentor's escort-timing lag and a
+  self-contradictory sequencing instruction; both were owned in-room.
+- **`mentor.py`** (stdlib, rooms via chatroom's room.py so the no-secrets screen is
+  inherited, exit 5 propagated): `charter` (idempotent), `escort` (prints, never sends —
+  dispatch stays the seat's act), `checkpoints` (parses the room into a gate ledger,
+  **exit 3 when a checkpoint is owing and ungated**), `status`. Four parsing rules,
+  each earned against the live room: a gate must POSTDATE its checkpoint; NEEDS is read
+  from the pipe-anchored declaration, not mid-body prose; ungated means ungated AND
+  owing (informational posts print as UNGATED-INFO, never hidden); owner escalation stays
+  open until answered, never inferred from prose.
+- **Its first run audited its own maker:** parsing the live room found CP1 genuinely
+  ungated — the mentor's rulings R1–R4 had gone over a side channel and never reached the
+  room. Now posted in full; the lesson is banked in the skill: rulings issued off-room are
+  invisible to the estate.
+- Funded honestly: the 30th skill's ~133 tok came out of five over-long descriptions
+  (eval, doctor, spend, recap, watch), never out of the ceiling — the calibration law
+  holds at 5,200 with 33 tok of headroom. Count ritual across all five surfaces; the
+  TUTORIAL's counter tripped over "10 minutes" mid-edit and the phrase was moved out of
+  range rather than the parser loosened.
+- Gate: mentor fixture 95/0 · eval 12/12 at 30 skills · doctor 10/10 · validate 0.
+
 ## 3.14.1 — 2026-07-27
 
 **Platform drift, caught in minutes: the CLI updated under us and the budget law held.**

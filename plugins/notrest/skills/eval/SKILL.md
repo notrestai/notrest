@@ -1,6 +1,6 @@
 ---
 name: eval
-description: "The harness's law-conformance suite — one static pass over the shipped files asking whether every law left a fingerprint: offload policy, honesty labels, scripts that compile, cited files that exist, append-only ledgers, the worker contract, front-matter YAML accepts, safety laws, silent-on-failure hooks, the routing law's enforcer. Use on \"/eval\", \"check the laws\", \"conformance check\", \"what changed since the last run\", or before any release. Zero model tokens, seconds, exits 0/5/6. doctor checks the INSTALL; eval checks the LAWS."
+description: "The harness's law-conformance suite — one static pass asking whether every law left a fingerprint in the shipped files: offload policy, honesty labels, scripts that compile, cited files that exist, append-only ledgers, worker contracts, safe front-matter, safety laws, silent hooks, the routing enforcer. Use on \"/eval\", \"check the laws\", \"conformance check\", or before any release. Zero tokens, seconds. doctor checks the INSTALL; eval checks the LAWS."
 ---
 
 # eval — does the harness obey its own laws?

@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: "The harness's own self-check — one read-only pass reporting PASS/WARN/FAIL per check with the exact fix: front-matter YAML would reject (the unquoted colon-space that makes a skill invisible), manifest + tombstone pins, skill-count drift, hooks that parse and hooks that ever fired, estate integrity, which build is really running, the always-on token budget, gitignore rules that swallow skill dirs, stale version stamps. Use on \"/doctor\", \"health check\", \"check the install\", \"why isn't X triggering\", after any release. Reads only."
+description: "The harness's own self-check — one read-only pass, PASS/WARN/FAIL per check with the exact fix: front-matter YAML would reject, manifest + tombstone pins, skill-count drift, hooks that parse and ever fired, estate integrity, which build is really running, the always-on token budget, gitignore rules that swallow skills, stale stamps. Use on \"/doctor\", \"health check\", \"check the install\", \"why isn't X triggering\". Reads only."
 ---
 
 # doctor — the harness's self-check

@@ -64,3 +64,6 @@
 [2026-07-27 05:17Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a446249afafa31742
 [2026-07-27 05:20Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a8646c99af0d4522d
 [2026-07-27 05:33Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=af57a31a784952cb0
+[2026-07-27 05:37Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a4aa6705da5b0420c
+[2026-07-27 05:49Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a2b47ab45265def8a
+[2026-07-27 06:06Z] lane=subagent model=claude-opus-5 tokens=12684024 grade=observed purpose="auto-receipt: MENTOR built — working tree only, five new files under `plug" agent=abd4b66ade474da72
