@@ -161,6 +161,115 @@ grep -q 'agent=agt_unknown model=? bytes=?' "$CA" \
   && ok "unknown-grade entry keeps its honest '?' fields" \
   || no "unknown-grade entry keeps its honest '?' fields" "$(grep 'agt_unknown' "$CA" || true)"
 
+# ── 2e. LANE BRIEF extraction: the commission is estate-visible by construction ─
+# The owner caught a seat narrowing their ask inside a lane brief, invisibly. The hook
+# now extracts the first user-role message — the exact prompt the seat passed — so any
+# commission can be read without asking the seat. These assertions are the guarantee.
+D="$TMP/repo-d"; mkdir -p "$D"; git -C "$D" init -q 2>/dev/null
+BRIEF_BODY='Build the ledger instrument.
+
+SCOPE NARROWED: the owner asked for X and Y; I am commissioning only X.
+
+- bullet one
+- bullet two'
+T5="$D/agent-agt_brief.jsonl"
+python3 - "$T5" "$BRIEF_BODY" <<'PYEOF'
+import json, sys
+p, brief = sys.argv[1], sys.argv[2]
+rows = [
+  {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": brief}]}},
+  {"type": "assistant", "message": {"role": "assistant", "model": "claude-opus-5",
+     "usage": {"input_tokens": 10, "output_tokens": 5},
+     "content": [{"type": "text", "text": "Working on it."}]}},
+  {"type": "user", "message": {"role": "user",
+     "content": [{"type": "tool_result", "text": "LATER-USER-TURN-NOT-THE-COMMISSION"}]}},
+  {"type": "user", "message": {"role": "user", "content": "PLAIN-LATER-USER-TURN"}},
+  {"type": "assistant", "message": {"role": "assistant", "model": "claude-opus-5",
+     "content": [{"type": "text", "text": "Done: the instrument ships."}]}},
+]
+open(p, "w").write("\n".join(json.dumps(r) for r in rows) + "\n")
+PYEOF
+
+run_hook "$D" agt_brief "$T5"
+BF="$D/briefs/agent-agt_brief.md"
+DCA="$D/COORD-AGENTS.md"
+chk "brief: hook still exits 0" "$(cat "$TMP/hook.rc")" "0"
+[ -f "$BF" ] && ok "brief: briefs/agent-<id>.md created" || no "brief: briefs/agent-<id>.md created"
+chk "brief: receipt line carries the pointer" \
+  "$(grep -c ' | brief: briefs/agent-agt_brief.md$' "$DCA" 2>/dev/null || true)" "1"
+
+# the body after the --- separator must be the commission, byte-for-byte
+GOT="$(awk 'f{print} /^---$/{f=1}' "$BF" | tail -n +2)"
+if [ "$GOT" = "$BRIEF_BODY" ]; then ok "brief: body is the commission VERBATIM (newlines, bullets intact)"
+else no "brief: body verbatim" "got: $GOT"; fi
+grep -q 'LATER-USER-TURN-NOT-THE-COMMISSION' "$BF" \
+  && no "brief: a later tool_result turn leaked in" || ok "brief: later tool_result turn excluded"
+grep -q 'PLAIN-LATER-USER-TURN' "$BF" \
+  && no "brief: a post-assistant user turn leaked in" || ok "brief: post-assistant user turn excluded"
+
+# header fields
+grep -q '^# lane brief — agent-agt_brief$' "$BF" && ok "brief header: title names the agent" || no "brief header: title"
+grep -qE '^- extracted: [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}Z$' "$BF" && ok "brief header: UTC timestamp" || no "brief header: UTC timestamp"
+grep -q '^- agent: agt_brief$' "$BF" && ok "brief header: agent id" || no "brief header: agent id"
+grep -q '^- model: claude-opus-5$' "$BF" && ok "brief header: model" || no "brief header: model"
+grep -q "^- transcript: $T5\$" "$BF" && ok "brief header: transcript path" || no "brief header: transcript path"
+
+# idempotence: racers and redelivery create exactly ONE brief and never rewrite it
+mtime() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1"; }
+BSUM0="$(md5 -q "$BF" 2>/dev/null || md5sum "$BF" | cut -d' ' -f1)"
+BMT0="$(mtime "$BF")"
+CBEFORE="$C"; C="$D"          # race() writes into $C
+race agt_brief "$T5" 5
+C="$CBEFORE"
+chk "brief: 5 racers → still exactly one brief file" \
+  "$(ls "$D/briefs" | wc -l | tr -d ' ')" "1"
+chk "brief: 5 racers → still exactly one receipt line" \
+  "$(grep -c 'agent=agt_brief ' "$DCA" || true)" "1"
+chk "brief: content untouched by racers" \
+  "$(md5 -q "$BF" 2>/dev/null || md5sum "$BF" | cut -d' ' -f1)" "$BSUM0"
+
+# an EXISTING brief is never rewritten, even when the transcript's commission changes
+python3 - "$T5" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+rows = [{"type": "user", "message": {"role": "user", "content": "REWRITTEN-COMMISSION"}},
+        {"type": "assistant", "message": {"role": "assistant", "model": "claude-opus-5",
+         "content": [{"type": "text", "text": "Second stop, grown transcript."}]}}]
+open(p, "a").write("\n".join(json.dumps(r) for r in rows) + "\n")
+PYEOF
+run_hook "$D" agt_brief "$T5"
+chk "brief: existing brief content unchanged (never rewritten)" \
+  "$(md5 -q "$BF" 2>/dev/null || md5sum "$BF" | cut -d' ' -f1)" "$BSUM0"
+chk "brief: existing brief mtime unchanged" "$(mtime "$BF")" "$BMT0"
+grep -q 'REWRITTEN-COMMISSION' "$BF" && no "brief: a later run overwrote the commission" \
+  || ok "brief: the original commission survives a later stop"
+chk "brief: the grown transcript still earned a second receipt line" \
+  "$(grep -c 'agent=agt_brief ' "$DCA" || true)" "2"
+
+# ── 2f. extraction failures never produce a dead pointer ─────────────────────
+run_hook "$D" agt_nofile "$D/does-not-exist.jsonl"
+chk "no transcript: hook still exits 0" "$(cat "$TMP/hook.rc")" "0"
+chk "no transcript: receipt line still lands" \
+  "$(grep -c 'agent=agt_nofile ' "$DCA" || true)" "1"
+grep 'agent=agt_nofile ' "$DCA" | grep -q 'brief:' \
+  && no "no transcript: receipt carries no brief field" || ok "no transcript: receipt carries no brief field"
+[ -f "$D/briefs/agent-agt_nofile.md" ] && no "no transcript: no brief file created" \
+  || ok "no transcript: no brief file created"
+
+T6="$D/agent-agt_nouser.jsonl"
+printf '%s\n' '{"type":"assistant","message":{"role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":"no user turn at all"}]}}' > "$T6"
+run_hook "$D" agt_nouser "$T6"
+chk "no user turn: receipt still lands" "$(grep -c 'agent=agt_nouser ' "$DCA" || true)" "1"
+grep 'agent=agt_nouser ' "$DCA" | grep -q 'brief:' \
+  && no "no user turn: receipt carries no brief field" || ok "no user turn: receipt carries no brief field"
+
+# ── 2g. briefs/ is TRACKED estate — no ignore rule may swallow it ────────────
+if git -C "$SD/../../../.." check-ignore -q briefs/agent-x.md 2>/dev/null; then
+  no "briefs/ is tracked estate (not gitignored)" "a .gitignore rule matches briefs/"
+else
+  ok "briefs/ is tracked estate (not gitignored)"
+fi
+
 # ── 3. no usage data → grade=estimate, no token count ────────────────────────
 run_hook "$A" agt_nousage "$T2"
 LINE2="$(grep 'agent=agt_nousage$' "$LEDGER" | head -1)"

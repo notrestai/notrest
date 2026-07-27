@@ -285,6 +285,112 @@ if grep -q "arc.rests{stroke:var(--rock);stroke-dasharray" "$TMP/ground.html"; t
   ok "the rests edge is a dashed red arc (distinct from the rock glyph)"
 else bad "no dashed-red style for the rests edge"; fi
 
+echo "── phase H: commissions (the brief pointer, drawn) ─────────────────────"
+# CORE VALUE (owner, 2026-07-27): a commission must be GRAPHICALLY visible. The
+# SubagentStop hook banks each lane's exact prompt to briefs/agent-<id>.md and
+# points the receipt at it; the river consumes that pointer. Three states, and
+# the fixture pins all three plus the refusal:
+#   aaa111  pointer + file        -> commission glyph, card carries the prompt head
+#   bbb222  pointer, NO file      -> plain tick, card says so, never a commission
+#   ccc333  no pointer at all     -> plain tick, "pre-v3.13 lane"
+#   ddd444  pointer OUT of root   -> refused unread (the ledger is text, not trust)
+K="$TMP/comm"
+mkdir -p "$K/archive" "$K/briefs"
+printf 'TOP SECRET OUTSIDE FILE mustnotbedrawn\n' > "$TMP/outside-secret.md"
+cat > "$K/archive/findings.jsonl" <<'EOF'
+{"id":"F-1","ts":"2026-07-27T09:00:00Z","session":"lane-a","skill":"researcher","kind":"finding","ask":"where does the commission go","statement":"the hook banks it","evidence":[],"relation":"toward","links":[],"status":"live"}
+{"id":"F-2","ts":"2026-07-27T10:00:00Z","session":"lane-a","skill":"researcher","kind":"result","ask":"is it visible","statement":"the river marks it","evidence":[],"relation":"toward","links":["F-1"],"status":"live"}
+EOF
+cat > "$K/COORD-AGENTS.md" <<'EOF'
+# COORD-AGENTS.md — agent activity ledger (auto-written)
+
+## LEDGER
+- [2026-07-27 09:30Z] agent=aaa111 model=claude-opus-5 bytes=1000 | last: banked one | transcript: /tmp/a1.jsonl | brief: briefs/agent-aaa111.md
+- [2026-07-27 09:40Z] agent=bbb222 model=claude-opus-5 bytes=2000 | last: pointer with no file | transcript: /tmp/a2.jsonl | brief: briefs/agent-bbb222.md
+- [2026-07-27 09:50Z] agent=ccc333 model=? bytes=? | last: no pointer at all | transcript: /tmp/a3.jsonl
+- [2026-07-27 09:55Z] agent=ddd444 model=claude-opus-5 bytes=10 | last: escapes the root | transcript: /tmp/a4.jsonl | brief: ../outside-secret.md
+EOF
+cat > "$K/briefs/agent-aaa111.md" <<'EOF'
+# lane brief — agent-aaa111
+
+- extracted: 2026-07-27 09:30Z
+- agent: aaa111
+
+Auto-extracted by the notrest SubagentStop hook: the first user-role message.
+
+---
+
+BUILDER lane 4 of 6, domain GRAPH: make every commission graphically visible.
+EOF
+
+python3 "$GRAPH" river --root "$K" --out "$TMP/comm.html" > "$TMP/h.out" 2>&1
+HX=$?
+KJ="$TMP/comm.json"
+if [ "$HX" -eq 0 ] && [ -f "$KJ" ]; then ok "commission river exits 0"
+else bad "commission river: exit $HX"; sed 's/^/      /' "$TMP/h.out"; fi
+
+chk "lane ticks"                 4 "$(val "$KJ" counts.lanes)"
+chk "commissions drawn"          1 "$(val "$KJ" counts.commissions)"
+chk "lanes without a commission" 3 "$(val "$KJ" counts.lanes_uncommissioned)"
+
+STATES=$(python3 - "$KJ" <<'PY'
+import json,sys
+l = {x["agent"]: x for x in json.load(open(sys.argv[1]))["lanes"]}
+print(" ".join("%s=%s/%s" % (a, l[a]["commission"], l[a]["brief_state"])
+               for a in ("aaa111", "bbb222", "ccc333", "ddd444")))
+PY
+)
+chk "the four commission states" \
+    "aaa111=True/banked bbb222=False/missing ccc333=False/none ddd444=False/outside-root" \
+    "$STATES"
+
+# the card head must be the PROMPT, not the hook's own generated header
+HEAD="$(val "$KJ" lanes.0.brief_head)"
+case "$HEAD" in
+  "BUILDER lane 4 of 6, domain GRAPH: make every commission graphically visible.")
+    ok "brief head is the prompt itself (the generated header is skipped)" ;;
+  *) bad "brief head wrong: $HEAD" ;;
+esac
+chk "the pointer is kept on the tick" "briefs/agent-aaa111.md" "$(val "$KJ" lanes.0.brief)"
+# a dead pointer is REPORTED but never followed into a commission
+chk "dead pointer kept for the card" "briefs/agent-bbb222.md" "$(val "$KJ" lanes.1.brief)"
+chk "no pointer stays empty"          ""                       "$(val "$KJ" lanes.2.brief)"
+
+# the ledger is untrusted TEXT: an escaping path is refused unread
+if grep -q "mustnotbedrawn" "$TMP/comm.html"; then
+  bad "a brief pointer escaped the root and its content reached the page"
+else
+  ok "a brief pointer outside the root is refused unread"
+fi
+if grep -q "receipt(s) point at a brief that is not readable" "$TMP/h.out"; then
+  ok "unreadable pointers are disclosed in the notes"
+else bad "no note about the unreadable brief pointers"; sed 's/^/      /' "$TMP/h.out"; fi
+
+# the page itself: glyph, legend line, prompt text, honest not-banked wording
+for TOKEN in "commsheet" "commrule" "every marked lane's exact prompt is on disk" \
+             "BUILDER lane 4 of 6, domain GRAPH" "not banked" "pre-v3.13 lane"; do
+  if grep -q "$TOKEN" "$TMP/comm.html"; then ok "page carries: $TOKEN"
+  else bad "page is missing: $TOKEN"; fi
+done
+# the bottom bank must GROW to hold the glyph row, or the glyphs sit off the sand
+COMMY=$(val "$KJ" bankInset.bottom)
+if [ "$COMMY" != "66.0" ] && [ "$COMMY" != "<ERR>" ]; then
+  ok "the bottom bank widened for the commission row (inset $COMMY)"
+else bad "bottom bank inset did not grow: $COMMY"; fi
+
+# deterministic — and the BRIEF TEXT is an input like any other
+cp "$TMP/comm.html" "$TMP/comm-first.html"
+python3 "$GRAPH" river --root "$K" --out "$TMP/comm.html" >/dev/null 2>&1
+if cmp -s "$TMP/comm-first.html" "$TMP/comm.html"; then
+  ok "re-render byte-identical with brief content inlined"
+else bad "commission re-render differs — brief reading is not deterministic"; fi
+printf 'and then the brief was AMENDED downstream\n' >> "$K/briefs/agent-aaa111.md"
+python3 "$GRAPH" river --root "$K" --out "$TMP/comm2.html" >/dev/null 2>&1
+if ! cmp -s "$TMP/comm.html" "$TMP/comm2.html" \
+   && grep -q "AMENDED downstream" "$TMP/comm2.html"; then
+  ok "editing the brief changes the page — it is read at render, never cached"
+else bad "an edited brief did not reach the re-render"; fi
+
 echo "── phase E: the render gate (serve + HTTP 200) ─────────────────────────"
 if [ -x "$RC" ] || [ -f "$RC" ]; then
   RCOUT="$(bash "$RC" "$OUT/river.html" 2>&1)"

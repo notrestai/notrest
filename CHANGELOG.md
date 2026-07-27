@@ -1,5 +1,37 @@
 # Changelog — the notrest harness
 
+## 3.13.0 — 2026-07-27
+
+**Commission transparency, by construction — the owner's core value in three surfaces.**
+
+- **Owner's law, verbatim in agentswarm:** "Transparency about what we ask our agents is
+  a core value: the commission is never hidden — named at dispatch, banked on disk,
+  marked in the pictures." Born from a real failure (a lane brief silently narrowed the
+  owner's ask; fable-mode 12a/12b carry the scars).
+- **Banked on disk:** the SubagentStop hook extracts every stopped lane's exact prompt —
+  the first user message of its transcript — to `briefs/agent-<id>.md`, verbatim, never
+  edited, never summarized. Write-once by O_EXCL (the filesystem refuses a second
+  writer); receipts gain ` | brief: briefs/agent-<id>.md`; tool-result decoys fenced out
+  by a seen-assistant guard. The end-to-end probe's synthetic commission contained
+  "SCOPE NARROWED: owner asked for X and Y; I am only commissioning X" — extracted
+  verbatim, which is the entire point. seat-tax fixture 54→79.
+- **Marked in the river:** lane ticks whose receipts point at a banked brief render a
+  ruled-sheet commission glyph; the hover card shows the prompt's first ~200 chars and
+  the full-text path. Six honest states (banked · missing · none · outside-root ·
+  unreadable · unresolvable) — a pointer resolving outside the root is refused unread.
+  Today's real river truthfully reports 0/143 lanes commissioned (all predate the hook);
+  it lights up by itself as new receipts carry pointers. river fixture 66→86.
+- **Named at dispatch:** standing seat behavior — every lane dispatch names its
+  commission to the owner in plain language, full prompt shown when the ask is the
+  owner's scope. CLAUDE.md Protocol carries the core value.
+- History correction, on the record: commit 74f1564 (`git add -A`) swept the ledger
+  lane's in-flight hook edits under a completion-audit message — content verified
+  byte-identical, nothing lost; the ledger carries the correction and the standing rule
+  is explicit-file-list commits while any lane is in flight.
+- Gate: seat-tax 79/0 · river 86/0 · journey 36/0 seat-run · eval 12/12 · doctor 10/10 ·
+  validate 0. Live-fire of the brief hook is [unverified] until reload by construction —
+  the fixture and an end-to-end probe on the real hook binary are the pre-reload proof.
+
 ## 3.12.1 — 2026-07-27
 
 **The identity line — the shadow saga's root cause was a UI trap, and this is the vaccine.**

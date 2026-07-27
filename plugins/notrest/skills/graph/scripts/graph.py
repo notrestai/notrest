@@ -1084,6 +1084,7 @@ RIVER_RELS = ("toward", "lateral", "back")
 RIVER_STATUS = ("live", "superseded", "refuted")
 RIVER_CAP = 500            # nodes drawn; older ones are dropped, never silently
 RIVER_LANE_CAP = 300       # agent-ledger ticks drawn along the bottom bank
+BRIEF_HEAD = 200           # chars of a lane brief shown on its hover card
 FINDINGS_REL = "archive/findings.jsonl"
 
 # layout constants — every coordinate below is a pure function of these and the
@@ -1095,6 +1096,8 @@ RMEANDER_A = 24.0    # meander amplitude
 RMEANDER_W = 0.55    # meander frequency (radians per time index)
 RTOP_BANK = 215.0    # milestone bank above the main channel
 RBOT_BANK = 195.0    # lane bank below the lowest channel
+RBANK_INSET = 66.0   # waterline → the sand it runs between
+RCOMM_BAND = 92.0    # extra bottom sand when commission glyphs need a row of it
 RGOAL_PAD = 300.0    # river mouth → goal bank
 
 RIVER_COORD_RE = re.compile(
@@ -1252,9 +1255,44 @@ def read_coord_lines(root, session=None):
     return items
 
 
+def read_brief(root, rel):
+    """A receipt's `brief:` pointer → (head, ok, why).
+
+    COMMISSION TRANSPARENCY (owner core value, 2026-07-27): what a lane was
+    actually asked must be visible without asking the seat. The SubagentStop hook
+    banks the prompt; the receipt points at it; this reads it. Three honest
+    outcomes and no fourth: banked (head text), pointer with no file (`missing`),
+    no pointer at all (`none`) — a dead pointer is never drawn as a commission.
+
+    The pointer is text from a ledger file, so it is treated as untrusted: a path
+    that resolves outside the root is REFUSED, not read. The ledger is
+    machine-written today; `../../..` in it must still never make this open a
+    file the river was not pointed at."""
+    if not rel:
+        return "", False, "none"
+    try:
+        p = (root / rel).resolve()
+        if not str(p).startswith(str(root.resolve()) + os.sep):
+            return "", False, "outside-root"
+    except (OSError, ValueError):
+        return "", False, "unresolvable"
+    if not p.is_file():
+        return "", False, "missing"
+    text = _slurp(p)
+    if text is None:
+        return "", False, "unreadable"
+    # the hook writes a generated header, then `---`, then the verbatim prompt.
+    # The prompt is the point; showing 200 chars of our own header would be a
+    # commission nobody can read. No separator → the whole file is the brief.
+    body = text.split("\n---\n", 1)[1] if "\n---\n" in text else text
+    return _clip(body.strip(), BRIEF_HEAD), True, "banked"
+
+
 def read_agent_lines(root, session=None):
     """COORD-AGENTS.md → lane activity ticks. The hook writes `model=?` when the
-    transcript wasn't on disk yet; that stays a `?`, it is not guessed."""
+    transcript wasn't on disk yet; that stays a `?`, it is not guessed. A receipt
+    that carries `| brief: <path>` and whose file is really there becomes a
+    COMMISSION tick — the lane's exact prompt, drawn."""
     items = []
     text = _slurp(root / "COORD-AGENTS.md")
     if text is None:
@@ -1267,8 +1305,13 @@ def read_agent_lines(root, session=None):
         mm = re.search(r"model=(\S+)", rest)
         model = mm.group(1) if mm else "?"
         last = re.search(r"\|\s*last:\s*(.*?)\s*\|\s*transcript:", rest)
+        bm = re.search(r"\|\s*brief:\s*(\S+)", rest)
+        brel = bm.group(1) if bm else ""
+        head, ok, why = read_brief(root, brel)
         items.append({"ts": m.group("ts").strip(), "agent": m.group("agent"),
                       "model": model, "last": _clip(last.group(1) if last else "", 160),
+                      "brief": brel, "brief_head": head, "commission": ok,
+                      "brief_state": why,
                       "ref": f"COORD-AGENTS.md:{i}", "_k": tskey(m.group("ts"))})
     if session:
         items = [x for x in items if session in x["last"]]
@@ -1568,6 +1611,16 @@ def build_river(root, session=None, cap=RIVER_CAP, use_now=False):
     lanes = lanes_all[-RIVER_LANE_CAP:]
     if len(lanes_all) > len(lanes):
         notes.append(f"lane ticks: last {len(lanes)} of {len(lanes_all)} agent entries")
+    commissioned = sum(1 for l in lanes if l["commission"])
+    dead = sorted({l["brief"] for l in lanes
+                   if l["brief"] and not l["commission"]})
+    if dead:
+        notes.append(f"{len(dead)} receipt(s) point at a brief that is not readable "
+                     f"({', '.join(dead[:3])}{'…' if len(dead) > 3 else ''}) — drawn as a "
+                     f"plain tick, never as a commission")
+    if lanes and not commissioned:
+        notes.append("no lane on this river banked its commission — every tick predates the "
+                     "brief-extracting hook, or the briefs/ directory is gone")
     stamp_keys = ([tskey(r["ts"]) for r in recs] + [c["_k"] for c in coord_all]
                   + [l["_k"] for l in lanes])
     for l in lanes:
@@ -1579,8 +1632,13 @@ def build_river(root, session=None, cap=RIVER_CAP, use_now=False):
     xs = [n["x"] for n in nodes] or [RX0]
     ys = [n["y"] for n in nodes] or [0.0]
     goal_x = max(xs) + RGOAL_PAD
+    # the commission row needs sand under it, so the bottom bank GROWS rather than
+    # the glyphs spilling past the shore — the extent and the waterline move
+    # together, leaving the water itself exactly where it was.
+    bot_inset = RBANK_INSET + (RCOMM_BAND if commissioned else 0.0)
     extent = {"x0": round(min(xs) - 320.0, 2), "y0": round(min(ys) - RTOP_BANK, 2),
-              "x1": round(goal_x + 150.0, 2), "y1": round(max(ys) + RBOT_BANK, 2)}
+              "x1": round(goal_x + 150.0, 2),
+              "y1": round(max(ys) + RBOT_BANK + (bot_inset - RBANK_INSET), 2)}
     if channels and channels[0]["points"]:
         channels[0]["points"] = channels[0]["points"] + [[round(goal_x - 26.0, 2),
                                                           channels[0]["points"][-1][1]]]
@@ -1604,13 +1662,16 @@ def build_river(root, session=None, cap=RIVER_CAP, use_now=False):
               "ships": sum(1 for m in milestones if m["flag"] == "ship"),
               "gates": sum(1 for m in milestones if m["flag"] == "gate"),
               "corrections": sum(1 for m in milestones if m["flag"] == "correction"),
-              "coord_lines": len(coord_all), "lanes": len(lanes)}
+              "coord_lines": len(coord_all), "lanes": len(lanes),
+              "commissions": commissioned,
+              "lanes_uncommissioned": len(lanes) - commissioned}
     stamp, stamp_from = river_stamp(stamp_keys, use_now)
     return {"generated": stamp, "stamp_from": stamp_from,
             "root": str(root), "mode": mode, "session": session, "cap": cap,
             "sources": {"findings": FINDINGS_REL if fpath.is_file() else None,
                         "coord": coord_volumes(root), "agents": "COORD-AGENTS.md"},
             "goal": {"x": round(goal_x, 2), "label": "GOAL"},
+            "bankInset": {"top": RBANK_INSET, "bottom": bot_inset},
             "extent": extent, "capped": capped, "notes": notes, "counts": counts,
             "channels": channels, "nodes": nodes, "edges": edges,
             "milestones": milestones, "lanes": lanes}
@@ -1648,7 +1709,7 @@ RIVER_TEMPLATE = r"""<!DOCTYPE html>
   --bank:#ddd7c6; --sand:#efeade; --rock:#C2554E; --dead:#B4633A;
   --stone:#9a988c; --stone-edge:#6f6e64; --goal:#1D9E75;
   --back:#D89A3A; --flag-ship:#7F77DD; --flag-gate:#1D9E75; --flag-corr:#D89A3A;
-  --lane:#a8a69a; --link:#b9b6aa;
+  --lane:#a8a69a; --link:#b9b6aa; --commission:#7F77DD;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -1658,7 +1719,7 @@ RIVER_TEMPLATE = r"""<!DOCTYPE html>
     --bank:#332f26; --sand:#1c1b18; --rock:#DD7F77; --dead:#d98a5e;
     --stone:#6c6b62; --stone-edge:#a7a69b; --goal:#3fc79c;
     --back:#e6b45c; --flag-ship:#9a92ea; --flag-gate:#3fc79c; --flag-corr:#e6b45c;
-    --lane:#5d5c53; --link:#4a493f;
+    --lane:#5d5c53; --link:#4a493f; --commission:#9a92ea;
   }
 }
 :root[data-theme="dark"]{
@@ -1668,7 +1729,7 @@ RIVER_TEMPLATE = r"""<!DOCTYPE html>
   --bank:#332f26; --sand:#1c1b18; --rock:#DD7F77; --dead:#d98a5e;
   --stone:#6c6b62; --stone-edge:#a7a69b; --goal:#3fc79c;
   --back:#e6b45c; --flag-ship:#9a92ea; --flag-gate:#3fc79c; --flag-corr:#e6b45c;
-  --lane:#5d5c53; --link:#4a493f;
+  --lane:#5d5c53; --link:#4a493f; --commission:#9a92ea;
 }
 *{box-sizing:border-box}
 html{height:100%;width:100%}
@@ -1749,6 +1810,16 @@ svg.far .restlabel{display:none}
 .flag{cursor:pointer}.flag:hover .flaglabel{fill:var(--text-primary)}
 .lanetick{fill:var(--lane);opacity:.75;cursor:pointer}
 .lanetick:hover{opacity:1}
+/* COMMISSION — a lane whose exact prompt is banked on disk. Deliberately the
+   loudest thing on the bottom bank: a commission nobody can see is the failure
+   this glyph exists to make impossible. */
+.lanetick.commission{opacity:.95}
+.commsheet{fill:var(--surface-1);stroke:var(--commission);stroke-width:1.5}
+.commrule{stroke:var(--commission);stroke-width:1.3;stroke-linecap:round;opacity:.85}
+.commstem{stroke:var(--commission);stroke-width:1.1;opacity:.55}
+.lanetick.commission:hover .commsheet{fill:var(--commission);fill-opacity:.22}
+.commcount{fill:var(--commission);font-size:11px;letter-spacing:.06em}
+svg.far .commcount{display:none}
 .banklabel{fill:var(--text-muted);font-size:11px;letter-spacing:.08em}
 /* --- chrome --- */
 #legend{position:absolute;left:.7rem;bottom:.7rem;background:var(--surface-1);
@@ -1788,7 +1859,12 @@ svg.far .restlabel{display:none}
 #card .foot{color:var(--text-muted);font-size:10.5px;margin-top:.45rem}
 #card .rests{color:var(--rock);font-weight:600;font-size:11.5px;letter-spacing:.03em;
   margin:.4rem 0 .1rem}
+#card .brief{border-left:2px solid var(--commission);padding:.1rem 0 .1rem .5rem;
+  color:var(--text-primary);white-space:pre-wrap;font-size:12px}
+#card .nocomm{color:var(--text-muted);font-size:12px}
 .sw.dash{background:none!important;height:0;border-radius:0;border-top:3px dashed var(--rock)}
+.sw.sheet{background:var(--surface-0);border:1.4px solid var(--commission);border-radius:2px;
+  width:10px;height:13px}
 #empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   color:var(--text-muted);font-size:13px;text-align:center;padding:2rem}
 </style>
@@ -1892,7 +1968,8 @@ function underPath(x1, y1, x0, y0){
 }
 
 /* ---------------------------------------------------------------- the scene */
-var E = D.extent, TOPY = E.y0 + 66, BOTY = E.y1 - 66;
+var BI = D.bankInset || {top:66, bottom:66};
+var E = D.extent, TOPY = E.y0 + BI.top, BOTY = E.y1 - BI.bottom;
 var gBank = el('g'), gWater = el('g'), gArc = el('g'), gNode = el('g'),
     gFlag = el('g'), gLane = el('g');
 [gBank, gWater, gArc, gNode, gFlag, gLane].forEach(function(g){ scene.appendChild(g); });
@@ -1992,13 +2069,36 @@ nodes.forEach(function(n, idx){
   gFlag.appendChild(g);
 });
 
-/* lane ticks along the bottom bank */
+/* lane ticks along the bottom bank. A lane whose COMMISSION is banked gets a
+   sheet glyph on its own row BELOW the plain ticks — the point of the row is
+   that you can see, without hovering anything, how much of this river's work
+   was commissioned in the open. */
+var COMMY = BOTY + 96;                 /* the commission row's own centreline */
+var comm = 0;
 (D.lanes || []).forEach(function(l, idx){
-  var y = BOTY + 16 + (idx % 4) * 9;
-  var g = el('g', {'data-l':idx}, 'lanetick');
-  g.appendChild(el('path', {d:'M' + (l.x - 5) + ',' + (y + 5) + ' l5,-6 l5,6 z'}));
+  var g = el('g', {'data-l':idx}, 'lanetick' + (l.commission ? ' commission' : ''));
+  if (l.commission){
+    var y = COMMY + (comm % 2) * 22;
+    comm++;
+    g.appendChild(el('path', {d:'M' + l.x + ',' + (BOTY + 12) + ' V' + (y - 8)}, 'commstem'));
+    g.appendChild(el('rect', {x:l.x - 6, y:y - 8, width:12, height:16, rx:1.8}, 'commsheet'));
+    g.appendChild(el('path', {d:'M' + (l.x - 3.2) + ',' + (y - 3.5) + ' H' + (l.x + 3.2) +
+      ' M' + (l.x - 3.2) + ',' + y + ' H' + (l.x + 3.2) +
+      ' M' + (l.x - 3.2) + ',' + (y + 3.5) + ' H' + (l.x + 1.2)}, 'commrule'));
+  } else {
+    var yp = BOTY + 14 + (idx % 3) * 8;
+    g.appendChild(el('path', {d:'M' + (l.x - 5) + ',' + (yp + 5) + ' l5,-6 l5,6 z'}));
+  }
   gLane.appendChild(g);
 });
+/* the banner sits on its OWN line above the glyph row — a caption that overlaps
+   the thing it captions is not a caption */
+if (comm){
+  var ct = el('text', {x:E.x0 + 34, y:BOTY + 68}, 'commcount');
+  ct.textContent = 'COMMISSIONS — ' + comm + ' lane' + (comm === 1 ? '' : 's') +
+                   ' whose exact prompt is banked on disk';
+  gLane.appendChild(ct);
+}
 
 /* ------------------------------------------------------------------- cards */
 function evRows(ev){
@@ -2037,9 +2137,24 @@ function flagCard(m){
     '<div class="foot">' + esc(m.ts) + ' · <code>' + esc(m.ref) + '</code></div>';
 }
 function laneCard(l){
-  return '<div><span class="k">lane</span><span class="k">' + esc(l.model) + '</span></div>' +
+  /* THE COMMISSION. Banked → the head of the prompt itself plus the path to the
+     whole of it. Not banked → said plainly, never dressed up: a pointer with no
+     file behind it is a worse lie than an admitted gap. */
+  var c;
+  if (l.commission){
+    c = '<div class="lbl">COMMISSION — the exact prompt this lane was given</div>' +
+        '<div class="brief">' + esc(l.brief_head || '(the brief file is empty)') + '</div>' +
+        '<div class="foot">full text: <code>' + esc(l.brief) + '</code></div>';
+  } else {
+    c = '<div class="lbl">COMMISSION</div><div class="nocomm">not banked' +
+        (l.brief ? ' — the receipt points at <code>' + esc(l.brief) +
+                   '</code> but that file is not readable from here'
+                 : ' (pre-v3.13 lane: its receipt carries no brief pointer)') + '</div>';
+  }
+  return '<div><span class="k">lane</span><span class="k">' + esc(l.model) + '</span>' +
+    (l.commission ? '<span class="k">commissioned</span>' : '') + '</div>' +
     '<div class="ask">' + esc(l.agent) + '</div>' +
-    '<div class="st">' + esc(l.last || '(no last line recorded)') + '</div>' +
+    '<div class="st">' + esc(l.last || '(no last line recorded)') + '</div>' + c +
     '<div class="foot">' + esc(l.ts) + ' · <code>' + esc(l.ref) + '</code></div>';
 }
 function showCard(html, ev){
@@ -2175,6 +2290,8 @@ q.addEventListener('input', function(){
       '<span class="n">' + c.rests_on_refuted + '</span>',
     sw('var(--stone)') + 'stone turned <span class="n">' + c.records + '</span>',
     sw('var(--flag-ship)') + 'COORD flag <span class="n">' + c.milestones + '</span>',
+    "<i class=\"sw sheet\"></i>commission — every marked lane's exact prompt is on disk; " +
+      'click the tick for the path <span class="n">' + c.commissions + '</span>',
     sw('var(--goal)') + 'goal bank'
   ];
   var tallies = [
@@ -2185,7 +2302,8 @@ q.addEventListener('input', function(){
     'superseded <span class="n">' + c.superseded + '</span>',
     'refuted <span class="n">' + c.refuted + '</span>',
     'ships/gates/corrections <span class="n">' + c.ships + '/' + c.gates + '/' + c.corrections + '</span>',
-    'lanes <span class="n">' + c.lanes + '</span>'
+    'lanes <span class="n">' + c.lanes + '</span>',
+    'commissioned <span class="n">' + c.commissions + '/' + c.lanes + '</span>'
   ];
   var notes = (D.notes || []).slice();
   notes.push(D.mode === 'coord-only'
@@ -2231,7 +2349,8 @@ def cmd_river(a):
     print(f"{html_p}: {c['records']} records · {c['channels']} channels "
           f"({c['merged']} merged, {c['dead_end']} dead-end) · {c['rocks']} rocks "
           f"({c['rests_on_refuted']} resting on refuted) · "
-          f"{c['back']} backtracks · {c['milestones']} milestones · mode={r['mode']}")
+          f"{c['back']} backtracks · {c['milestones']} milestones · "
+          f"{c['commissions']}/{c['lanes']} lanes commissioned · mode={r['mode']}")
     for n in r["notes"]:
         print(f"  note: {n}")
     print(f"  data: {json_p}")

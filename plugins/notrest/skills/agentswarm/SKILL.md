@@ -222,9 +222,24 @@ while other lanes still work; no barrier unless dedup genuinely needs one.
   the estate already paid for beats re-deriving it at model prices.
 - **Agent activity records itself.** Every completed lane is auto-written to
   `COORD-AGENTS.md` by the SubagentStop hook — id · model · last conclusion · transcript
-  path — at zero prompt overhead. Never instruct a lane to write a process/summary file;
-  the harness writes the transcript and the hook writes the index. The seat consumes tight
-  returns; the durable record lands for free.
+  path · brief pointer — at zero prompt overhead. Never instruct a lane to write a
+  process/summary file; the harness writes the transcript and the hook writes the index.
+  The seat consumes tight returns; the durable record lands for free.
+- **Commission transparency is a CORE VALUE, not a courtesy.** *Transparency about what we
+  ask our agents is a core value: the commission is never hidden — named at dispatch,
+  banked on disk, marked in the pictures.* It binds at three moments:
+  - **At dispatch** — the seat names each lane's commission to the user in plain language,
+    as it dispatches. When the ask is the owner's scope, the seat shows the **full prompt**,
+    not a paraphrase — and never leaves it to be discovered in the lane brief alone. A
+    commission the owner has to go looking for was not disclosed.
+  - **At rest** — every commission is banked by construction: the SubagentStop hook
+    extracts the exact prompt to `briefs/agent-<id>.md`, so the owner reads any prompt
+    without asking anyone. Written once and never rewritten, a brief is what was actually
+    sent — not a later account of it.
+  - **Under narrowing** — a brief that narrows the owner's ask must say so in its first
+    lines (fable-mode 12a). Disclosure at delivery is the floor; the extraction is what
+    makes it auditable at any scale, because the seat's account is checkable against the
+    prompt on disk.
 - **Estate files (STATE / HANDOFF / coord) are banking and crash insurance, NOT a
   message bus.** Lanes die with the app — so the seat BANKs at every seam: what's
   dispatched, what's landed, the exact resume payload. A cold session re-seats the

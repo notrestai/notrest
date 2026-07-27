@@ -73,7 +73,9 @@ offload` — so a gate log is greppable and a stale rule cannot hide behind the 
 - **Unverifiable, not clean** — an offload entry whose model is `?` (the auto-receipt could
   not read the transcript) is **not** called a violation, because absence of evidence is
   not evidence of one. It gets its own reported line saying routing is not provable for it.
-  Chase it by reading the transcript the COORD-AGENTS.md entry points at.
+  Chase it by reading the transcript the COORD-AGENTS.md entry points at — and the
+  `briefs/agent-<id>.md` its `brief:` field points at, which carries the commission that
+  lane was given verbatim.
 
 ## When to log (the whole discipline)
 

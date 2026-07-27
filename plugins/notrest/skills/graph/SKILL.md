@@ -133,6 +133,7 @@ river, because the ledger is where this estate already records its milestones.
 | a stone | every record — every stone turned, whether or not it led anywhere |
 | a flag on the top bank | a COORD ledger line: ship · gate · correction |
 | a tick on the bottom bank | a `COORD-AGENTS.md` entry — which lane was running when |
+| a ruled sheet hanging below the tick row | a **commission**: that lane's exact prompt is banked on disk, and the card shows it |
 | the green bank on the right | the GOAL the river runs toward |
 
 **Effective status is link-walked, not declared.** A later record that links an older one
@@ -161,6 +162,24 @@ Three things it deliberately does **not** do:
 
 `archivist`'s finding-store track implements the same rule over the same records, so a
 stone flagged here and a record flagged there are the same claim about the same ground.
+
+**Commissions are visible, or the value is a slogan (owner core value, 2026-07-27).** What a
+lane was *actually asked* must be readable without asking the seat — otherwise a seat that
+narrows a commission can narrow it invisibly, and at fan-out scale nobody would ever know.
+The chain is by construction, and the river is only its last link: the **SubagentStop hook
+banks** each lane's first user-role message verbatim to `briefs/agent-<id>.md` → the
+**receipt points** at it (` | brief: briefs/agent-<id>.md` on the `COORD-AGENTS.md` line) →
+**the river marks it**. A tick whose pointer resolves to a real file inside the root becomes
+a **commission**: a ruled-sheet glyph on its own row below the tick line, on a stem back to
+the waterline, with a purple `COMMISSIONS — N lanes whose exact prompt is banked on disk`
+banner beside it and a legend entry; its hover card carries the first ~200 characters of the
+prompt (read from the file at render time, zero model tokens as ever) plus the full path to
+the rest. Everything else stays a plain tick and says why, in the card's own words: a
+receipt with **no pointer** reads *"not banked (pre-v3.13 lane)"*, a pointer whose **file is
+gone** names the dead path. `counts.commissions` and the `N/M lanes commissioned` figure on
+the summary line are the number to quote. Two refusals hold this honest: the brief is never
+summarized (it is the prompt or it is nothing), and a pointer that resolves **outside the
+root is refused unread** — `COORD-AGENTS.md` is machine-written text, not a capability.
 
 **No findings ledger? It degrades, and says so.** With no `archive/findings.jsonl` the river
 is built from the COORD lines themselves — every node marked `inferred: true`, its kind and
@@ -346,6 +365,13 @@ explicit `/graph` invocations only.
   means nothing in `router.sh` or oracle's intake bullet points there — which is the correct
   design for `/eval`, `/spend`-style instruments and for anything a user should invoke
   deliberately. Read the band as a list of doors that need a key, not a list of orphans.
+- **A plain tick is not proof a lane was uncommissioned — only that no readable brief is
+  pointed at.** Pre-v3.13 receipts carry no pointer at all, and a `briefs/` directory that
+  was cleaned up leaves live pointers dead. The card says which of the two it is; never
+  report an uncommissioned tick as a lane that was *given* no brief.
+- **A commission is the prompt, never a summary of it.** The card shows the file's first
+  ~200 characters verbatim and the path to the rest. If you need to characterise what a lane
+  was asked, read the file — do not paraphrase the card and present it as the commission.
 - **"Rests on refuted" is a hole in the citation graph, not a verdict.** It says a live
   record cites ground a refutation took out. One hop, never transitive, and the record may
   still be right for other reasons. Read it before you retract it.
@@ -390,7 +416,11 @@ view you did not see.
   external assets, a real render-check 200, and all three query verbs. Its phase G pins the
   **rests-on-refuted** rule against a purpose-built pair: a record citing the refuted ground
   *before* the tombstone lands and one citing it *after* are both flagged, while the refuter
-  itself and an untouched control pair stay clean. Exit 0 = all held.
+  itself and an untouched control pair stay clean. Its phase H pins **commissions** across
+  all four states — pointer + file (glyph, prompt head, path), pointer with no file, no
+  pointer, and a pointer escaping the root (refused unread, its content proved absent from
+  the page) — plus the widened bottom bank, byte-identical re-render with brief text inlined,
+  and an edited brief actually reaching the next render. Exit 0 = all held.
 - `scripts/journey-fixture.sh` — the journey asserted against **the real repo**, because the
   journey draws this harness's own door: every skill directory on disk owns exactly one node,
   every `SKILL=` verb the router can emit lands as a routed skill, routed + by-name-only
@@ -413,6 +443,9 @@ view you did not see.
   said the kinds and relations were inferred before quoting a single count.
 - If you called a stone "rests on refuted", you said it is one hop over the record's own
   links — not a verdict on the record, and not transitive.
+- If you quoted a commission count, you said what the *other* ticks are: pointer-less
+  receipts, dead pointers, or both. An uncommissioned tick is a gap in the record, not
+  evidence that a lane went uncommissioned.
 - If you reported a journey, you repeated its disclosures (which skills had no chains
   section, which had one nothing could be parsed from) before quoting the chain count, and
   you did not present a drawn arrow as evidence of runtime behaviour.

@@ -6,6 +6,10 @@ Last updated: 2026-07-25
 - Fable discipline every session — the hook anchors it, `/fable-mode` is the contract.
 - Offload policy: the SessionStart echo is operative; `/agentswarm` is the arrangement.
 - `/spend report` exits 4 on a routing violation; `/archivist` before research fan-outs.
+- **Commission transparency is a core value (owner, 2026-07-27):** every agent's prompt
+  is user-visible — named at dispatch, banked by construction at `briefs/agent-<id>.md`
+  (SubagentStop hook), marked graphically in the river. The commission is never hidden;
+  scope-drift is disclosed at delivery (fable-mode 12a).
 
 ## Project
 - This repo IS the `notrest` marketplace: `plugins/notrest/` (28 skills); manifests
