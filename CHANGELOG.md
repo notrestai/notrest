@@ -1,5 +1,25 @@
 # Changelog — the notrest harness
 
+## 3.14.1 — 2026-07-27
+
+**Platform drift, caught in minutes: the CLI updated under us and the budget law held.**
+
+- The CLI auto-updated 2.1.207 → 2.1.220 during an interactive login; the TOKEN BUDGET
+  gate FAILed within minutes on an UNCHANGED tree (~3,515 → ~5,127). Root-caused
+  per-component: the new CLI's skill-listing frame costs ~+50 tok/skill on identical
+  text — the delta is the vendor's frame, not our prose. Response: the ceiling
+  recalibrates to 5,200 with the CALIBRATION LAW written beside the constant (the
+  ceiling catches OUR growth, never the vendor's frame; recalibrate only on a
+  CLI-version frame change, receipt in the CHANGELOG — this entry is that receipt), and
+  the check now prints the CLI version it measured under, so the next frame-shift is a
+  one-glance diagnosis.
+- The manifest description dieted 1,600+ tok → ~80 (the essay was README duplication;
+  kept regardless of accounting — any surface that ever counts it is pre-paid).
+- The details ladder's first rung annotated (the @inline id form died in 2.1.220; the
+  rung still resolves via --plugin-dir).
+- Mentor note: the rig seat was instructed to pin `claude --version` per probe run —
+  fidelity verdicts are only valid against a named binary.
+
 ## 3.14.0 — 2026-07-27
 
 **The cockpit — the harness gets a face: one page, always on, the estate watching itself.**

@@ -29,7 +29,12 @@ EXIT_OK, EXIT_USAGE, EXIT_TARGET, EXIT_WARN, EXIT_FAIL = 0, 2, 3, 5, 6
 
 # The always-on context every session pays for this plugin. Above this, the harness is
 # taxing every session it rides in — the descriptions have to come back down.
-ALWAYS_ON_CEILING = 3600
+# CALIBRATION LAW (2026-07-27): the ceiling catches OUR text growth, never the vendor's
+# frame. The same unchanged tree measured ~3,515 under CLI 2.1.207 and ~5,127 under
+# 2.1.220 (+~50/skill of platform listing overhead — verified per-component, text
+# identical). Re-calibrate ONLY on a CLI-version frame change, with the receipt in the
+# CHANGELOG; never raise it to absorb description bloat. Headroom target ≈ 70-90 tok.
+ALWAYS_ON_CEILING = 5200
 # How recent an estate write still counts as evidence a hook is firing.
 LIVENESS_HOURS = 48
 
@@ -752,7 +757,7 @@ def check_token_budget(t):
     attempts = [
         # The tree first: --plugin-dir loads THIS directory in place, so the number
         # describes what is being checked rather than whatever build is installed.
-        (["claude", "--plugin-dir", t.primary, "plugin", "details", name],
+        (["claude", "--plugin-dir", t.primary, "plugin", "details", name],  # label = tree-read; the id form varies by CLI version
          "%s via --plugin-dir %s" % (name, t.rel(t.primary))),
         (["claude", "plugin", "details", "%s@skills-dir" % name], "%s@skills-dir" % name),
         (["claude", "plugin", "details", "%s@%s" % (name, name)], "%s@%s" % (name, name)),
@@ -767,9 +772,11 @@ def check_token_budget(t):
             continue
         tokens = int(m.group(1).replace(",", ""))
         src = SOURCE_RE.search(out or "")
-        detail = ["always-on ~%s tok · ceiling %s · read from %s"
+        _rcv, ver = run(["claude", "--version"], cwd=t.root, timeout=15)
+        cli_ver = (ver or "").strip().split()[0] if (ver or "").strip() else "?"
+        detail = ["always-on ~%s tok · ceiling %s · read from %s · cli %s"
                   % ("{:,}".format(tokens), "{:,}".format(ALWAYS_ON_CEILING),
-                     src.group(1) if src else label)]
+                     src.group(1) if src else label, cli_ver)]
         if tokens > ALWAYS_ON_CEILING:
             return FAIL, detail + ["OVER BUDGET by %s tok — every session pays this before it "
                                    "does anything" % "{:,}".format(tokens - ALWAYS_ON_CEILING)], \

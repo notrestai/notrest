@@ -55,3 +55,11 @@
 [2026-07-26 23:10Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a931d2ff4294dcbb5
 [2026-07-26 23:14Z] lane=subagent model=claude-opus-5 tokens=10824847 grade=observed purpose="auto-receipt: Confirmed defect — `watch.py:655` stamps **local** time with" agent=a92ec90f53d50c930
 [2026-07-27 02:54Z] lane=subagent model=claude-opus-5 tokens=75231740 grade=observed purpose="auto-receipt: Cockpit is built, live-verified, and every port reaped. ## R" agent=ac2505bf7898b9f71
+[2026-07-27 04:45Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a8df28c50d7849de5
+[2026-07-27 04:52Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a68a7bc9f11c4f91b
+[2026-07-27 04:53Z] lane=subagent model=claude-opus-5 tokens=7424721 grade=observed purpose="auto-receipt: `docs/RIG.md` written — 441 lines, working tree only, no com" agent=a0217a5c89f2535a4
+[2026-07-27 04:54Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=aadfb0a85ff23b29e
+[2026-07-27 05:01Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ab8f6068b85277dd9
+[2026-07-27 05:08Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ad6d31cdcbdd9b0c8
+[2026-07-27 05:17Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a446249afafa31742
+[2026-07-27 05:20Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a8646c99af0d4522d
