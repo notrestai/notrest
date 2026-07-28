@@ -61,6 +61,28 @@ it is authoritative; if the two disagree about a number, the room wins.
    your recommendation. Everything else you gate yourself — an arrangement that forwards
    every decision has just added a hop.
 
+## Writing a commission — the omissions that bite
+
+A brief is a boundary. The failures below came from commissions that were *correct in what
+they said* and silent on what mattered; each is now a line you write **explicitly**, every
+time, because a lane obeys the brief it was given and not the one you meant.
+
+- **Destructive-capable tools are exercised by lanes ONLY against scratch roots.** The seat
+  runs them against the real estate, against an explicitly named subject. Earned
+  2026-07-27: a brief said "no network, no commits" — both honored — and a lane building a
+  *purge* tool then ran it against the live estate to test it. The harness's own tool-policy
+  gate stopped it and the seat verified independently that nothing landed, but the omission
+  was in the commission: a tool whose whole job is deletion needs its target named out loud.
+- **Name the scratch root, don't imply it.** "Use a scratch dir" is a hint; `--root <path>`
+  in the brief is a boundary.
+- **Say which files are the lane's and which are read-only** — one-writer collisions are
+  cheap to prevent in a sentence and expensive to untangle in a diff.
+- **State the scope narrowing in the brief AND require it in the return** (12a): a lane that
+  narrows silently produces work you cannot audit without re-reading everything.
+- **Forbid the claim you cannot check.** If the lane cannot verify a thing (a live external
+  call, a cloud state), say so and tell it what to record instead — `unverified` is a
+  deliverable; a confident wrong claim is a defect.
+
 ## Correction runs both ways — the law of this skill
 
 **A mentor who cannot be corrected is a bottleneck.** The builder is closer to the code
