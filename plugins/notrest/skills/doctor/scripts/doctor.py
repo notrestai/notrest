@@ -17,6 +17,7 @@ Exit codes: 0 all pass · 5 warnings only · 6 any fail · 3 target unusable · 
 
 import argparse
 import datetime
+import glob
 import json
 import os
 import re
@@ -131,6 +132,13 @@ def skills_dir_links():
     return out
 
 
+def listdir(path):
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
+
+
 def installed_rows(name):
     """[(install_id, version)] for every installed plugin whose id is '<name>@...'."""
     inst, err = jload(os.path.join(config_dir(), "plugins", "installed_plugins.json"))
@@ -144,6 +152,89 @@ def installed_rows(name):
             if isinstance(e, dict):
                 rows.append((key, e.get("version")))
     return rows
+
+
+def installed_all():
+    """[(install_id, version, install_path)] for EVERY installed plugin, whatever its name.
+
+    installed_rows() is name-keyed by design — it answers 'has anything taken MY name'.
+    That question is blind to a shadow that calls itself something else, which is half of
+    T13: the verbs collide whether or not the names do. This is the verb-keyed view."""
+    inst, err = jload(os.path.join(config_dir(), "plugins", "installed_plugins.json"))
+    if err or not isinstance(inst, dict):
+        return []
+    rows = []
+    for key, entries in (inst.get("plugins") or {}).items():
+        for e in entries or []:
+            if isinstance(e, dict):
+                rows.append((key, e.get("version"), e.get("installPath")))
+    return rows
+
+
+def skill_names_at(plugin_dir):
+    """The skill VERBS a plugin dir ships — <dir>/skills/<name>/SKILL.md.
+
+    An absent path answers nothing rather than falling back to a RELATIVE 'skills' read of
+    whatever directory doctor happens to be standing in."""
+    if not plugin_dir:
+        return set()
+    base = os.path.join(plugin_dir, "skills")
+    return set(n for n in listdir(base) if os.path.isfile(os.path.join(base, n, "SKILL.md")))
+
+
+# ── the desktop app's provisioning store (a different estate from the CLI's) ───────────
+def app_support_dirs():
+    """Candidate roots for the DESKTOP APP's support dir. $CLAUDE_APP_SUPPORT_DIR wins —
+    that is the seam the fixture uses to hand this check a machine of its own."""
+    env = os.environ.get("CLAUDE_APP_SUPPORT_DIR")
+    if env:
+        return [env]
+    home = os.path.expanduser("~")
+    out = [os.path.join(home, "Library", "Application Support", "Claude"),  # macOS
+           os.path.join(home, ".config", "Claude")]                        # linux
+    if os.environ.get("APPDATA"):
+        out.append(os.path.join(os.environ["APPDATA"], "Claude"))          # windows
+    return out
+
+
+def app_stores():
+    """Every provisioning store on this machine — [] when the desktop app is not here."""
+    return [s for s in (os.path.join(b, "local-agent-mode-sessions") for b in app_support_dirs())
+            if os.path.isdir(s)]
+
+
+# Both shapes were verified on a live machine (2026-07-27), not inferred:
+#   <store>/<uuid>/<uuid>/rpm/<plugin_id>/      marketplace packs, indexed by rpm/manifest.json
+#   <store>/skills-plugin/<uuid>/<uuid>/        the app's own bundled pack
+APP_PACK_GLOBS = ((os.path.join("*", "*", "rpm", "*"), "rpm"),
+                  (os.path.join("skills-plugin", "*", "*"), "skills-plugin"))
+
+
+def app_packs(stores):
+    """Every pack the desktop app has provisioned -> [{path,name,version,skills,hooks,shape}].
+
+    READ ONLY, and deliberately so: this is another application's state. doctor reports it
+    and never repairs it — there is no CLI verb that reaches this store, and writing into
+    another app's files is not a health check."""
+    packs, seen = [], set()
+    for store in stores:
+        for pattern, shape in APP_PACK_GLOBS:
+            for d in sorted(glob.glob(os.path.join(store, pattern))):
+                real = os.path.realpath(d)
+                if real in seen or not os.path.isdir(d):
+                    continue
+                names = skill_names_at(d)
+                if not names:
+                    continue                      # manifest.json, artifacts, session dirs
+                seen.add(real)
+                meta, _ = jload(os.path.join(d, ".claude-plugin", "plugin.json"))
+                meta = meta if isinstance(meta, dict) else {}
+                packs.append({"path": d, "shape": shape,
+                              "name": meta.get("name") or os.path.basename(d),
+                              "version": meta.get("version"),
+                              "skills": sorted(names),
+                              "hooks": os.path.isfile(os.path.join(d, "hooks", "hooks.json"))})
+    return packs
 
 
 def head_version(t, manifest_path):
@@ -631,6 +722,25 @@ def check_estate(t):
     return status, detail, fix
 
 
+# ── the two ladders (T16) — a fix that names the rung it bottomed out at ──────────────
+# THE RUNTIME LADDER (INSTALL FRESHNESS), four rungs, climbed in this order:
+#   1 a runtime surface exists at all   2 the name is free   3 the surface resolves to
+#   THIS tree   4 what runs here is what everyone else sees.
+# THE SHADOW LADDER (both shadow findings), three rungs by WHERE the shadow lives:
+#   1 exact name, CLI-installed   2 a different name carrying our verbs, CLI-installed
+#   3 an app-side pack in the desktop app's store — no CLI verb reaches it.
+# A status without a rung tells you something is wrong; the rung tells you which remedy
+# is the right one, and they are not interchangeable (uninstall vs repoint vs commit vs a
+# toggle in another application's panel).
+RUNG = {1: "rung 1 of 4 (a runtime surface exists)",
+        2: "rung 2 of 4 (the name is free)",
+        3: "rung 3 of 4 (the surface resolves to THIS tree)",
+        4: "rung 4 of 4 (what runs here is what everyone else sees)"}
+SHADOW_RUNG = {1: "shadow ladder rung 1 of 3 (exact name, CLI-installed)",
+               2: "shadow ladder rung 2 of 3 (a different name, the same verbs, CLI-installed)",
+               3: "shadow ladder rung 3 of 3 (an app-side pack, not a CLI install)"}
+
+
 def check_install_freshness(t):
     """Which build is the session actually running — and is it this one?
 
@@ -650,20 +760,60 @@ def check_install_freshness(t):
     links = skills_dir_links()
     in_place = [l for l in links if l[1] == primary_real]
     if in_place:
-        return freshness_skills_dir(t, name, tree_v, in_place[0])
+        status, detail, fix = freshness_skills_dir(t, name, tree_v, in_place[0])
+    else:
+        misdirected = [l for l in links if os.path.basename(l[0]) == name]
+        if misdirected:
+            link, target = misdirected[0]
+            status, detail, fix = WARN, [
+                "runtime=skills-dir(foreign tree) · tree=v%s · %s -> %s"
+                % (tree_v, tilde(link), target),
+                "the '%s' skills-dir link does NOT resolve to this repo (%s) — the session "
+                "loads that other copy in place, so nothing checked here is what runs"
+                % (name, primary_real)], \
+                ("%s — the link points at another copy: ln -sfn %s %s   (then restart)"
+                 % (RUNG[3], primary_real, link))
+        else:
+            status, detail, fix = freshness_cache(t, name, tree_v)
 
-    misdirected = [l for l in links if os.path.basename(l[0]) == name]
-    if misdirected:
-        link, target = misdirected[0]
-        return WARN, ["runtime=skills-dir(foreign tree) · tree=v%s · %s -> %s"
-                      % (tree_v, tilde(link), target),
-                      "the '%s' skills-dir link does NOT resolve to this repo (%s) — the session "
-                      "loads that other copy in place, so nothing checked here is what runs"
-                      % (name, primary_real)], \
-            ("repoint the link at this repo: ln -sfn %s %s   (then restart)"
-             % (primary_real, link))
+    return overlap_shadow(t, name, status, detail, fix)
 
-    return freshness_cache(t, name, tree_v)
+
+def overlap_shadow(t, name, status, detail, fix):
+    """T13, second half: a shadow that calls itself something else.
+
+    The name-keyed question ('is anything installed as notrest?') answers only the case
+    where the impostor wears our name. What actually shadows a session is the VERB: two
+    plugins shipping skills/oracle collide whether or not their plugin names ever match.
+    Reported as WARN and never FAIL — an overlapping install may be perfectly wanted; what
+    is not acceptable is not knowing it is there."""
+    ours = set()
+    for p in t.plugins:
+        ours.update(os.path.basename(d) for d in t.skill_dirs(p))
+    if not ours:
+        return status, detail, fix
+
+    hits, selves = [], set(os.path.realpath(p) for p in t.plugins)
+    for key, ver, path in installed_all():
+        if key.split("@")[0] == name:
+            continue                              # the exact-name case, already rung 2
+        if path and os.path.realpath(path) in selves:
+            continue                              # --plugin aimed AT an install is not a shadow
+        shared = sorted(skill_names_at(path) & ours)
+        if shared:
+            hits.append((key, ver, shared))
+    if not hits:
+        return status, detail, fix
+
+    for key, ver, shared in hits:
+        detail.append("SHADOW CANDIDATE (by verbs, not by name) — %s v%s carries %d of this "
+                      "tree's %d verbs: %s" % (key, ver or "?", len(shared), len(ours),
+                                               ", ".join(shared)))
+    ov_fix = ("%s — claude plugin uninstall %s%s if it is not wanted, or keep it knowingly and "
+              "expect the verb to resolve twice; a name-keyed check never sees this one"
+              % (SHADOW_RUNG[2], hits[0][0],
+                 " (and %d other overlapping install(s))" % (len(hits) - 1) if len(hits) > 1 else ""))
+    return WARN, detail, (fix + "  ·  " + ov_fix) if fix else ov_fix
 
 
 def freshness_skills_dir(t, name, tree_v, link):
@@ -686,9 +836,10 @@ def freshness_skills_dir(t, name, tree_v, link):
                       "skills-dir copy, so this tree is NOT the build the session loaded"
                       % (", ".join("v%s" % v for _k, v in shadow),
                          ", ".join(k for k, _v in shadow)))
-        fix = ("claude plugin uninstall %s   (an installed plugin takes the name; until it is "
-               "gone, %s is ignored) — then restart"
-               % (shadow[0][0], tilde(link_path)))
+        fix = ("%s — the name is taken by an installed plugin: claude plugin uninstall %s   "
+               "then restart (an installed plugin outranks the link, so until it is gone %s "
+               "is ignored) · %s"
+               % (RUNG[2], shadow[0][0], tilde(link_path), SHADOW_RUNG[1]))
 
     if head_v is None:
         detail.append("tree-vs-HEAD comparison UNREAD: %s" % note)
@@ -696,9 +847,9 @@ def freshness_skills_dir(t, name, tree_v, link):
         status = WARN
         detail.append("UNCOMMITTED RELEASE — the running tree says v%s, HEAD still says v%s"
                       % (tree_v, head_v))
-        fix = fix or ("commit the release (git add -A && git commit) — in skills-dir mode the "
-                      "session runs the WORKING TREE, so every reader at HEAD sees a build that "
-                      "does not exist on this machine")
+        fix = fix or ("%s — the release is bumped but uncommitted: git add -A && git commit "
+                      "(in skills-dir mode the session runs the WORKING TREE, so every reader "
+                      "at HEAD sees a build that does not exist on this machine)" % RUNG[4])
     elif status == PASS:
         detail.append("tree and HEAD agree at v%s — the in-place runtime is the committed build"
                       % tree_v)
@@ -708,8 +859,8 @@ def freshness_skills_dir(t, name, tree_v, link):
 def freshness_cache(t, name, repo_v):
     clone = os.path.join(config_dir(), "plugins", "marketplaces", name)
     if not os.path.isdir(clone):
-        return SKIP, ["no skills-dir link and no marketplace clone at %s — nothing on this "
-                      "machine claims to run %s" % (tilde(clone), name)], None
+        return SKIP, ["%s: no skills-dir link and no marketplace clone at %s — nothing on "
+                      "this machine claims to run %s" % (RUNG[1], tilde(clone), name)], None
 
     clone_v = None
     for cand in (os.path.join(clone, "plugins", name, ".claude-plugin", "plugin.json"),
@@ -728,12 +879,71 @@ def freshness_cache(t, name, repo_v):
     seen = [v for v in (clone_v, installed_v) if v]
     if not seen:
         return WARN, detail + ["neither the clone nor installed_plugins.json states a version"], \
-            "claude plugin marketplace update %s && claude plugin update %s@%s" % (name, name, name)
+            ("%s — the running version is UNREAD, so drift cannot be ruled out: claude plugin "
+             "marketplace update %s && claude plugin update %s@%s"
+             % (RUNG[4], name, name, name))
     if all(v == repo_v for v in seen):
         return PASS, detail + ["installed build matches the repo"], None
     return WARN, detail + ["INSTALL DRIFT — the session is running a different build than this repo"], \
-        ("claude plugin marketplace update %s && claude plugin update %s@%s   (then restart; the "
-         "hook's git self-update no-ops on a marketplace-cache install)" % (name, name, name))
+        ("%s — the installed copy is not this repo: claude plugin marketplace update %s && "
+         "claude plugin update %s@%s   (then restart; the hook's git self-update no-ops on a "
+         "marketplace-cache install)" % (RUNG[4], name, name, name))
+
+
+def check_shadow_appside(t):
+    """The shadow doctor could not see: the DESKTOP APP's own provisioning store.
+
+    Every other surface doctor reads belongs to the CLI — <config>/skills, the marketplace
+    clone, installed_plugins.json. The desktop app provisions its own packs into a store
+    the CLI never mentions, and a stale clone of THIS plugin (oracle-suite v2.13.0, 19 name
+    collisions, four live hooks) served sessions out of it for a week while every CLI-side
+    check reported healthy. Four shadow incidents paid for this check.
+
+    WARN-GRADE BY CONSTRUCTION, never FAIL: it reports another application's state, which
+    this repo does not control and doctor must not touch. A collision is a fact worth
+    knowing, not a broken harness."""
+    ours = set()
+    for p in t.plugins:
+        ours.update(os.path.basename(d) for d in t.skill_dirs(p))
+    if not ours:
+        return SKIP, ["no skills under this target — nothing an app-side pack could collide "
+                      "with"], None
+
+    stores = app_stores()
+    if not stores:
+        return SKIP, ["no desktop-app provisioning store on this machine (looked for "
+                      "local-agent-mode-sessions under: %s) — this check is honestly silent "
+                      "on a machine that does not run the desktop app"
+                      % "; ".join(tilde(b) for b in app_support_dirs())], None
+
+    packs = app_packs(stores)
+    head = "%d app-side pack(s) in %d store(s) · this tree ships %d verbs · store: %s" \
+           % (len(packs), len(stores), len(ours), "; ".join(tilde(s) for s in stores))
+    if not packs:
+        return SKIP, [head, "the store exists but holds no pack with a skills/ dir — nothing "
+                            "to intersect"], None
+
+    colliding = [(p, sorted(set(p["skills"]) & ours)) for p in packs]
+    colliding = [(p, c) for p, c in colliding if c]
+    if not colliding:
+        return PASS, [head, "no app-side pack carries any of this tree's skill names"], None
+
+    detail = [head]
+    for p, c in colliding:
+        detail.append("APP-SIDE SHADOW — pack '%s' v%s (%s shape) carries %d of this tree's "
+                      "verbs and %s: %s"
+                      % (p["name"], p["version"] or "?", p["shape"], len(c),
+                         "REGISTERS HOOKS (hooks/hooks.json)" if p["hooks"]
+                         else "registers no hooks", ", ".join(c)))
+        detail.append("    at %s" % tilde(p["path"]))
+    detail.append("provisioned is not proven active — the store records provisioning, not the "
+                  "app's live per-pack toggle, so a pack disabled in the panel can still "
+                  "appear here; doctor reports what the filesystem shows and nothing more")
+    return WARN, detail, \
+        ("%s — disable the pack in the desktop app's plugin panel, then start a fresh session. "
+         "NO CLI VERB REACHES THIS STORE: `claude plugin uninstall` only knows the CLI's own "
+         "installs, and doctor will not write into another application's files"
+         % SHADOW_RUNG[3])
 
 
 ALWAYS_ON_RE = re.compile(r"Always-on:\s*~?\s*([\d,]+)\s*tok", re.I)
@@ -933,6 +1143,7 @@ CHECKS = [
     ("HOOKS FIRED", check_hooks_fired),
     ("ESTATE", check_estate),
     ("INSTALL FRESHNESS", check_install_freshness),
+    ("SHADOW-APPSIDE", check_shadow_appside),
     ("TOKEN BUDGET", check_token_budget),
     ("GITIGNORE", check_gitignore),
     ("RENDER SURFACES", check_render_surfaces),

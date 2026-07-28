@@ -16,7 +16,7 @@ The runbook is a **file** — it has to survive the session that wrote it, becau
 ## Inputs
 
 - **The plan (required).** Prefer the store: `index.py find "<goal>"`, then `index.py track --kind decision` — the `stepbystep` **decision record** gives the plan shape, the convergence status, and the hinge; its linked `[ONE-WAY]` finding records give the irreversible steps with their "done when" checks and rollbacks. Read the plan prose too if it is still in this session (the per-step deep research has the implementation detail that makes commands accurate), and read a legacy `action-plan/{topic}Dossier.md` if one exists from an older run. Use `$ARGUMENTS`/the text after `/actionplan` to name the goal. If no plan record and no plan document is found, ask the user for one — or suggest running `/stepbystep` first (or `/director stepbystep → actionplan`). Don't invent a plan.
-- **`map.md` (optional, strongly helpful).** If the user provides a `map.md`, read it first — it describes the environment (machines/hosts, addresses, OS, paths, topology, connectivity). Use it to fill in concrete values so fewer questions are needed.
+- **`map.md` (optional, strongly helpful).** If the user provides a `map.md`, read it first — it describes the environment (machines/hosts, addresses, OS, paths, topology, connectivity). Use it to fill in concrete values so fewer questions are needed. If they don't have one, hand them `references/map-template.md` — the shape this skill reads (hosts, services, paths, connectivity, tooling, known-unknowns) with a filled example, and the one law that keeps it safe to hold: **credentials go in by reference, never by value.** Name the vault item, the env var, the key file or the person; a `map.md` that needs rotating is a liability, not an input. Asking for the map is cheaper than asking twelve questions in Phase 2.
 
 ## Quick mode (`--quick`)
 If the invocation includes `--quick` (or a clear equivalent — "quick", "brief", "no files", "just the summary"), run lightweight instead of the full workflow:
@@ -74,6 +74,26 @@ Keep prose between blocks minimal — the experience should be copy, run, verify
 
 ### Phase 4 — Validate the runbook (consistency pass) → (reasoning, then the record)
 Dry-run it mentally end to end: are blocks in correct execution order? Does each step's prerequisites get met by an earlier step? Is every placeholder defined in the values table? Does every destructive step have a ⛔ warning and a backup/restore note? Any secret hardcoded? Any step missing its verify? Fix what this finds, and note the check in the background.
+
+### Phase 5 — Lint the runbook → (the gate, run before the record is emitted)
+Phase 4 is judgement, and judgement is the thing that reads its own work charitably at the end of a long session. This phase is mechanical. Run it over the written file **before** the summary and **before** the record:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/actionplan/scripts/runbook_lint.py" runbook/{topic}Runbook.md
+```
+
+(Loose install: `scripts/runbook_lint.py` relative to this skill folder.) Zero model tokens. It reads the file; it never edits it and it never executes a command out of it — `bash -n` *parses* a copy of each block and does not run it, so the "writes, never executes" law holds. What it checks:
+
+- every fenced `bash`/`sh`/`zsh` block parses under `bash -n`, and — when `shellcheck` is installed — its error-severity findings too. If shellcheck is absent the run prints that it degraded and keeps going: its absence is never a failure here, and `bash -n` still ran.
+- every step keeps a **Verify** line and a **Rollback** line. An explicit `Rollback: none — <restore path>` counts; silence does not.
+- every phase heading names the host to run it on.
+- every `<PLACEHOLDER>` used appears in the values table.
+- every destructive op — `rm -rf`, `DROP`, `dd`, `mkfs`, `truncate`, a redirect onto a device, `kubectl delete`, `git push --force` — carries its ⛔ at or above its line.
+- nothing in the file matches a credential shape. The secret classes are **chatroom's** (`chatroom/scripts/room.py`), imported rather than re-declared — one list, one place, because two lists drift and the one that drifts is the one that misses the key. A match names the class only; the matching text is never echoed. If that file is unreachable (a loose install), the output says the screen is **UNAVAILABLE** rather than passing silently.
+
+Exit **0** clean · **5** findings, each printed as `file:line` with the rule it broke · **2** usage. **Fix what it finds and re-run.** A finding you consciously leave — an unmarked command the operator insists on, a placeholder whose source is genuinely unknown — is **disclosed in the record's statement**, in words, naming the rule. A runbook delivered with a known lint finding and no disclosure is exactly the failure this gate exists to prevent.
+
+Fixture: `bash plugins/notrest/skills/actionplan/scripts/fixture.sh` — exit 0 = every assertion held. It lints a canned good runbook, one canned runbook per way of breaking the laws above, and both honest degradations (shellcheck absent, chatroom's list unreachable).
 
 ## The runbook — `runbook/{topic}Runbook.md`
 
@@ -151,6 +171,7 @@ Ordered. Run top to bottom. Each step says where to run it and how to confirm it
 
 **One `kind=result` record, written after the file, `relation=toward`.** Its job is to make the runbook findable and to say honestly what state it is in — a runbook with four open placeholders is not the same artifact as one that runs. The statement carries: what the runbook does, how many phases and destructive steps it holds, how many placeholders are still unfilled, and the environment it assumes. **The runbook's path is evidence** (`type=path`) — that is the link between the store and the deliverable, so it is never omitted and never paraphrased.
 
+- **The lint result rides in the statement.** `runbook_lint.py` exited 0, or the statement names what it found and why that finding stands — the rule, the step, the reason. The lint runs *before* the record; a record written over an unlinted file is a claim nobody checked, and one written over a file whose findings were dropped is worse.
 - `links` names the `stepbystep` decision record this expands (and its `[ONE-WAY]` findings, where they became ⛔ steps) — the chain from plan to commands should be walkable in one `track`.
 - Verified command syntax rides as `[cited]` url evidence; a flag you could not confirm against the user's exact version rides as `[unverified]` and says so in the statement.
 - If a later run rewrites the runbook for the same goal, `index.py supersede F-<old> --by F-<new>` — two live runbooks for one job is how the wrong one gets run.
@@ -177,18 +198,19 @@ The `add` prints its `F-<n>`. A non-zero exit means the record was turned away w
 
 ## Self-check before finishing
 Before declaring done, verify and fix any miss:
+- **`runbook_lint.py` exited 0 on the delivered file** — or every finding it printed is disclosed in the record's statement with its rule. It mechanizes the items marked ✓ below (and the shell syntax of every block); run it rather than reading for them.
 - **Records validated at the door (`add` exited 0)** — the id was printed by the script, nothing hand-appended, and the record's `path` evidence is the runbook's real relative path.
 - Every command block is copy-paste runnable and in correct execution order.
-- No invented hosts/paths/ports/credentials — all are real (from map.md/answers) or marked placeholders defined in the values table.
-- Every destructive/irreversible step has a ⛔ warning and a backup/restore note; no secrets are hardcoded.
-- Every step carries a "verify" check.
+- ✓ No invented hosts/paths/ports/credentials — all are real (from map.md/answers) or marked placeholders defined in the values table.
+- ✓ Every destructive/irreversible step has a ⛔ warning and a backup/restore note; no secrets are hardcoded.
+- ✓ Every step carries a "verify" check — and a rollback, or an explicit "no rollback" with the restore path.
 - Offline constraints respected; artifacts needing pre-staging are flagged.
 - Version/syntax-sensitive commands were verified or flagged to confirm.
 - All open unknowns/assumptions are listed at the top.
 
 ## Finishing up
 
-Write `runbook/{topic}Runbook.md` (the deliverable), then emit the `kind=result` record that points at it. Give the user a short chat summary: what the runbook accomplishes, the environment it assumes, the most dangerous step to watch, any values they still need to fill, the path to the file, and the record id. Don't paste the runbook into chat. Offer to fill in placeholders once they share the missing details, or to expand any phase further — a rewritten runbook `supersede`s its old record rather than leaving two live.
+Write `runbook/{topic}Runbook.md` (the deliverable), run `scripts/runbook_lint.py` over it and fix what it finds, then emit the `kind=result` record that points at it — in that order, so the record describes a file that passed the gate. Give the user a short chat summary: what the runbook accomplishes, the environment it assumes, the most dangerous step to watch, any values they still need to fill, the path to the file, and the record id. Don't paste the runbook into chat. Offer to fill in placeholders once they share the missing details, or to expand any phase further — a rewritten runbook `supersede`s its old record rather than leaving two live.
 
 ## Notes on tone and rigor
 

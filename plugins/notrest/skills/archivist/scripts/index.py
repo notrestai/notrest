@@ -89,6 +89,22 @@ PROJECTS = "oracle-projects.txt"      # graph.py's registry: one absolute root p
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 # THE CITATION GRAMMAR: `F-<n>` is this store; `<project>:F-<n>` is the library's.
 REC_REF_RE = re.compile(r"^(?:([A-Za-z0-9][A-Za-z0-9._-]*):)?F-(\d+)$")
+# THE QUALIFICATION RULE (F-19), in PROSE. Once two estates each number their own
+# records, a bare `F-<n>` in a sentence is AMBIGUOUS — the same token names different
+# records in different stores, so a re-recorded "amends F-9" resolves to the wrong
+# decision in the wrong house. Every token this finds is a candidate; the lookarounds
+# are what keep it honest, and each one was earned against the live estate:
+#   lookbehind `[A-Za-z0-9._:/-]` — `:` is the whole point (`rig:F-9` is ALREADY
+#     qualified and must never be flagged); the rest keep `F-<n>` from matching
+#     inside a bigger token (`archive/F-9`, `v1.F-9`, a mid-word `xF-9`).
+#   lookahead `[0-9A-Za-z_-]` — `F-9x` is not a record id, and the greedy `\d+`
+#     plus this guard means `F-93` reads as 93, never as 9.
+#   lookahead `\.[0-9A-Za-z]` — a trailing period is SENTENCE, not identifier:
+#     `F-9.` at the end of a clause is a real citation and must be caught, while
+#     `F-9.md` and `F-1.2` are not ids at all. (The first draft excluded every `.`
+#     and silently missed every id that ended a sentence — a third of the live
+#     estate's mentions. The regex earned this branch.)
+BARE_REF_RE = re.compile(r"(?<![A-Za-z0-9._:/-])F-(\d+)(?![0-9A-Za-z_-])(?!\.[0-9A-Za-z])")
 
 # ---------------------------------------------------------------- the storeys
 CONCEPTS = "concepts.jsonl"           # append-only; last line per C-<n> wins
@@ -190,6 +206,38 @@ def check_record_refs(refs, known_ids, lib, notes):
             raise Reject("record-ref-unknown",
                          "record evidence names %s:%s — that project's store holds no %s"
                          % (proj, fid, fid))
+
+
+def unqualified_refs(rec):
+    """THE QUALIFICATION RULE at WARN grade (F-19). Returns one warning per bare
+    `F-<n>` the record's PROSE names but never DECLARES — first-appearance order,
+    one per distinct id, `statement` before `ask`.
+
+    A bare token is CLEAN when the record itself declares that id: in `links`, or as
+    a `record` evidence ref in LOCAL form. `beta:F-1` declares nothing here — it is a
+    different house's id, which is exactly the confusion the law exists to prevent.
+
+    This is a NUDGE, not a gate, and it stays one on purpose: prose has legitimate
+    reasons to name a record it is not citing. The law record F-19 trips this check
+    itself — it writes `amends F-9` as an ILLUSTRATION of the ambiguity — and a rule
+    that rejected that sentence would be a rule nobody could write the law in. Only
+    `--strict-refs` promotes it to a rejection, for callers who want it enforced."""
+    declared = set(rec.get("links") or [])
+    for e in rec.get("evidence") or []:
+        if isinstance(e, dict) and e.get("type") == "record":
+            ref = (e.get("ref") or "").strip()
+            if ID_RE.match(ref):
+                declared.add(ref)
+    out, seen = [], set()
+    for field in ("statement", "ask"):
+        for m in BARE_REF_RE.finditer(rec.get(field) or ""):
+            fid = "F-%s" % m.group(1)
+            if fid in declared or fid in seen:
+                continue
+            seen.add(fid)
+            out.append("%s names %s which is not in links; cross-estate references "
+                       "must be qualified <project>:%s" % (field, fid, fid))
+    return out
 
 
 def validate(raw, known_ids, lib=None, notes=None):
@@ -451,9 +499,16 @@ def append_concepts(lib, rows):
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
-def append_record(root, raw, lib=None, notes=None):
+def append_record(root, raw, lib=None, notes=None, warns=None, strict_refs=False):
     """Validate under the lock (links are checked against what is really there),
-    assign the next id, append one line. Returns the assigned id."""
+    assign the next id, append one line. Returns the assigned id.
+
+    The qualification check runs on the VALIDATED record and BEFORE the write, so the
+    schema rules keep their precedence (a record that is malformed *and* names a bare
+    id is still turned away by the rule it actually broke) and `--strict-refs` leaves
+    the store byte-identical. `warns` is opt-in: a caller that does not pass a list
+    gets the old output shape exactly, which is why `supersede`/`refute`/`crown` are
+    untouched by this."""
     p = root / STORE
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a+", encoding="utf-8") as fh:
@@ -468,6 +523,11 @@ def append_record(root, raw, lib=None, notes=None):
                 if m:
                     top = max(top, int(m.group(1)))
             rec = validate(raw, known, lib=lib, notes=notes)
+            bare = unqualified_refs(rec)
+            if bare and strict_refs:
+                raise Reject("unqualified-record-ref", " · ".join(bare) + " [--strict-refs]")
+            if warns is not None:
+                warns.extend(bare)
             rec["id"] = "F-%d" % (top + 1)
             ordered = {f: rec[f] for f in FIELDS if f in rec}
             fh.seek(0, os.SEEK_END)
@@ -704,15 +764,19 @@ def read_payload(a):
 def cmd_add(a):
     root = pathlib.Path(a.root).resolve()
     raw = read_payload(a)
-    notes = []
+    notes, warns = [], []
     try:
-        # The id goes to stdout alone — callers capture it. Notes go to stderr.
-        rid = append_record(root, raw, lib=library_root(a), notes=notes)
+        # The id goes to stdout alone — callers capture it. Notes and warns go to
+        # stderr, so a warned record still round-trips through `out="$(… add …)"`.
+        rid = append_record(root, raw, lib=library_root(a), notes=notes,
+                            warns=warns, strict_refs=getattr(a, "strict_refs", False))
     except Reject as r:
         die(r.rule, r.detail)
     print(rid)
     for n in notes:
         sys.stderr.write("note: %s\n" % n)
+    for w in warns:
+        sys.stderr.write("warn: unqualified-record-ref — %s\n" % w)
 
 
 def select(records, a):
@@ -1580,6 +1644,8 @@ def main():
     ad.add_argument("--root", default=".")
     ad.add_argument("--library-root", default="",
                     help="the shelf (default $%s or ~/.claude/notrest-library)" % LIB_ENV)
+    ad.add_argument("--strict-refs", action="store_true",
+                    help="promote the unqualified-record-ref WARN to a rejection (exit 2)")
     ad.set_defaults(f=cmd_add)
 
     lb = sub.add_parser("library", help="the cross-project shelf: register, list, find, track")

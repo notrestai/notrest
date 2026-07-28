@@ -37,7 +37,8 @@ installed) — `doctor` HEALTHY 8/8 and `eval` PASS 0-fail on the shipped tree.
 - **Don't hand-log lanes.** The SubagentStop hook writes both `COORD-AGENTS.md` and the spend
   receipt automatically now. Manual logging double-counts.
 - **Every offloaded lane must set `model: "opus"` explicitly** — never sonnet/haiku, never
-  `subagent_type: "fork"` (forks ignore the model parameter). `spend.py report` exits 4 on a
+  `subagent_type: "fork"` (forks ignore the model parameter).
+  `python3 plugins/notrest/skills/spend/scripts/spend.py report --root .` exits 4 on a
   violation; surface it verbatim, never smooth it.
 - **The ship ritual has a compiled runtime that is NOT installed.** Ship by hand (bump both
   manifests + CHANGELOG + flow-page stamps → validate → commit → push → marketplace update +

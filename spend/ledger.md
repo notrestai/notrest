@@ -67,3 +67,9 @@
 [2026-07-27 05:37Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a4aa6705da5b0420c
 [2026-07-27 05:49Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a2b47ab45265def8a
 [2026-07-27 06:06Z] lane=subagent model=claude-opus-5 tokens=12684024 grade=observed purpose="auto-receipt: MENTOR built — working tree only, five new files under `plug" agent=abd4b66ade474da72
+[2026-07-27 19:40Z] lane=subagent model=claude-opus-5 tokens=5681313 grade=observed purpose="auto-receipt: HEAD moved (3f31044, not c35ce95) — I made no commits, so le" agent=a47c85e26054d479b
+[2026-07-27 19:51Z] lane=subagent model=claude-opus-5 tokens=11473217 grade=observed purpose="auto-receipt: Two robustness edges to close: a null `installPath` and self" agent=a016e5ddd862a7a81
+[2026-07-27 19:55Z] lane=subagent model=claude-opus-5 tokens=13396911 grade=observed purpose="auto-receipt: Now the render gate and the map pre-fill." agent=a757e416d58196113
+[2026-07-27 19:58Z] lane=subagent model=claude-opus-5 tokens=16197589 grade=observed purpose="auto-receipt: PLANNING VERBS lane delivered. Working tree only, no commits" agent=ab00a2e77c70bd787
+[2026-07-27 19:58Z] lane=subagent model=claude-opus-5 tokens=7848493 grade=observed purpose="auto-receipt: SESSIONEND lane delivered. Working tree only, no commits, no" agent=a86e0fc3075fcf5d5
+[2026-07-28 01:35Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=aef2ddc27fbfece8b

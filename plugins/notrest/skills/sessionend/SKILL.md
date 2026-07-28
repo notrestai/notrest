@@ -146,7 +146,34 @@ tell a session that did real work from one that only read, so the dedupe guard i
 two cushion lines in a row."
 
 ## Phase 4 — Verify resumability (self-check)
-Before finishing, confirm — and fix any miss:
+
+**Run the lint first — it is the mechanical floor under everything below** (script-only, zero
+model tokens):
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/sessionend/scripts/starthere_lint.py" \
+  check --file START-HERE.md --root .
+```
+Exit **0** clean · **5** warnings (advice, never a gate) · **6** a FAIL · **2** usage. **A FAIL
+means the file is not finished** — repair it and re-run before you close. Four rules, each
+naming the offending line: `NO-NEXT-ACTION` (no section says what to DO next — status, a
+read-order and a "Run it" section are not a resume instruction), `NEXT-ACTION-NOT-ACTIONABLE`
+(the section exists but carries no command and no verb-led step — status prose in a
+next-action costume), `DEAD-REFERENCE` (a cited path does not exist under `--root`, and the
+finding names where it actually lives), `NO-STATE-ANCHOR` (nothing names where the trail lives,
+so a cold reader cannot check the status it was handed against anything). `--fix-hint` prints
+the minimal skeleton that satisfies it — **prints only; sessionend writes the file, the lint
+only judges it.** `scripts/fixture.sh` is its self-test (65 asserts, zero model tokens).
+
+**Why a script sits under a prose check (record F-20, 2026-07-27).** A cross-model acceptance
+test handed a non-Claude loop a project directory and a `START-HERE.md` written an hour
+earlier. The loop stated the project's status correctly and then **could not state the next
+action — because the document never did**: it carried status where this contract promises
+*ordered resume instructions*. The file read perfectly to its author, and this very
+cold-reader prose check had already passed it. A document is not finished because its writer
+recognises it. So the mechanical check runs first and the judgment below runs on top of it —
+**the lint cannot tell you the plan is right, only that a stranger can find one.**
+
+Then confirm — and fix any miss:
 - **Could a fresh session with zero memory resume from `START-HERE.md` alone?** It must name what to read and what to do, in order.
 - Every "next step" is concrete and correctly ordered.
 - `STATE.md`/`HANDOFF.md` reflect what *actually* happened — no invented decisions or code; half-done work marked as such — and they agree with the `COORD.md` ledger tail (the trail is the tiebreaker: it was written when the work landed).
@@ -206,6 +233,12 @@ message it your setup questions before building. If closed, search its transcrip
 ## Watch out for
 - <the top gotcha / blocker the next session will hit>
 ```
+**"Then do this" is the load-bearing section, and the one that goes missing.** It must contain
+imperative steps — a command, or a verb-led line — not a restatement of status; and each step
+should say how the reader knows it worked. The heading wording is free (`NEXT ACTION`, `Next
+steps`, `Resume`, `First action` and a bare numbered do-list all pass the lint) — what is not
+optional is that *some* section tells a stranger what to do. Phase 4's
+`scripts/starthere_lint.py` fails the file when it doesn't.
 
 ### `HANDOFF.md` — where we are (create/replace)
 Plain-language, skimmable. The session's "read me first."

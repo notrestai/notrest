@@ -72,6 +72,10 @@ what it rests on does not enter the store.
 | `unknown-field` · `id-assigned` · `ts-format` · `field-type` | the schema is pinned; ids and shapes are the store's |
 | `json-parse` · `record-object` · `no-input` · `store-corrupt` | the input or the store is not what it claims |
 
+One rule is **WARN-grade**, not a rejection: `unqualified-record-ref` — a statement or ask
+naming a bare `F-<n>` the record never declares. The record lands and stderr says so;
+`--strict-refs` makes it exit 2. See [the qualification rule](#the-qualification-rule--bare-f-n-in-prose-warn).
+
 ## The resolution rule — append-only status flips
 
 A JSONL store is append-only, so **no record's status is ever rewritten**. A flip is a new
@@ -118,6 +122,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . -
 ```
 
 Prints the assigned id on success; exits 2 with the rule name on rejection. `--json` or stdin.
+`--strict-refs` hardens the one WARN-grade rule into a gate (see the qualification rule).
 (Loose install: the script sits at `../archivist/scripts/index.py` relative to any sibling skill.)
 
 - **Track:** `index.py track [--session S] [--kind K] [--status live] [--json] [--root .]` —
@@ -197,6 +202,40 @@ store has no such record — and when the project is unregistered or its repo is
 the ref is **accepted with a note on stderr**. Federation that fails closed is federation
 nobody can use: another machine's repo being absent is not evidence that the record is
 wrong. The note says the ref went in unverified; the reader gets to see that.
+
+#### The qualification rule — bare `F-<n>` in prose (WARN)
+
+**The law (F-19):** once two estates each number their own records, a bare `F-<n>` is
+**ambiguous** — the same token names different records in different stores, so a re-recorded
+"amends F-9" resolves to the wrong decision in the wrong house. **Every cross-estate reference
+is qualified `<project>:F-<n>`; only internal links use bare local ids.** The rule covers
+evidence refs *and* statement prose.
+
+`add` scans `statement` and `ask` for bare `F-<n>` tokens. A token is **clean** when this
+record declares that id — in `links`, or as a `record` evidence ref in **local** form. (A
+cross-project ref declares nothing locally: `ghost:F-1` is a different house's id.) Anything
+else is **suspect**:
+
+```
+warn: unqualified-record-ref — statement names F-9 which is not in links; cross-estate references must be qualified <project>:F-9
+```
+
+- **The record still lands.** Exit 0, the id on stdout alone — a warned `add` never breaks
+  `out="$(… add …)"`. The warn goes to **stderr**, one line per distinct suspect, `statement`
+  before `ask`, and is never written into the record.
+- `--strict-refs` promotes it to a rejection: exit 2, rule `unqualified-record-ref`, nothing
+  appended.
+- **Never flagged:** an already-qualified `rig:F-9` (the whole point), `F-` with no digits,
+  `F-9x`, `F-1.2`, `archive/F-7`, a mid-word `xF-4`. **Flagged:** an id that ends a sentence —
+  `F-2.` cites, `F-2.md` does not.
+- `track`, `find`, `library find`, `supersede`/`refute` and `crown` are untouched.
+
+**Say the honest thing about it: a warn is a nudge, only `--strict-refs` is a gate.** The
+default cannot be a rejection, because prose has legitimate reasons to name a record it is not
+citing — F-19 itself writes `amends F-9` as an *illustration* and trips its own check. A rule
+that rejected that sentence is a rule the law could not have been written in. So the check
+makes the ambiguity **visible** at the door and leaves the judgment to the writer; a caller who
+wants it enforced hard asks for `--strict-refs`.
 
 **The reuse law: a question the library already answers is a search budget you do not
 spend.** Before a researcher / factcheck / marketresearcher fan-out, `library find` runs

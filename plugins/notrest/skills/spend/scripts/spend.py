@@ -48,7 +48,13 @@ from datetime import datetime, timezone
 
 # ── lanes ────────────────────────────────────────────────────────────────────
 SEAT_LANES = {"main", "director", "seat"}
-CROSS_VENDOR_LANES = {"gpt", "chatroom-gpt"}
+# Lanes that legitimately run another vendor's model: exempt from the opus-only offload
+# rule, counted separately, never silently. EXACT NAMES ONLY — an allowlist that grows by
+# pattern (connector-*) stops being an allowlist, so each new lane is added deliberately,
+# here, with its reason. `connector-openai` added 2026-07-27 for the rig.rest connector:
+# an honest receipt for a lawful cross-vendor call was grading as a ROUTING VIOLATION
+# (exit 4) because the gate had never been told that lane exists.
+CROSS_VENDOR_LANES = {"gpt", "chatroom-gpt", "connector-openai"}
 
 # ── the policy, as data (so the verdict can name the rule version it enforces) ─
 POLICY_DATE = "2026-07-15"          # the day the owner set opus-only offload

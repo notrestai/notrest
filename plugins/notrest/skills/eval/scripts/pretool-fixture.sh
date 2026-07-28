@@ -52,6 +52,16 @@ allows() {
   else ok "$1 -> allow (silent, exit 0)"; fi
 }
 
+# allows_noisy <label> <expected-stderr-substring> <command> [cwd] — exit 0, but the gate
+# SAYS something. A warning that is swallowed is a warning that does not exist, so the
+# WARN-grade path must be audibly allowed rather than silently allowed.
+allows_noisy() {
+  fire "$3" "${4:-$TMP}"
+  if [ "$RC" -ne 0 ]; then no "$1 -> allow" "exit $RC"
+  elif ! printf '%s' "$ERRTXT" | grep -qF "$2"; then no "$1 -> allow with notice" "stderr: $ERRTXT"
+  else ok "$1 -> allow, notice printed (exit 0)"; fi
+}
+
 # blocks <label> <expected-stderr-substring> <command> [cwd] — exit 2, the reason on
 # stderr, and a schema-valid deny in the PreToolUse decision channel on stdout.
 blocks() {
@@ -85,8 +95,9 @@ overridden() {
 }
 
 # ---------------------------------------------------------------- scratch repos
-# RED: a harness-shaped repo whose instruments exit 5 (doctor WARN) — the shape the
-# gate must refuse to push. GREEN: the same repo with both instruments exiting 0.
+# RED: instruments exit 6 (FAIL) — the shape the gate must refuse to push. WARNR:
+# exit 5 (WARN) — reported, never blocked (2026-07-27: doctor warns about ANOTHER app's
+# store with no CLI remedy, so blocking on 5 would block every push forever). GREEN: the same repo with both instruments exiting 0.
 # PLAIN: a git repo that ships no instruments — every other repo on the machine.
 mkrepo() { # mkrepo <dir> <doctor-exit> <eval-exit>
   mkdir -p "$1/plugins/notrest/skills/doctor/scripts" "$1/plugins/notrest/skills/eval/scripts"
@@ -94,7 +105,8 @@ mkrepo() { # mkrepo <dir> <doctor-exit> <eval-exit>
   printf 'import sys\nsys.exit(%s)\n' "$3" > "$1/plugins/notrest/skills/eval/scripts/eval.py"
   git -C "$1" init -q 2>/dev/null || git -C "$1" init 2>/dev/null >/dev/null
 }
-RED="$TMP/red";     mkdir -p "$RED";   mkrepo "$RED" 5 0
+RED="$TMP/red";     mkdir -p "$RED";   mkrepo "$RED" 6 0     # FAIL-grade: the ship blocker
+WARNR="$TMP/warn";  mkdir -p "$WARNR"; mkrepo "$WARNR" 5 0     # WARN-grade: notice, never a block
 GREEN="$TMP/green"; mkdir -p "$GREEN"; mkrepo "$GREEN" 0 0
 BOTHRED="$TMP/both"; mkdir -p "$BOTHRED"; mkrepo "$BOTHRED" 6 6
 PLAIN="$TMP/plain"; mkdir -p "$PLAIN"; git -C "$PLAIN" init -q 2>/dev/null
@@ -122,9 +134,10 @@ allows "marketplace update only" "claude plugin marketplace update notrest"
 allows "another plugin entirely" "claude plugin update someone-else@theirs"
 
 echo "── RULE 1 · ship gate (this harness repo only)"
-blocks "push, doctor red"        "notrest ship gate: doctor=5 eval=0" "git push origin main" "$RED"
+blocks "push, doctor FAIL"       "notrest ship gate: doctor=6 eval=0" "git push origin main" "$RED"
 blocks "push, both red"          "notrest ship gate: doctor=6 eval=6" "git push --force"     "$BOTHRED"
 blocks "push names the escape"   "NOTREST_GATE_OVERRIDE=1"            "git push"             "$RED"
+allows_noisy "push, doctor WARN only" "warnings present (doctor=5 eval=0)" "git push origin main" "$WARNR"
 allows "push, gate green"        "git push origin main"  "$GREEN"
 allows "push, no instruments"    "git push origin main"  "$PLAIN"
 allows "push, not a git repo"    "git push origin main"  "$NOGIT"

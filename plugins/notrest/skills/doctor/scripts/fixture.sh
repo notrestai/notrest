@@ -2,11 +2,14 @@
 # fixture.sh — asserts doctor.py against a synthetic harness. Self-relative: runs from any
 # cwd, writes only inside its own mktemp dir, touches no real project.
 #
-# HERMETIC BY CONSTRUCTION. Two of doctor's checks read the machine, so the fixture hands
+# HERMETIC BY CONSTRUCTION. Three of doctor's checks read the machine, so the fixture hands
 # them a machine of its own instead of asserting against whatever this laptop happens to
 # have installed:
 #   - $CLAUDE_CONFIG_DIR is redirected at a scratch config tree, so INSTALL FRESHNESS sees
 #     exactly the skills-dir links and installs the fixture puts there — nothing else.
+#   - $CLAUDE_APP_SUPPORT_DIR is redirected at a scratch app-support tree, so SHADOW-APPSIDE
+#     reads the packs the fixture planted and never this laptop's real desktop-app store
+#     (which on the machine this was written on holds a genuine 19-verb collision).
 #   - a `claude` shim goes on PATH ahead of the real CLI, so TOKEN BUDGET reads a figure
 #     the fixture chose ($FIXTURE_ALWAYS_ON) rather than the real plugin's cost.
 # Usage: bash <doctor-skill>/scripts/fixture.sh   (exit 0 = all pass, 1 = a failure)
@@ -22,6 +25,8 @@ t(){ if [ "$2" = "$3" ]; then ok "$1 ($2)"; else no "$1 — expected [$3] got [$
 # ── the scratch machine ───────────────────────────────────────────────────────────────
 export CLAUDE_CONFIG_DIR="$W/config"          # empty: no links, no installs, no clone
 mkdir -p "$CLAUDE_CONFIG_DIR"
+export CLAUDE_APP_SUPPORT_DIR="$W/appsupport" # empty: no desktop-app provisioning store
+mkdir -p "$CLAUDE_APP_SUPPORT_DIR"
 mkdir -p "$W/bin"
 cat > "$W/bin/claude" <<'SHIM'
 #!/bin/bash
@@ -183,12 +188,16 @@ echo '{"generated":"2026-07-24 10:03Z","candidates":[]}' > "$H/compile/candidate
 echo "── A · healthy synthetic harness"
 runjson "$H"; t "healthy harness exits 0" "$RC" "0"
 t "--json parses" "$(py 'import json,sys;print("yes" if json.load(open(sys.argv[1]))["checks"] else "no")' "$W/out.json")" "yes"
-t "ten checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "10"
+t "eleven checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "11"
 t "verdict is HEALTHY" "$(py 'import json,sys;print(json.load(open(sys.argv[1]))["verdict"])' "$W/out.json")" "HEALTHY"
 t "no check fails" "$(nfail)" "0"
 t "no check warns" "$(nwarn)" "0"
 t "quoted colon-space description does NOT false-fire" "$(st FRONTMATTER)" "PASS"
 t "INSTALL FRESHNESS skips with no link and no clone" "$(st 'INSTALL FRESHNESS')" "SKIP"
+grep -q 'rung 1 of 4' "$W/out.json" \
+  && ok "the no-surface SKIP names runtime-ladder rung 1" \
+  || no "the no-surface SKIP never names its rung"
+t "SHADOW-APPSIDE skips with an empty app-support dir" "$(st 'SHADOW-APPSIDE')" "SKIP"
 t "TOKEN BUDGET passes under the ceiling" "$(st 'TOKEN BUDGET')" "PASS"
 t "HOOKS FIRED passes on a marked estate" "$(st 'HOOKS FIRED')" "PASS"
 # the receipt is the point of a PASS here: assert the number reached the report
@@ -313,6 +322,9 @@ CFG2="$W/cfg-foreign"; mkdir -p "$CFG2/skills"
 ln -s "$FOR" "$CFG2/skills/fixtureplug"
 runcfg "$CFG2" "$IP"
 warncase "skills-dir link into a foreign tree" "INSTALL FRESHNESS"
+grep -q 'rung 3 of 4' "$W/out.json" \
+  && ok "the foreign-tree fix names rung 3 (the surface resolves to THIS tree)" \
+  || no "the foreign-tree fix never names its rung"
 
 # (iii) in-place + an installed plugin holding the same name: the link is ignored, so the
 #       tree on disk is not the build the session loaded.
@@ -325,6 +337,38 @@ runcfg "$CFG3" "$IP"
 warncase "skills-dir copy shadowed by an installed plugin" "INSTALL FRESHNESS"
 grep -q 'SHADOWED' "$W/out.json" && ok "the shadow is named, not merely implied" \
   || no "shadowed run never says SHADOWED"
+grep -q 'rung 2 of 4' "$W/out.json" \
+  && ok "the exact-name shadow fix names rung 2 (the name is free)" \
+  || no "the exact-name shadow fix never names its rung"
+grep -q 'shadow ladder rung 1 of 3' "$W/out.json" \
+  && ok "the exact-name shadow is placed on the shadow ladder too" \
+  || no "the exact-name shadow never names its shadow-ladder rung"
+
+# (iii-b) T13, the half a name-keyed check cannot see: an installed plugin under a DIFFERENT
+#         name that ships our verbs. The names never collide; the verbs do, which is what a
+#         session actually resolves.
+OTH="$W/otherplug"; mkdir -p "$OTH/skills/alpha"
+cat > "$OTH/skills/alpha/SKILL.md" <<'EOF'
+---
+name: alpha
+description: "A foreign pack's alpha — same verb, different plugin name."
+---
+EOF
+CFG3B="$W/cfg-overlap"; mkdir -p "$CFG3B/skills" "$CFG3B/plugins"
+ln -s "$IP/plugins/fixtureplug" "$CFG3B/skills/fixtureplug"
+cat > "$CFG3B/plugins/installed_plugins.json" <<EOF
+{"plugins":{"otherplug@elsewhere":[{"scope":"user","version":"7.0.0","installPath":"$OTH"}]}}
+EOF
+runcfg "$CFG3B" "$IP"
+warncase "differently-named install carrying our verbs" "INSTALL FRESHNESS"
+grep -q 'SHADOW CANDIDATE (by verbs, not by name)' "$W/out.json" \
+  && ok "the verb-keyed shadow is named as such" \
+  || no "the verb-keyed shadow is not named"
+grep -q "carries 1 of this tree's 2 verbs" "$W/out.json" \
+  && ok "the overlap WARN carries the count" || no "the overlap WARN states no count"
+grep -q 'shadow ladder rung 2 of 3' "$W/out.json" \
+  && ok "the verb-keyed shadow fix names shadow-ladder rung 2" \
+  || no "the verb-keyed shadow fix never names its rung"
 
 # (iv) the uncommitted release: in skills-dir mode the session runs the WORKING TREE, so a
 #      release that is bumped-but-uncommitted is live on this machine and nowhere else.
@@ -353,6 +397,9 @@ runcfg "$CFG4" "$UC"
 warncase "uncommitted release under an in-place link" "INSTALL FRESHNESS"
 grep -q 'UNCOMMITTED RELEASE' "$W/out.json" && ok "the uncommitted release is named as such" \
   || no "uncommitted-release run never says UNCOMMITTED RELEASE"
+grep -q 'rung 4 of 4' "$W/out.json" \
+  && ok "the uncommitted-release fix names rung 4 (what runs here is what others see)" \
+  || no "the uncommitted-release fix never names its rung"
 
 # (v) a quiet estate: no [hook] tag in the COORD tail and no fresh agent/spend pair. That
 #     is absence of evidence, so it WARNs — a health checker that FAILs a fresh repo is
@@ -372,6 +419,84 @@ for f in ("COORD-AGENTS.md", "spend/ledger.md"):
 PY
 runjson "$QU"
 warncase "estate with no sign a hook ever fired" "HOOKS FIRED"
+
+# ── B3 · the app-side provisioning store (SHADOW-APPSIDE) ─────────────────────────────
+# The store belongs to the DESKTOP APP, not the CLI: no $CLAUDE_CONFIG_DIR path reaches it
+# and no `claude plugin` verb repairs it. Both on-disk shapes below were read off a live
+# machine before they were coded — the fixture asserts the shapes doctor actually meets.
+echo "── B3 · the desktop app's provisioning store"
+runapp(){  # $1 app-support dir · $2 repo root
+  SAVED_APP="$CLAUDE_APP_SUPPORT_DIR"; export CLAUDE_APP_SUPPORT_DIR="$1"
+  runjson "$2"
+  export CLAUDE_APP_SUPPORT_DIR="$SAVED_APP"
+}
+appskill(){ mkdir -p "$1"; printf -- '---\nname: %s\ndescription: "app-side %s"\n---\n' \
+  "$(basename "$1")" "$(basename "$1")" > "$1/SKILL.md"; }
+
+# (i) an rpm-shape pack whose verbs collide, carrying hooks — the ghost this check exists for
+GS="$W/app-ghost/local-agent-mode-sessions/4c5a94ac/f92345ac/rpm"
+mkdir -p "$GS/plugin_ghost/.claude-plugin" "$GS/plugin_ghost/hooks"
+echo '{"name":"ghostsuite","version":"2.13.0"}' > "$GS/plugin_ghost/.claude-plugin/plugin.json"
+appskill "$GS/plugin_ghost/skills/alpha"; appskill "$GS/plugin_ghost/skills/beta"
+echo '{"hooks":{"SessionStart":[]}}' > "$GS/plugin_ghost/hooks/hooks.json"
+# the index the app writes beside its packs: a FILE at the same glob depth as a pack dir,
+# so this also proves the scan skips non-directories instead of tripping on them.
+echo '{"lastUpdated":1,"plugins":[{"id":"plugin_ghost","installationPreference":"available"}]}' \
+  > "$GS/manifest.json"
+runapp "$W/app-ghost" "$H"
+warncase "app-side pack colliding with this tree's verbs" "SHADOW-APPSIDE"
+grep -q "ghostsuite' v2.13.0" "$W/out.json" \
+  && ok "the app-side WARN names the pack and its version" \
+  || no "the app-side WARN does not name pack+version"
+grep -q 'plugin_ghost' "$W/out.json" && ok "the app-side WARN names the path" \
+  || no "the app-side WARN states no path"
+grep -q "carries 2 of this tree's verbs" "$W/out.json" \
+  && ok "the app-side WARN carries the collision count" || no "no collision count"
+grep -q 'alpha, beta' "$W/out.json" && ok "the app-side WARN names the colliding verbs" \
+  || no "the colliding verbs are not named"
+grep -q 'REGISTERS HOOKS' "$W/out.json" && ok "a hook-registering app-side pack is called out" \
+  || no "the app-side WARN never says whether the pack registers hooks"
+grep -q 'shadow ladder rung 3 of 3' "$W/out.json" \
+  && ok "the app-side fix names shadow-ladder rung 3" || no "the app-side fix names no rung"
+grep -q 'plugin panel' "$W/out.json" \
+  && ok "the app-side fix points at the app's panel, not a CLI verb" \
+  || no "the app-side fix does not name the only surface that can fix it"
+
+# (ii) the skills-plugin shape — a different depth and a different parent, same question
+SP="$W/app-sp/local-agent-mode-sessions/skills-plugin/f92345ac/4c5a94ac"
+mkdir -p "$SP/.claude-plugin"
+echo '{"name":"anthropic-skills","version":"1.0.0"}' > "$SP/.claude-plugin/plugin.json"
+appskill "$SP/skills/alpha"; appskill "$SP/skills/gamma"
+runapp "$W/app-sp" "$H"
+warncase "app-side pack in the skills-plugin shape" "SHADOW-APPSIDE"
+grep -q 'skills-plugin shape' "$W/out.json" \
+  && ok "the second store shape is scanned and named" || no "the skills-plugin shape is unread"
+
+# (iii) a pack with no colliding verb is SILENT — a shadow check that flags every neighbour
+#       is a shadow check nobody reads.
+NC="$W/app-clean/local-agent-mode-sessions/4c5a94ac/f92345ac/rpm/plugin_clean"
+mkdir -p "$NC/.claude-plugin"
+echo '{"name":"cleanpack","version":"1.0.0"}' > "$NC/.claude-plugin/plugin.json"
+appskill "$NC/skills/zulu"
+runapp "$W/app-clean" "$H"
+t "non-colliding app-side pack → exit 0" "$RC" "0"
+t "non-colliding app-side pack → SHADOW-APPSIDE PASSes" "$(st 'SHADOW-APPSIDE')" "PASS"
+t "non-colliding app-side pack → nothing warns" "$(nwarn)" "0"
+
+# (iv) no store at all — the honest SKIP. Most machines are not desktop-app machines.
+runapp "$W/no-such-app-support" "$H"
+t "absent app-support dir → exit 0" "$RC" "0"
+t "absent app-support dir → SHADOW-APPSIDE SKIPs" "$(st 'SHADOW-APPSIDE')" "SKIP"
+t "absent app-support dir → nothing fails" "$(nfail)" "0"
+
+# (v) the store is another application's state: doctor reads it and never writes to it.
+BEFORE_APP="$(cd "$W/app-ghost" && find . -type f | sort | while read -r f; do \
+  printf '%s %s\n' "$f" "$(cksum < "$f")"; done)"
+runapp "$W/app-ghost" "$H"
+AFTER_APP="$(cd "$W/app-ghost" && find . -type f | sort | while read -r f; do \
+  printf '%s %s\n' "$f" "$(cksum < "$f")"; done)"
+t "doctor never writes into the app-side store" \
+  "$([ "$BEFORE_APP" = "$AFTER_APP" ] && echo identical || echo mutated)" "identical"
 
 # ── C · argument handling and the --plugin mode ───────────────────────────────────────
 echo "── C · arguments and modes"

@@ -9,8 +9,9 @@ description: "The harness's own self-check — one read-only pass, PASS/WARN/FAI
 python3 plugins/notrest/skills/doctor/scripts/doctor.py check --root .
 ```
 
-That is the whole skill. Ten named checks, one line each, a fix command on every WARN and
-FAIL, one summary line at the end. `--root` defaults to the git root of the cwd, so bare
+That is the whole skill. Eleven named checks, one line each, a fix command on every WARN and
+FAIL — each naming **which rung of its ladder failed**, because a status says something is
+wrong and only the rung says which remedy is the right one — and one summary line at the end. `--root` defaults to the git root of the cwd, so bare
 `doctor.py check` works from anywhere inside the repo. Add `--json` for machine output.
 
 **Router shape:** `health-check` — the UserPromptSubmit router (`hooks/router.sh`) nudges a
@@ -50,7 +51,8 @@ Every check here is a scar. None of them were invented.
 | **HOOKS** | `hooks.json` is valid, every `$CLAUDE_PLUGIN_ROOT` script exists and clears `bash -n`, and the SessionStart echo announces the current plugin name | **rename residue + the glob false-fire.** A hook that will not parse fails *silently* at session start — the discipline anchor just never appears. And `COORD-*.md` once matched the machine-written ledgers (`COORD-AGENTS.md`, `COORD-ARCHIVE.md`), so a lane-blackboard nudge false-fired in every repo. Hook bugs are invisible by construction; this check is the only thing that looks. |
 | **HOOKS FIRED** | whether anything has *actually run*: a `[hook]`-tagged line in the active COORD volume's last 200 lines, or a `COORD-AGENTS.md` + `spend/ledger.md` pair both written inside 48h | **HOOKS proves the scripts parse; nothing proved one ever ran.** A hook that is wired, valid and never fires leaves no error, no log and no gap anyone notices — a shadowed plugin, for instance, runs no hooks at all while `hooks.json` stays perfect. This is a **liveness heuristic and never FAILs**: a fresh repo and a quiet weekend look identical to a dead hook, so it reports WARN and says which evidence it looked for. |
 | **ESTATE** | `COORD.md` header + parseable ledger lines, the `COORD-AGENTS.md` machine header, `spend/ledger.md` through `spend.py report`, `compile/candidates.json` as valid JSON | recap, compile and graph all *parse* these files. A damaged header does not break the file — it breaks every reader downstream, quietly. `spend.py report` exiting **4** is not a doctor failure: it is the routing gate firing correctly, reported as WARN with the verdict. |
-| **INSTALL FRESHNESS** | *which build the session is really running*, in the vocabulary of the mode it is in — see below | **the stale marketplace clone, 2026-07-15**, and **the mislabelled surface, 2026-07-25.** First the session ran a build two versions behind the repo it was editing and nothing said so. Then the machine moved to an in-place install and the check *kept using cache vocabulary* — reporting a "marketplace clone" version it had never read. A check that names the wrong surface is worse than a silent one: it is confidently wrong. |
+| **INSTALL FRESHNESS** | *which build the session is really running*, in the vocabulary of the mode it is in — plus any installed plugin whose **skill names** overlap ours, whatever that plugin calls itself — see below | **the stale marketplace clone, 2026-07-15**, and **the mislabelled surface, 2026-07-25.** First the session ran a build two versions behind the repo it was editing and nothing said so. Then the machine moved to an in-place install and the check *kept using cache vocabulary* — reporting a "marketplace clone" version it had never read. A check that names the wrong surface is worse than a silent one: it is confidently wrong. |
+| **SHADOW-APPSIDE** | every pack in the **desktop app's own provisioning store**, intersected against this tree's skill names — the pack, its version, its path, the colliding verbs, and whether it registers hooks | **the app-side ghost, found 2026-07-26.** A stale clone of this very plugin (`oracle-suite` v2.13.0, **19** name collisions, four live hooks) sat in the desktop app's store and served agent-mode sessions for a week while every CLI-side check reported healthy — because every other surface doctor reads belongs to the *CLI*, and this store belongs to the *app*. Four shadow incidents paid for it. **WARN-grade, never FAIL:** it reports another application's state, which this repo does not control. |
 | **TOKEN BUDGET** | the always-on context cost the CLI reports for this plugin, against a ceiling of **3600 tok** | every skill description is loaded into **every** session whether the skill fires or not, so the harness taxes work it never does. The number is read from `claude plugin details` — the CLI's figure, never doctor's estimate — and the check SKIPs honestly when no CLI or no id will answer, rather than guessing. |
 | **GITIGNORE** | `/graph/` and `/compile/` present *and anchored*, and the skills' own `graph/` and `compile/` dirs not ignored | **the unanchored gitignore, v2.16.0.** `graph/` without the leading slash matches at *any* depth — it un-tracked `plugins/notrest/skills/graph/`, so the shipped plugin was missing a skill and `git status` stayed clean about it. |
 | **RENDER SURFACES** | the version stamps in `docs/oracle-skill-flow.html` match `plugin.json` | a rendered doc is a shipped surface. A stale stamp ships a lie to whoever opens it. |
@@ -83,6 +85,74 @@ this check is the only thing that says so.
 
 If neither surface exists, doctor SKIPs and says nothing on this machine claims to run the
 plugin — it never falls back to reading git state and calling it an install.
+
+**A shadow does not have to wear your name.** The original shadow test asked one name-keyed
+question — *is anything installed as `notrest`?* — and that question is blind to half the
+cases, because what a session actually resolves is the **verb**, not the plugin name. Two
+plugins shipping `skills/oracle/` collide whether or not their manifests ever agree. So the
+check also reads every installed plugin's own `skills/` directory and reports any whose names
+overlap this tree's:
+
+```
+SHADOW CANDIDATE (by verbs, not by name) — otherplug@elsewhere v7.0.0 carries 3 of this
+tree's 30 verbs: draft, oracle, recap
+```
+
+That is a **WARN with the count**, never a FAIL: an overlapping install may be entirely
+wanted. What is not acceptable is not knowing it is there.
+
+## The two ladders — a fix that names the rung it bottomed out at
+
+A status tells you something is wrong. It does not tell you *which* remedy is the right one,
+and these remedies are not interchangeable — uninstalling, repointing a symlink, committing a
+release and toggling a pack in another application's panel fix four different worlds. So each
+of these checks climbs a named ladder, and the fix string says which rung it fell off.
+
+**The runtime ladder** (INSTALL FRESHNESS), four rungs, in this order:
+
+| rung | the question | when it fails |
+|---|---|---|
+| 1 of 4 | a runtime surface exists at all | SKIP — nothing on this machine claims to run the plugin |
+| 2 of 4 | the name is free | `claude plugin uninstall <id>` then restart — an installed plugin outranks the link |
+| 3 of 4 | the surface resolves to **THIS** tree | `ln -sfn <repo> <link>` then restart — the link loads another copy |
+| 4 of 4 | what runs here is what everyone else sees | `git add -A && git commit` (in-place), or `claude plugin marketplace update && claude plugin update` (cache) |
+
+**The shadow ladder**, three rungs, by *where the shadow lives* — the two shadow findings share
+it, which is why an app-side pack is always rung 3:
+
+| rung | the shadow | the only thing that removes it |
+|---|---|---|
+| 1 of 3 | exact name, CLI-installed | `claude plugin uninstall <id>` |
+| 2 of 3 | a different name carrying our verbs, CLI-installed | `claude plugin uninstall <id>`, or keep it knowingly |
+| 3 of 3 | an app-side pack in the desktop app's store | the desktop app's plugin panel — **no CLI verb reaches it** |
+
+A rung-2 finding on the runtime ladder is also rung 1 on the shadow ladder, and the fix says
+both: the first names what broke, the second names where the shadow came from.
+
+## SHADOW-APPSIDE — the store the CLI never mentions
+
+Every other surface doctor reads belongs to the CLI. The desktop app provisions its own packs
+into an estate no `claude plugin` verb lists, and doctor was blind to it until a stale clone of
+this plugin served sessions out of it for a week. Two shapes, both **read off a live machine
+before they were coded** rather than assumed:
+
+```
+<app-support>/local-agent-mode-sessions/<uuid>/<uuid>/rpm/<plugin_id>/    marketplace packs
+<app-support>/local-agent-mode-sessions/skills-plugin/<uuid>/<uuid>/      the app's own pack
+```
+
+`<app-support>` is `~/Library/Application Support/Claude` on macOS, `~/.config/Claude` on Linux,
+`%APPDATA%/Claude` on Windows, and `$CLAUDE_APP_SUPPORT_DIR` when set — the seam the fixture
+uses. Each pack's `plugin.json` gives the name and version, its `skills/*/SKILL.md` gives the
+verbs, its `hooks/hooks.json` says whether it registers hooks. **No store, no finding:** a
+machine without the desktop app SKIPs, silently and honestly.
+
+**The honest limit — provisioned is not proven active.** doctor sees what the filesystem shows.
+Whether a pack is *switched on* is the app's live state, and the store records provisioning, not
+that toggle: the 2026-07-26 audit looked and found only `installationPreference: "available"` on
+every entry. So a pack the owner has already disabled in the panel can still appear here.
+SHADOW-APPSIDE therefore says *this pack is provisioned and its verbs collide with yours* — it
+never says *this pack is active*, and it never FAILs on someone else's estate.
 
 ## Boundary — doctor reads, doctor never repairs
 
@@ -204,17 +274,29 @@ asserted, not just detection.
 
 The WARN classes get the same treatment at exit 5 (nothing failing, exactly one check
 warning): an in-place link into a **foreign** tree, an in-place link **shadowed** by an
-installed plugin, an **uncommitted release** under an in-place link — that one stands up a
-throwaway git repo, commits v1.0.0 and bumps the whole release in the working tree, so
-tree-vs-HEAD is the only disagreement left — and a **quiet estate** with no sign a hook ever
-fired. The clean in-place run is asserted too, including that it never labels itself a cache
-install: the mislabel is the defect this rewrite descends from.
+installed plugin, an installed plugin under a **different name carrying our verbs**, an
+**uncommitted release** under an in-place link — that one stands up a throwaway git repo,
+commits v1.0.0 and bumps the whole release in the working tree, so tree-vs-HEAD is the only
+disagreement left — and a **quiet estate** with no sign a hook ever fired. The clean in-place
+run is asserted too, including that it never labels itself a cache install: the mislabel is
+the defect this rewrite descends from. Every ladder string is asserted **on its own failure
+path**, so a rung cannot quietly go missing or be pasted onto the wrong finding.
 
-Two of these checks read the machine rather than the repo, so the fixture hands them a
+The app-side store gets a scratch store of its own: a colliding rpm-shape pack *with* hooks
+(WARN naming pack, version, path, collisions and hooks), the same finding through the
+`skills-plugin` shape at a different depth, a **non-colliding** pack that must stay silent, an
+**absent** store that must SKIP, and a byte-for-byte snapshot proving doctor never writes into
+another application's files. The app's own `rpm/manifest.json` is planted at the same glob
+depth as a pack directory, so the scan is proven to step over non-directories rather than trip
+on them.
+
+Three of these checks read the machine rather than the repo, so the fixture hands them a
 machine of its own: `$CLAUDE_CONFIG_DIR` is redirected at a scratch config tree (so INSTALL
-FRESHNESS sees only the links the fixture planted) and a `claude` shim goes on PATH ahead of
-the real CLI (so TOKEN BUDGET reads a figure the fixture chose). No network, no real
-install, no dependence on what this laptop happens to have. The estate is stamped with the
+FRESHNESS sees only the links and installs the fixture planted), `$CLAUDE_APP_SUPPORT_DIR` at
+a scratch app-support tree (so SHADOW-APPSIDE never reads this laptop's real desktop-app
+store — on the machine it was built on, that store holds a genuine 19-verb collision), and a
+`claude` shim goes on PATH ahead of the real CLI (so TOKEN BUDGET reads a figure the fixture
+chose). No network, no real install, no dependence on what this laptop happens to have. The estate is stamped with the
 current time rather than a frozen date — a fixture that starts failing on its own two days
 after it was written is the worst possible property in a health checker's health checker.
 

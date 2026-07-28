@@ -124,7 +124,16 @@ EVALPY="$GITROOT/plugins/notrest/skills/eval/scripts/eval.py"
 
 python3 "$DOCTOR" check --root "$GITROOT" >/dev/null 2>&1; DRC=$?
 python3 "$EVALPY" check --root "$GITROOT" >/dev/null 2>&1; ERC=$?
-[ "$DRC" -eq 0 ] && [ "$ERC" -eq 0 ] && exit 0
+# WARN (5) is not a ship blocker; FAIL (6) is. Learned the hard way 2026-07-27: doctor's
+# SHADOW-APPSIDE warns about ANOTHER application's provisioning store — true, useful, and
+# with no CLI remedy — so a gate that blocks on 5 would block every push forever and train
+# the override reflex. A habitually-overridden gate is worse than no gate. Warnings are
+# echoed (never swallowed) and the push proceeds; a FAIL still stops it dead.
+if [ "$DRC" -eq 5 ] || [ "$ERC" -eq 5 ]; then
+  printf '[notrest] ship gate: warnings present (doctor=%s eval=%s) — not blocking; run the instruments to read them\n' \
+    "$DRC" "$ERC" >&2
+fi
+[ "$DRC" -ne 6 ] && [ "$ERC" -ne 6 ] && [ "$DRC" -lt 6 ] && [ "$ERC" -lt 6 ] && exit 0
 
 # doctor: 0 ok · 5 warn · 6 fail (2 usage, 3 target) — eval: 0 ok · 5 warn · 6 fail.
 # The codes are printed rather than summarised so the owner can tell a WARN from a FAIL

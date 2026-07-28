@@ -67,8 +67,8 @@ Pass 4 — Per-step validation                      → (reasoning — every "do
 Pass 5 — Stress-test (dry-run/pre-mortem/red-team)→ (reasoning — what broke, what changed)
 Pass 6 — Risk, contingency & confidence           → Candidate Plan v1
 Pass 7 — Deep research per step                   ┐ repeat 7→8, checking convergence each loop
-Pass 8 — Critic & redraft (v2, v3, …)             ┘ (keep the iteration log: deltas per round)
-Pass 9 — Conclude                                 → records: kind=finding per surviving [ONE-WAY] step
+Pass 8 — Critic & redraft (v2, v3, …)             ┘ (iteration log: plan_lint.py converge, per round)
+Pass 9 — Conclude → plan_lint.py check (the gate)  → records: kind=finding per surviving [ONE-WAY] step
                                                     record:  kind=decision — the plan shape, hinge inside
 ```
 
@@ -140,6 +140,16 @@ After each redraft, run the **convergence check**:
 - If **deep research surfaced nothing new** *and* **only cosmetic changes remain** ⇒ **converged — stop.** Repetition is the signal you're done.
 - Otherwise iterate again (re-research the changed/flagged steps → critic → redraft).
 
+**Measure the convergence; don't declare it.** "Nothing new surfaced" and "only cosmetic changes remain" are the two claims in this skill a model is worst placed to grade about its own draft. So write each candidate to a scratch file (`v2.md`, `v3.md`, … — working files, never deliverables) and after every redraft run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/stepbystep/scripts/plan_lint.py" converge --prev v2.md --curr v3.md
+```
+
+(Loose install: `scripts/plan_lint.py` relative to this skill folder.) Zero model tokens. It prints a **similarity ratio** over normalised lines and splits the diff exactly the way the check above asks you to: **material** line changes (content, ordering, reversibility, risk, confidence — what survives after emphasis, case, spacing and sentence punctuation are normalised away) versus **cosmetic-only** ones, plus what moved structurally (steps, `[ONE-WAY]` doors, Low steps, phases). Zero material change is what convergence looks like from outside the model.
+
+**The ratio goes in the iteration log** — one line per round, e.g. `v2→v3 · similarity 0.972 · 4 material · 11 cosmetic · MOVING (phases 2→3)`. It exits 0 whatever it measures: it is a measurement, not a verdict, and the loop decision below stays yours.
+
 Guardrails so the loop always terminates:
 - **Hard cap: 5 iterations** by default (the user may request fewer, e.g. "max 3"). Most goals converge in 2–4.
 - If the cap is reached **without** convergence, stop anyway, finalise the best plan so far, and state plainly — in the delivered plan *and* inside the decision record's statement — that it did **not** fully stabilise and which parts are still moving.
@@ -148,6 +158,23 @@ Guardrails so the loop always terminates:
 
 ### Pass 9 — Conclude
 Lock the converged (or capped-best) candidate as the final plan. Record how many iterations it took, whether it **converged or hit the cap**, and what stabilised. This is the conclusive plan — the best achievable from the documents available at the prompt stage — and it is what the delivered plan renders and what the `kind=decision` record fixes.
+
+**Then lint it — before it is delivered and before any record is emitted:**
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/stepbystep/scripts/plan_lint.py" check v3.md
+```
+
+Zero model tokens. It holds the final plan to the four things that are mechanical rather than a matter of judgement — the ones self-graded prose reads charitably at the end of a long loop:
+
+- every step carries a concrete **"done when"**;
+- the dependency graph is **acyclic**, and every `depends on` points at an **earlier** step that **exists** — a forward reference, a dangling reference, a duplicate step number and a cycle are each named with their step numbers, and the cycle is printed as a path;
+- every `[ONE-WAY]` step has a rollback or says in words that it cannot be undone (one stated in **If Things Go Wrong** counts, if it names the step);
+- every **Low**-confidence step carries a mitigation (one stated in the **Confidence** section counts, if it names the step).
+
+Exit **0** clean · **5** findings, each printed as `file:line` + the step + the rule · **2** usage. **Fix what it finds and re-run** — and note that a fix which re-sequences a step is a *material* change, so the loop is not converged and you owe another round (re-measure with `converge`). If a finding stands deliberately — the plan genuinely cannot verify a step yet — it is **disclosed in the `kind=decision` record's statement**, naming the rule, never quietly dropped.
+
+Fixture: `bash plugins/notrest/skills/stepbystep/scripts/fixture.sh` — exit 0 = every assertion held. It lints a canned converged plan, one canned plan per way of breaking the grammar, and measures `converge` on a known pair (identical, reworded, re-sequenced).
 
 ## The plan — delivered in chat
 
@@ -172,7 +199,7 @@ Plain-language, no jargon. 3–5 bullets a busy person can skim in 20 seconds.
 - **Definition of done:** <how you'll know the whole thing succeeded>
 - **Rough effort / time:** <estimate, labeled — or "not estimable: <why>">
 - **Overall confidence:** <High/Med/Low + one-line why>
-- **How this was built:** <N deep-research iterations; converged / hit cap>
+- **How this was built:** <N deep-research iterations; converged / hit cap — final round measured: similarity <x.xxx>, <n> material changes>
 - **Biggest risk:** <the headline risk>
 
 ## Before You Start
@@ -203,7 +230,7 @@ Ordered phases. Show dependencies and what can run in parallel. Where the path f
 
 ## Confidence
 - **Overall:** <H/M/L>. Why: <reasoning>.
-- **Convergence:** <converged after N iterations / capped at N without full convergence — still moving on: …>.
+- **Convergence:** <converged after N iterations / capped at N without full convergence — still moving on: …>. Measured, final round: <similarity x.xxx · n material line changes>.
 - **Low-confidence steps:** <step — mitigation — what would raise it>.
 
 ## Sources
@@ -222,7 +249,7 @@ Ordered phases. Show dependencies and what can run in parallel. Where the path f
 **One `kind=finding` per `[ONE-WAY]` step, then one `kind=decision` for the plan shape.** Write them after Pass 9, so they carry the convergence: recording a step the loop is still moving is recording a draft.
 
 - **Each `[ONE-WAY]` step that survived to the final plan:** `kind=finding`, `relation=toward` — the statement says what becomes irreversible, its "done when", and the rollback (or the explicit "cannot be undone"). These are the steps a doer cannot take back, so they are the ones worth finding a year later.
-- **The plan shape:** `kind=decision`, `relation=toward`, written last. The statement carries the approach in one line, the confidence, whether it **converged after N iterations or hit the cap**, and **the hinge — the riskiest dependency**: the one thing that, if it fails or turns out false, re-sequences the whole plan. A plan recorded without its hinge is a plan nobody can audit when it breaks. `links` names the `[ONE-WAY]` records it rests on.
+- **The plan shape:** `kind=decision`, `relation=toward`, written last. The statement carries the approach in one line, the confidence, whether it **converged after N iterations or hit the cap** — with the *measured* final-round similarity and material-change count from `plan_lint.py converge`, and any `plan_lint.py check` finding left standing — and **the hinge — the riskiest dependency**: the one thing that, if it fails or turns out false, re-sequences the whole plan. A plan recorded without its hinge is a plan nobody can audit when it breaks. `links` names the `[ONE-WAY]` records it rests on.
 - **An approach the critic killed mid-loop:** `kind=backtrack`, `relation=back` — the v1 that lost to v3 is a finding.
 - **Two defensible plans the oscillation guard exposed:** `kind=conflict`, `relation=lateral` — both approaches with their tradeoff, never a coin-flip presented as a decision.
 - **A prior plan for this goal that this run replaces:** `index.py supersede F-<old> --by F-<new>`.
@@ -260,19 +287,21 @@ Each `add` prints its `F-<n>`. A non-zero exit means the record was turned away 
 
 ## Self-check before finishing
 Before declaring done, verify the records and fix any miss:
+- **`plan_lint.py check` exited 0 on the final plan** — or every finding it printed is disclosed in the `kind=decision` statement with its rule. It mechanizes the four items marked ✓ below; run it rather than reading for them.
+- **The convergence is measured, not asserted** — `plan_lint.py converge` ran on the last pair, its ratio and material count are in the iteration log, and the same numbers reach the delivered plan and the decision record.
 - **Records validated at the door (`add` exited 0)** — every id was printed by the script, nothing hand-appended.
-- Every step has a concrete "done when…" verification — no unverifiable steps.
-- Dependencies are stated; no step needs an output a later step produces (re-run the dry-run mentally).
-- Every [ONE-WAY] step has a rollback note or an explicit "cannot be undone" warning — and its own `kind=finding` record.
+- ✓ Every step has a concrete "done when…" verification — no unverifiable steps.
+- ✓ Dependencies are stated; no step needs an output a later step produces (re-run the dry-run mentally).
+- ✓ Every [ONE-WAY] step has a rollback note or an explicit "cannot be undone" warning — and its own `kind=finding` record.
 - **The hinge is in the `kind=decision` statement**, named as the riskiest dependency, with the convergence status beside it.
-- Every Low-confidence step has a mitigation and what would raise it.
+- ✓ Every Low-confidence step has a mitigation and what would raise it.
 - High-stakes steps are flagged [needs expert] rather than given false DIY authority.
 - Convergence status is stated (converged after N, or capped and still moving on X).
 - Claims are labeled; nothing was fabricated to fill a gap the documents left open.
 
 ## Finishing up
 
-Run the passes and the refinement loop, deliver the converged plan in chat in the shape above, then emit the `[ONE-WAY]` records and the `kind=decision` last. Close with the goal, the overall confidence, **how many iterations it took to converge (or that it hit the cap)**, the single biggest risk, and the record ids — plus `index.py track --kind decision` as the one command that shows every plan shape this project has settled on. Offer to dig deeper on any pass, to expand any phase into finer steps — or to chain onward: `/actionplan` to turn the decision record into a copy-paste runbook, `/critic` to attack the plan before executing it.
+Run the passes and the refinement loop (measuring each round with `scripts/plan_lint.py converge`), lint the final plan with `scripts/plan_lint.py check` and fix what it finds, deliver the converged plan in chat in the shape above, then emit the `[ONE-WAY]` records and the `kind=decision` last — the lint before the records, so nothing enters the store that the gate has not seen. Close with the goal, the overall confidence, **how many iterations it took to converge (or that it hit the cap)**, the single biggest risk, and the record ids — plus `index.py track --kind decision` as the one command that shows every plan shape this project has settled on. Offer to dig deeper on any pass, to expand any phase into finer steps — or to chain onward: `/actionplan` to turn the decision record into a copy-paste runbook, `/critic` to attack the plan before executing it.
 
 ## Notes on tone and rigor
 

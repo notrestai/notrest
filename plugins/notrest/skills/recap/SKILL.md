@@ -38,64 +38,93 @@ say so and walk what exists.
 If the invocation includes `--quick` (or "quick", "brief", "no files", "just the story"):
 - **No files.** Nothing written — no background, no dossier, **no map**, and **no record**:
   quick mode never touches the findings store either.
-- **Same walk, compressed.** Still inventory the estate and still walk in timestamp order —
-  the shortcut is the write-up, never the evidence.
+- **Same walk, compressed.** Still run `walk.py` and still read the whole stream in timestamp
+  order — the shortcut is the write-up, never the evidence. (`--quick` skips `prefill`, not
+  `walk`: the walk is the cheap half.)
 - **Output in chat only:** the **Read Me First** block, then the decision track as ~5–12
   narrated beats, each with its citation token.
 - End with one line: *"Quick recap — no map, no files; run again without `--quick` for the
   decision map and the two-file version."*
 
-## Step 1 — inventory the estate (before reading a single story)
+## Step 1 — run the walker; read its stream, not the files
 
-Find out what the project actually recorded, and how far back. One pass, cheap, and it decides
-everything downstream — a thin estate gets an honest short recap, not a padded one.
+**`scripts/walk.py` does the walking.** It is the whole estate — every COORD volume, the agent
+ledger, git, the spend ledger, the findings store — merged onto one timestamp-sorted stream with
+the estate inventory printed above it. **Token economics: the biggest read in the suite becomes
+zero model tokens, and the citation token arrives pre-computed instead of being retyped from
+memory 40k tokens later — which is where a recap invents a citation.**
 
-| Source | How to inventory | What it gives the story |
-|---|---|---|
-| `COORD.md` | read `COORD.md` plus any sealed `COORD-<NNN>.md` volumes in order (`ls COORD-[0-9][0-9][0-9].md`) — the active volume is the newest; note first + last timestamps and line count | the human layer: what each prompt asked and landed, **with intent** |
-| `COORD-ARCHIVE.md` | legacy compaction scheme — exists only in older repos; read it for anything before the oldest volume | the older ledger |
-| `COORD-AGENTS.md` | `grep -c '^- \[' COORD-AGENTS.md`; note span | who was consulted, what each concluded, transcript paths |
-| git | `TZ=UTC git log --date=format-local:'%Y-%m-%d %H:%MZ' --pretty=format:'%h|%ad|%s'` | ships, and what actually changed |
-| `spend/ledger.md` | read all lines; total per model and per day | what each round cost |
-| `archive/findings.jsonl` | the findings store — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" track --root .` prints one line per record (id · kind · relation · statement head · labels) and a header with the count; note first + last `ts` | the reasoned layer: what a lane actually **concluded**, citable by id (`F-<n>`) |
-| `oracle-index.md` | if present (archivist) — read it | the dossiers the story references |
-| dossier folders | `research/ market-research/ understanding/ decision/ factcheck/ critique/ action-plan/ runbook/ pipeline/ introspection/ recap/` | what was learned, per topic |
-| `START-HERE.md` · `HANDOFF.md` · `STATE.md` | read if present | the last session's own account of where things stood |
-| `CHANGELOG.md` | if present | the shipped-version narrative |
+```bash
+WALK="${CLAUDE_PLUGIN_ROOT}/skills/recap/scripts/walk.py"     # loose install: scripts/walk.py beside this file
+python3 "$WALK" walk  --root .                                # inventory + the merged stream
+python3 "$WALK" spans --root .                                # per-source / per-day / per-session counts
+python3 "$WALK" walk  --root . --since 2026-07-15 --until 2026-07-25   # a resolved window
+python3 "$WALK" walk  --root . --json                         # same walk, machine-readable
+```
 
-**Use UTC for git.** Plain `git log --date=format:'…Z'` prints the *author's local* time with a
-`Z` you did not earn — it will not sort against COORD's UTC lines. Force `TZ=UTC` with
-`--date=format-local:` (or use `--date=iso-strict` and convert). Getting this wrong silently
-reorders the entire story.
+Exit `0` ok · `2` usage · **`3` the estate is empty** — an exit 3 is the honest short recap,
+delivered as one paragraph naming what would make the next one richer. Do not pad it.
+(`scripts/fixture.sh` is the walker's own test — run it if you change the walker.)
 
-**Clock shapes differ; the instant does not.** A record's `ts` is strict ISO8601
-(`2026-07-25T04:30:00Z`); a COORD line reads `2026-07-25 04:30Z`. Merge on the **instant**, and
-still print each one **verbatim in its own shape** — normalizing a timestamp to make a table
-tidy breaks the verbatim rule below.
+Each stream line is `ts | source | kind | cite | ref | head`:
 
-Then **write the inventory down** — sources found, their spans, and **what is missing, by
+| Column | What it is |
+|---|---|
+| `ts` | **verbatim, in that source's own shape** — COORD's `2026-07-25 04:30Z`, a record's `2026-07-25T04:30:00Z` |
+| `source` | `coord` · `agents` · `git` · `spend` · `findings` |
+| `kind` | first-pass classification — `ruling` · `decision` · `ship` · `commit` · `consult` · `cost` · `finding`, plus `+open-thread`, `+reversal`, `+dead-pointer`, `+thin`, `+unrecoverable` |
+| `cite` | **the citation token to print in Step 3** — already in the grammar below |
+| `ref` | `COORD-001.md:42`, `spend/ledger.md:17`, or a short sha — where to go back to |
+| `head` | the entry as recorded (`--head 0` for the untruncated line; `--json` also carries the full `text`) |
+
+The walker also does the three things a hand-walk gets wrong:
+
+- **UTC for git, structurally.** Plain `git log --date=format:'…Z'` prints the *author's local*
+  time with a `Z` you did not earn, and it will not sort against COORD's UTC lines. `walk.py`
+  reads `%at` — the author epoch, timezone-independent — and formats UTC itself, so there is no
+  `TZ` to get wrong. **Do not hand-run `git log` for the walk.**
+- **Clock shapes differ; the instant does not.** A record's `ts` is strict ISO8601
+  (`2026-07-25T04:30:00Z`); a COORD line reads `2026-07-25 04:30Z`. The walker merges on the
+  **instant** and still prints each one **verbatim in its own shape** — normalizing a timestamp
+  to make a table tidy breaks the verbatim rule below.
+- **Existence-checks every pointer it emits** — transcripts, `agent-<id>.meta.json` siblings,
+  brief paths, a record's `type:"path"` evidence, and dossier paths named in a COORD evidence
+  clause. A dead one is marked `!! DEAD: <path>` on its own stream line and listed again under
+  the walk.
+
+**The walker covers the timestamped sources. These stay a cheap look, and the walker's inventory
+already tells you whether they exist:** `oracle-index.md` (the dossiers the story references),
+the dossier folders (`research/ market-research/ understanding/ decision/ factcheck/ critique/
+action-plan/ runbook/ pipeline/ introspection/ recap/`), `START-HERE.md` · `HANDOFF.md` ·
+`STATE.md` (the last session's own account of where things stood), and `CHANGELOG.md` (the
+shipped-version narrative). Open the two or three the story actually turns on — not all of them.
+
+Then **write the inventory down** — the walker's table, verbatim, including **what is missing, by
 name**. "No `spend/ledger.md` — costs are absent from this recap, not zero" is a finding.
 
-## Step 2 — walk in timestamp order
+## Step 2 — read the stream forward
 
-Merge every source into one chronological list — one entry per trail line **or store record**,
-tagged with which file it came from — and read it forward. The findings store is not a separate
-pass: its records take their place in the same timestamp-merged walk. You are looking for six
-things:
+The merge is done; the reading is yours. Read the stream forward — one entry per trail line **or
+store record**, already tagged with the file it came from. The findings store is not a separate
+pass: its records already sit in the same timestamp-merged walk. `spans` gives you the sittings
+to hang beats on. You are looking for six things (the walker's `kind` is a first pass over the
+words; the judgment is yours):
 
 - **RULING** — an owner decision recorded in the trail ("owner ruling:", "ratified", "do NOT").
   These are the load-bearing nodes: everything downstream inherits them.
 - **DECISION / PIVOT** — a direction chosen, changed, or abandoned; a scope cut; a rename; a
   correction of an earlier claim.
 - **CONSULTATION** — a `COORD-AGENTS.md` entry: who was asked, what it concluded, its
-  transcript path. **Verify the path before citing it** (`test -f <path>`) — a ledger line whose
-  transcript is gone is a pointer, not evidence, and must be labeled as such. When a line is thin
-  (`model=? bytes=? | last: ?`), look for the sibling **`agent-<id>.meta.json`** next to the
-  transcript: it carries the lane's `description` and `model`, which fills the gap the hook left.
-  If neither file exists, the entry is a dead pointer — say so, and treat that agent's conclusion
-  as unrecoverable. Note also that one agent id can appear **more than once**: a resumed lane
-  fires the hook again per round, so the entry timestamp is when a *round* finished, and the
-  `.meta.json` description may be stale from the original spawn.
+  transcript path. **The path was verified before it was cited** — a ledger line whose
+  transcript is gone is a pointer, not evidence, and must be labeled as such; the walker marks
+  it `+dead-pointer` and its citation token already reads `— transcript missing`. When a line is
+  thin (`model=? bytes=? | last: ?`), the walker has already looked for the sibling
+  **`agent-<id>.meta.json`** next to the transcript: it carries the lane's `description` and
+  `model`, which fills the gap the hook left (flagged `+from-meta`). If neither file exists the
+  entry is flagged `+unrecoverable` — say so, and treat that agent's conclusion as unrecoverable.
+  Note also that one agent id can appear **more than once**: a resumed lane fires the hook again
+  per round, so the entry timestamp is when a *round* finished, and the `.meta.json` description
+  may be stale from the original spawn.
 - **SHIP** — a version bump, a release commit, a deploy.
 - **COST** — a `spend/ledger.md` line, attached to the round it paid for.
 - **FINDING** — an `archive/findings.jsonl` record: what a lane concluded, already validated at
@@ -151,10 +180,19 @@ Then build the **graph** — this is what makes it a map and not a list:
 
 ## Step 4 — MANDATORY render gate
 
-The map is a deliverable that *renders*. Before delivering, **open it** — browser tools, the
-preview pane, or `open recap/{slug}map.html` on macOS — and confirm: it draws, the edges land on
-the nodes, clicking a node shows its citation, the theme toggle flips, and the console is clean.
-Check both themes.
+The map is a deliverable that *renders*. **Serve it, never `open file://`** — a `file://` page
+silently breaks relative reads and gives you a blank board that looks like a render:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/doctor/scripts/render-check.sh" recap/{slug}map.html
+#   proves HTTP 200, prints the http://127.0.0.1:<port>/… URL, leaves the server up
+#   exit 0 ok · 2 usage · 3 no free port · 4 served but NOT 200 — a 4 is a failed gate
+bash "${CLAUDE_PLUGIN_ROOT}/skills/doctor/scripts/render-check.sh" --close <port>
+```
+
+Open that URL and confirm: it draws, the edges land on the nodes, clicking a node shows its
+citation, the theme toggle flips, and the console is clean. Check both themes, then close the
+port. A screenshot of a blank board is not a render.
 
 If you cannot open it, you do not get to imply you did. Say plainly, in chat *and* at the top of
 the dossier: **"`{slug}map.html` was written but NOT render-verified."** (game-forge's
@@ -231,8 +269,26 @@ changed, and its citation token. Rulings marked ⚖️, reversals marked ↩︎.
 
 Copy `${CLAUDE_PLUGIN_ROOT}/skills/recap/assets/decision-map-template.html` (or
 `assets/decision-map-template.html` beside this file) to `recap/{slug}map.html` and **replace
-only the `RECAP_DATA` block** — the template's layout, theming, and interaction logic are
-generic and stay untouched, so any project's trail renders the same way.
+only the `RECAP_DATA` block** — from its `/* ==== RECAP_DATA` header down to and including the
+closing `};`, leaving the `/* ==== END RECAP_DATA` line and everything below it alone. The
+template's layout, theming, and interaction logic are generic, so any project's trail renders
+the same way.
+
+**Do not hand-type the nodes.** The walker emits that block with `nodes`, `ts` and `cites`
+already filled from the walk — verbatim, existence-checked, in order:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/recap/scripts/walk.py" prefill --root . --out recap/{slug}data.js
+#   --project NAME   the project label (default: the root directory's name)
+#   --max-nodes N    cap the map (default 60); every drop is reported inside the block
+#   --now ISO        the ONLY clock input; `generated` otherwise = the newest walked entry
+```
+
+Splice it in, then **you** supply the three things the machine cannot: the **edges**, and a
+rewrite of each `title` (the ledger's own ask, cut to length) and `summary` (its `landed` half)
+into the beat you want the reader to see. Node ids arrive as `n1…nN` in timestamp order, so the
+edges you write refer to ids that already exist. A findings record arrives as `kind:"consult"` —
+it is what a lane concluded, and the template has four lanes, not five.
 
 ```js
 const RECAP_DATA = {
@@ -337,6 +393,8 @@ script on disk → skip this step silently; the three files are still the delive
 
 ## Self-check before finishing
 
+- **`walk.py` was run and its stream is what got read** — no ledger was hand-merged, and no
+  `git log` was hand-run for the walk.
 - The estate inventory names every source **and every missing source**, with spans.
 - The walk is in timestamp order, and git timestamps were taken in **UTC**.
 - Every beat in the decision track carries a citation token; nothing load-bearing is
@@ -345,8 +403,8 @@ script on disk → skip this step silently; the three files are still the delive
 - Every edge in the graph names the trail line that justifies it, or is flagged `inferred`.
 - Conflicts between sources appear in the dossier, not just the background.
 - Open threads are listed — the recap does not end tidier than the project actually is.
-- **The map was opened and looked at** (both themes, console clean) — or the dossier says
-  plainly that it was not.
+- **The map was served by `render-check.sh` (exit 0) and looked at** (both themes, console
+  clean), and the port was closed — or the dossier says plainly that it was not.
 - **The one `kind=result` record was emitted and the store printed its `F-<n>`** — or `--quick`,
   or no archivist script on disk. Nothing was hand-appended to the JSONL.
 - Nothing in the estate was modified: `git status` shows changes only under `recap/`, plus the

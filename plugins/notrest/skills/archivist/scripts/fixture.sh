@@ -702,6 +702,122 @@ grep -q "CITES-REFUTED" "$LIB2/update-log.md" && ok "CITES-REFUTED lands in the 
 
 stop_srv
 
+# ================================= THE QUALIFICATION RULE (F-19) — WARN at the door
+# Once two estates each number their own records a bare `F-<n>` is AMBIGUOUS: the same
+# token names different records in different stores. The law says every CROSS-ESTATE
+# reference is qualified `<project>:F-<n>`. The check is WARN-grade on purpose — this
+# is prose, and prose has legitimate reasons to name a record it is not citing — so a
+# suspect record STILL LANDS and only `--strict-refs` turns it away. A fresh root, so
+# every count above keeps its meaning.
+Q="$TMP/qual"; mkdir -p "$Q"
+QEV='[{"type":"path","ref":"src/q.py:1","label":"cited"}]'
+# qadd <json> — stdout to q.out, stderr to q.err, so both surfaces are assertable.
+qadd() { python3 "$IDX" add --root "$Q" --json "$1" >"$TMP/q.out" 2>"$TMP/q.err"; }
+
+qadd "{\"kind\":\"finding\",\"statement\":\"the ground record.\",\"evidence\":$QEV}"
+qadd "{\"kind\":\"finding\",\"statement\":\"a second ground record.\",\"evidence\":$QEV}"
+qadd "{\"kind\":\"finding\",\"statement\":\"a third ground record.\",\"evidence\":$QEV}"
+
+# --- the warn itself: it lands, it says the rule, and it never touches stdout
+qadd "{\"kind\":\"finding\",\"statement\":\"this amends F-1 in the other estate.\",\"evidence\":$QEV}"
+rc=$?
+[ "$rc" -eq 0 ] && ok "an undeclared bare ref STILL LANDS — a warn is not a rejection" \
+  || { bad "warned record did not land (exit $rc)"; cat "$TMP/q.err"; }
+grep -q "^warn: unqualified-record-ref — statement names F-1 which is not in links; cross-estate references must be qualified <project>:F-1$" "$TMP/q.err" \
+  && ok "the warn names the field, the token, and the rule that wants qualifying" \
+  || { bad "warn text is not the documented line"; cat "$TMP/q.err"; }
+[ "$(cat "$TMP/q.out")" = "F-4" ] \
+  && ok "stdout is STILL the id alone — a warn never breaks out=\$(… add …)" \
+  || bad "stdout carried more than the id: '$(cat "$TMP/q.out")'"
+
+# --- CLEAN: the record declares the id it names
+qadd "{\"kind\":\"finding\",\"statement\":\"this amends F-1.\",\"evidence\":$QEV,\"links\":[\"F-1\"]}"
+rc=$?
+[ "$rc" -eq 0 ] && [ ! -s "$TMP/q.err" ] \
+  && ok "a bare ref the record DECLARES in links is clean — no warn" \
+  || { bad "a declared ref warned anyway (exit $rc)"; cat "$TMP/q.err"; }
+
+qadd "{\"kind\":\"finding\",\"statement\":\"cites F-1 and nothing else.\",\"evidence\":[{\"type\":\"record\",\"ref\":\"F-1\",\"label\":\"cited\"}]}"
+[ ! -s "$TMP/q.err" ] && ok "a LOCAL record evidence ref declares the id it cites — no warn" \
+  || { bad "record evidence did not count as declared"; cat "$TMP/q.err"; }
+
+# ...but another house's id declares NOTHING here — which is the confusion, exactly
+qadd "{\"kind\":\"finding\",\"statement\":\"amends F-1 over there.\",\"evidence\":[{\"type\":\"record\",\"ref\":\"ghost:F-1\",\"label\":\"cited\"}]}"
+grep -q "^warn: unqualified-record-ref — statement names F-1 " "$TMP/q.err" \
+  && ok "ghost:F-1 declares nothing local — the bare F-1 beside it still warns" \
+  || { bad "a cross-project evidence ref wrongly declared a local id"; cat "$TMP/q.err"; }
+
+# --- the whole point: an ALREADY-QUALIFIED token is never bare
+qadd "{\"kind\":\"finding\",\"statement\":\"rig:F-9 ruled this, and rig:F-3 recorded it.\",\"evidence\":$QEV}"
+[ ! -s "$TMP/q.err" ] && ok "a qualified rig:F-9 is never flagged — that is the whole point" \
+  || { bad "the qualified form false-positived"; cat "$TMP/q.err"; }
+
+qadd "{\"kind\":\"finding\",\"statement\":\"rig:F-9 supersedes F-2 in this house.\",\"evidence\":$QEV}"
+grep -q "statement names F-2 " "$TMP/q.err" && ! grep -q "F-9" "$TMP/q.err" \
+  && [ "$(grep -c '^warn: ' "$TMP/q.err")" = "1" ] \
+  && ok "qualified beside bare: only the bare one warns" \
+  || { bad "adjacency mis-parsed"; cat "$TMP/q.err"; }
+
+# --- one block names every suspect; a repeated id is named once
+qadd "{\"kind\":\"finding\",\"ask\":\"and what of F-2?\",\"statement\":\"amends F-1, revisits F-1, touches F-3.\",\"evidence\":$QEV}"
+[ "$(grep -c '^warn: unqualified-record-ref ' "$TMP/q.err")" = "3" ] \
+  && grep -q "statement names F-1 " "$TMP/q.err" && grep -q "statement names F-3 " "$TMP/q.err" \
+  && grep -q "ask names F-2 " "$TMP/q.err" \
+  && ok "every suspect is named in ONE warn block; a repeated id is named once" \
+  || { bad "multi-suspect block wrong"; cat "$TMP/q.err"; }
+
+qadd "{\"kind\":\"finding\",\"ask\":\"does F-2 still hold?\",\"statement\":\"the citation hides in the ask.\",\"evidence\":$QEV}"
+grep -q "^warn: unqualified-record-ref — ask names F-2 " "$TMP/q.err" \
+  && ok "the ask is scanned too, and the warn says which field it was" \
+  || { bad "the ask field was not scanned"; cat "$TMP/q.err"; }
+
+# --- no false positives. Each token here was measured against the live estate.
+qadd "{\"kind\":\"finding\",\"statement\":\"the F- prefix, F-n as a shape, F-9x as a typo, F-1.2 as a version, archive/F-7 as a path, xF-4 mid-word.\",\"evidence\":$QEV}"
+[ ! -s "$TMP/q.err" ] && ok "no false positive on F-, F-n, F-9x, F-1.2, archive/F-7, xF-4" \
+  || { bad "a non-id token was flagged"; cat "$TMP/q.err"; }
+# ...and the branch that FP-avoidance nearly cost: a real citation that ends a sentence
+qadd "{\"kind\":\"finding\",\"statement\":\"the ruling now lands on F-2.\",\"evidence\":$QEV}"
+grep -q "statement names F-2 " "$TMP/q.err" \
+  && ok "an id ENDING a sentence is caught (F-2. cites; F-2.md does not)" \
+  || { bad "a sentence-final citation was missed"; cat "$TMP/q.err"; }
+
+# --- --strict-refs is the gate; the warn is only a nudge
+before="$(wc -l < "$Q/archive/findings.jsonl" | tr -d ' ')"
+out="$(python3 "$IDX" add --root "$Q" --strict-refs --json "{\"kind\":\"finding\",\"statement\":\"amends F-1 and F-2 at once.\",\"evidence\":$QEV}" 2>"$TMP/q.err")"
+rc=$?
+after="$(wc -l < "$Q/archive/findings.jsonl" | tr -d ' ')"
+[ "$rc" -eq 2 ] && grep -q "^reject: unqualified-record-ref .*\[--strict-refs\]$" "$TMP/q.err" \
+  && ok "--strict-refs promotes the warn to a rejection (exit 2, rule named)" \
+  || { bad "--strict-refs did not gate (exit $rc)"; cat "$TMP/q.err"; }
+[ "$before" = "$after" ] && [ -z "$out" ] \
+  && ok "a --strict-refs rejection wrote 0 lines (store still $before) and printed no id" \
+  || bad "the strict rejection touched the store ($before -> $after)"
+qadd "{\"kind\":\"finding\",\"statement\":\"amends F-1 and F-2 at once.\",\"evidence\":$QEV}"
+rc=$?
+[ "$rc" -eq 0 ] && [ "$(wc -l < "$Q/archive/findings.jsonl" | tr -d ' ')" -gt "$before" ] \
+  && ok "the SAME record lands under the default — WARN is the default, not the gate" \
+  || { bad "the default door rejected a record it should only warn about"; cat "$TMP/q.err"; }
+
+# --- nothing else moved: the tombstone path, the stored bytes, the other verbs
+python3 "$IDX" supersede F-1 --by F-2 --root "$Q" >"$TMP/q.out" 2>"$TMP/q.err"
+rc=$?
+[ "$rc" -eq 0 ] && [ ! -s "$TMP/q.err" ] && grep -Eq '^F-[0-9]+$' "$TMP/q.out" \
+  && ok "supersede declares its target in links — the tombstone path gains no warn" \
+  || { bad "the tombstone path changed shape (exit $rc)"; cat "$TMP/q.err"; }
+python3 "$IDX" track --root "$Q" --json 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["records"], "no records"
+fields = {k for r in d["records"] for k in r}
+assert not (fields - {"id","ts","session","skill","kind","ask","statement","evidence",
+                      "relation","links","status","effective_status","status_by",
+                      "rests_on_refuted"}), fields
+' && ok "a warned record is stored UNCHANGED — the warn is stderr only, never a field" \
+  || bad "the warn leaked into the stored record"
+python3 "$IDX" track --root "$Q" --strict-refs >/dev/null 2>&1
+[ "$?" -ne 0 ] && ok "--strict-refs is an add-door flag only — track does not take it" \
+  || bad "track accepted --strict-refs"
+
 # ------------------------------------------------------------------ verdict
 echo "----"
 echo "fixture: $PASSES passed, $FAILS failed"
