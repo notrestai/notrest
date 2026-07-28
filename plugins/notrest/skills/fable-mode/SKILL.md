@@ -170,6 +170,12 @@ cite the result:
 - **Generated artifact?** Run its consumer: execute the generator against a scratch
   target and grep the *output* for the invariants (paths absolute, tokens end-anchored,
   placeholders stamped, checklists present).
+- **A count that MOVED?** Identify the reason, never approve the direction. A total that
+  changed because a defect was fixed and a total that changed because coverage was lost
+  look identical from the outside — diff the item labels, not the number. (Earned
+  2026-07-27: a fixture went 144 → 143 and the honest answer was two assertions proving a
+  collision retired and one proving the fix replacing them — a prediction paying off, not
+  a regression, and only the labels could say which.)
 - **Data transform?** Sample rows on BOTH sides; counts travel with every claim; where
   equality is claimed, checksum both sides.
 - **Docs/handoff?** The consumer is a cold reader: re-read as one; every cited path and
