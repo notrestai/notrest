@@ -83,6 +83,14 @@ time, because a lane obeys the brief it was given and not the one you meant.
   call, a cloud state), say so and tell it what to record instead — `unverified` is a
   deliverable; a confident wrong claim is a defect.
 
+**A test-design law, earned in the rig arrangement:** *an assertion that pressures you to
+delete a true sentence is a broken assertion.* A lane's own fixture flagged the REQUIRED
+denials in a mandated promise ("does not promise work continues while the machine is
+closed") as unsupported claims — and it fixed the check rather than weakening the sentence
+the ruling mandated. When a gate and a truth disagree, suspect the gate first: a harness
+whose checks quietly erode its own honest sentences has automated the opposite of its
+purpose.
+
 ## Correction runs both ways — the law of this skill
 
 **A mentor who cannot be corrected is a bottleneck.** The builder is closer to the code
