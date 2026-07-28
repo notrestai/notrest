@@ -96,6 +96,15 @@ zero lost work).
     doesn't). When the suite's **spend** skill is present, receipt the rule: log each
     spawn's observed tokens to its ledger and close fan-out sessions with `spend.py
     report` (exit 4 = a violation to surface, never smooth).
+11a. **An absence of records is not evidence of absence.** A clean bill of health is only
+    honest when the negative was POSITIVELY recorded — "no session was ever created",
+    "nothing was sent", "zero lanes ran" — because a report that found nothing and a
+    report that could not look produce the same empty output. Applies to every all-clear
+    this harness issues: purges, spend verdicts, receipts, briefs, conformance runs.
+    Earned 2026-07-27 by the rig builder, reasoning about what a purge may claim.
+11b. **"We set a limit" and "the limit stopped it" are different claims.** Configured is
+    not verified. A budget, a cap, a timeout or a guard that has never been observed
+    firing is `[unverified]` however carefully it was written — say which one you have.
 12a. **Scope-drift is disclosed at delivery, not discoverable by cross-examination.**
     When the work narrows the owner's literal ask — sampling instead of all, partial
     coverage, a deferred half — the narrowing is stated in the delivery's FIRST lines
