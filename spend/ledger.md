@@ -79,3 +79,13 @@
 [2026-07-28 02:17Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a26dd652a4346471e
 [2026-07-28 02:41Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a516fabe35bf6b4f2
 [2026-07-28 02:52Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a21d9b80653b824b8
+[2026-07-28 02:56Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=afe7f0df072688bb9
+[2026-07-28 03:46Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ad248e27adefb0e18
+[2026-07-28 06:19Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a720bf7cc60e71769
+[2026-07-28 06:21Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a7655f6eeb9cd3be7
+[2026-07-28 06:27Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ab41eef4bdfeea43f
+[2026-07-28 06:32Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a7e420a6e53c27cc6
+[2026-07-28 06:38Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a45b2ffb45e0cde2c
+[2026-07-28 06:40Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a050c54128dfb6876
+[2026-07-28 07:03Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a0fe5e56646405267
+[2026-07-28 07:13Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ab64f8014f442f923
