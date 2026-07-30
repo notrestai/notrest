@@ -170,6 +170,15 @@ cite the result:
 - **Generated artifact?** Run its consumer: execute the generator against a scratch
   target and grep the *output* for the invariants (paths absolute, tokens end-anchored,
   placeholders stamped, checklists present).
+- **A test that PASSED — is it still testing anything?** The most dangerous defect class
+  is *a test that quietly stops testing what it claims*: an assertion over a variable that
+  was never assigned, a grep whose pattern can no longer match, a check that polls the
+  wrong surface. It reports green forever and defends nothing. Before trusting a suite,
+  make one assertion FAIL on purpose and watch it fail. (Named 2026-07-30 by the rig
+  builder, self-reported: an absence-assertion passed while asserting nothing.)
+- **A gate that disagrees with a true sentence?** Suspect the gate. Fix the rule, never
+  weaken the sentence — a check that pressures you to delete something true has automated
+  the opposite of its purpose.
 - **A count that MOVED?** Identify the reason, never approve the direction. A total that
   changed because a defect was fixed and a total that changed because coverage was lost
   look identical from the outside — diff the item labels, not the number. (Earned
