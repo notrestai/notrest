@@ -154,15 +154,32 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/sessionend/scripts/starthere_lint.py" \
   check --file START-HERE.md --root .
 ```
 Exit **0** clean · **5** warnings (advice, never a gate) · **6** a FAIL · **2** usage. **A FAIL
-means the file is not finished** — repair it and re-run before you close. Four rules, each
+means the file is not finished** — repair it and re-run before you close. Five rules, each
 naming the offending line: `NO-NEXT-ACTION` (no section says what to DO next — status, a
 read-order and a "Run it" section are not a resume instruction), `NEXT-ACTION-NOT-ACTIONABLE`
 (the section exists but carries no command and no verb-led step — status prose in a
 next-action costume), `DEAD-REFERENCE` (a cited path does not exist under `--root`, and the
 finding names where it actually lives), `NO-STATE-ANCHOR` (nothing names where the trail lives,
-so a cold reader cannot check the status it was handed against anything). `--fix-hint` prints
-the minimal skeleton that satisfies it — **prints only; sessionend writes the file, the lint
-only judges it.** `scripts/fixture.sh` is its self-test (65 asserts, zero model tokens).
+so a cold reader cannot check the status it was handed against anything), and
+`UNRUNNABLE-FROM-CLEAN-CLONE` (an instruction stands on a **gitignored** artifact — `.venv`,
+`.engine`, a built dir — and the file never says how to recreate it; it exists here and will
+not exist there). Warnings add `RECREATE-ELSEWHERE`: the bootstrap exists but only as a
+*pointer* to another file. `--fix-hint` prints the minimal skeleton that satisfies it, plus a
+recreate skeleton per artifact when the clean-clone rule fires — **prints only; sessionend
+writes the file, the lint only judges it.** `scripts/fixture.sh` is its self-test (107 asserts,
+zero model tokens).
+
+**Why the clean-clone rule (the same defect class, second bite — rig.rest, 2026-07-31).** That
+`START-HERE.md` cited commands a fresh clone could not run: the artifacts they stand on
+(`.venv`, `.engine`) are gitignored, and the command that recreates them lived in a different
+file. `DEAD-REFERENCE` passed it — **in the working tree those paths exist**. The lint proved a
+path was PRESENT; it never proved a command was RUNNABLE BY A STRANGER. So the rule asks `git
+check-ignore` (index-aware, so a tracked file matching an ignore rule still counts as shipped)
+and then looks for a recreate step in the same file. It reads *instructions*, not prose — a
+sentence that merely mentions an ignored directory is not an order to use it — and it judges
+only paths that **exist**, so a path both ignored and missing stays one finding under
+`DEAD-REFERENCE`. When `--root` is not a git repo the rule **skips and says so**; it never
+guesses.
 
 **Why a script sits under a prose check (record F-20, 2026-07-27).** A cross-model acceptance
 test handed a non-Claude loop a project directory and a `START-HERE.md` written an hour
@@ -239,6 +256,17 @@ should say how the reader knows it worked. The heading wording is free (`NEXT AC
 steps`, `Resume`, `First action` and a bare numbered do-list all pass the lint) — what is not
 optional is that *some* section tells a stranger what to do. Phase 4's
 `scripts/starthere_lint.py` fails the file when it doesn't.
+
+**And every command must run on a FRESH CLONE.** If a step stands on something gitignored — a
+`.venv`, a vendored or pinned checkout, a built directory — the recreate command belongs **in
+this file**, not one file away:
+```markdown
+## A fresh clone needs this first
+`.venv` is gitignored — a clone arrives without it. Create it before anything below:
+`python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
+```
+A path that exists on the author's machine and nowhere else is the same F-20 defect wearing a
+working command.
 
 ### `HANDOFF.md` — where we are (create/replace)
 Plain-language, skimmable. The session's "read me first."

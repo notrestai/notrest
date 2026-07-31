@@ -1,5 +1,41 @@
 # Changelog — the notrest harness
 
+## 3.17.0 — 2026-07-31
+
+**A resume file must run for a stranger, not just exist for its author — and six laws came home from the rig build.**
+
+- **`starthere_lint` gains UNRUNNABLE-FROM-CLEAN-CLONE (FAIL) and RECREATE-ELSEWHERE
+  (WARN).** The old DEAD-REFERENCE rule proved a path was *present in the working tree*;
+  it could not prove a command was *runnable by a stranger*. The defect class that a
+  cross-model test caught in F-20 recurred in a different repo in a different shape — a
+  START-HERE whose commands stood on `.engine` and `.venv`, both gitignored, with the
+  recreate step living in another file entirely. Second bite, so it becomes a check:
+  `git check-ignore` (index-aware, because a tracked file matching an ignore rule still
+  ships), instructions read rather than prose, findings grouped per artifact, and a
+  non-git root SKIPs loudly rather than reading as "nothing is ignored".
+- **The new rule caught two defects in itself during real-artifact validation**, which is
+  the standard this estate now expects: a **vacuous pass** — a line invoking
+  `.venv/bin/python` was accepted as *recreating* `.venv`, because the artifact's own name
+  appears in the command; fixed by masking every ignored path off the line first, since
+  *a creation signal only counts when it survives removal of the thing it claims to
+  create*. And a **symlink hole** — `realpath()` on `.venv/bin/python` marched out to the
+  system interpreter and the artifact vanished from the check.
+- Fixture 69 → 107. Verified against both real resume files rather than synthetic ones,
+  with a counterfactual: strip the fresh-clone section from the rig's START-HERE and the
+  rule fires twice, naming both artifacts.
+- **Six laws arrived in `fable-mode` from the rig build**, each earned by a live failure
+  and credited: an absence of records is not evidence of absence · configured is not
+  verified · a count that moved needs its reason, never its direction · the vacuous pass
+  (a test that quietly stops testing what it claims — remedy: make one assertion fail on
+  purpose) · never widen a margin, and the test bends to the product, never the reverse ·
+  the character of a failure is evidence about the character of the test.
+- `/mentor` gains the commission-writing rules (destructive tools only against scratch
+  roots; name the root; forbid the claim the lane cannot check) and the test-design law
+  that a gate disagreeing with a true sentence is a broken gate.
+- Disclosed, unfixed: DEAD-REFERENCE over-fires on bare basenames mentioned in *prose*
+  (`room.py`, `spend.py`) where the new rule already distinguishes instruction from
+  prose. Same technique fixes it; queued rather than rushed.
+
 ## 3.16.0 — 2026-07-27
 
 **Five instruments in one wave — every one of them found a real defect on its first run.**

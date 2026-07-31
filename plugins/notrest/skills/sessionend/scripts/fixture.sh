@@ -1,8 +1,10 @@
 #!/bin/bash
 # fixture.sh — asserts starthere_lint.py: a contract-shaped START-HERE passes; each of the
-# four FAIL rules fires on its own injected defect and ONLY its own; the F-20 shape (status
-# + read-order + "Run it", no resume instruction) is caught; heading variants the estate
-# really writes are accepted; --fix-hint writes nothing; exit codes 0/5/6/2 hold.
+# five FAIL rules fires on its own injected defect and ONLY its own; the F-20 shape (status
+# + read-order + "Run it", no resume instruction) is caught; the clean-clone rule catches a
+# command standing on a gitignored artifact and clears one that is recreated in-file;
+# heading variants the estate really writes are accepted; --fix-hint writes nothing; exit
+# codes 0/5/6/2 hold.
 # Self-relative; writes only inside its own mktemp dir; spawns no lane and calls no model.
 # Usage: bash <sessionend-skill>/scripts/fixture.sh   (exit 0 = all pass, 1 = a failure)
 set -u
@@ -259,8 +261,8 @@ t "--json verdict is FAIL" "$(jq_ "d['verdict']")" "FAIL"
 t "--json names the rule" "$(jq_ "d['fails'][0]['rule']")" "DEAD-REFERENCE"
 t "--json carries the line number" "$(jq_ "d['fails'][0]['line']")" "10"
 t "--json carries the law text with the finding" "$(jq_ "'runnable exactly as written' in d['fails'][0]['law']")" "True"
-t "--json publishes all four rules" "$(jq_ "len(d['rules'])")" "4"
-t "--json publishes the warn rules" "$(jq_ "len(d['warn_rules'])")" "2"
+t "--json publishes all five rules" "$(jq_ "len(d['rules'])")" "5"
+t "--json publishes the warn rules" "$(jq_ "len(d['warn_rules'])")" "3"
 t "--json carries notes" "$(jq_ "len(d['notes'])>0")" "True"
 python3 "$L" check --file "$W/good.md" --root "$W" --json > "$W/j2.json" 2>&1
 t "--json on a clean file exits 0" "$?" "0"
@@ -289,6 +291,146 @@ python3 "$L" check --file "$W/good.md" --root "$W/nowhere" >/dev/null 2>&1
 t "a missing root exits 2" "$?" "2"
 python3 "$L" check --root "$W" >/dev/null 2>&1
 t "check with neither --file nor --fix-hint exits 2" "$?" "2"
+
+# ── J · the clean-clone rule (record F-20's defect class, second bite: rig.rest) ─────────
+# The lint proved a path was PRESENT; it never proved a command was RUNNABLE BY A STRANGER.
+# Everything above runs with --root "$W", which is NOT a git repo — so the rule is skipped
+# there and the older asserts keep the behaviour they were written against. These run
+# against a real scratch repo with real ignore rules.
+echo "── J · the clean-clone rule"
+G="$W/clone-repo"
+git init -q "$G" 2>/dev/null
+printf '/.engine/\n/.venv/\ntracked-anyway.md\n' > "$G/.gitignore"
+mkdir -p "$G/.engine/plugins" "$G/.venv/bin" "$G/shell"
+printf 'print(1)\n' > "$G/.engine/plugins/index.py"
+printf '#!/bin/sh\n'  > "$G/.venv/bin/python"
+printf '# ledger\n'   > "$G/COORD.md"
+printf '# handoff\n'  > "$G/HANDOFF.md"
+printf 'echo ok\n'    > "$G/run.sh"
+printf '# readme\n'   > "$G/shell/README.md"
+printf '# tracked\n'  > "$G/tracked-anyway.md"
+git -C "$G" add -f .gitignore tracked-anyway.md COORD.md >/dev/null 2>&1
+git -C "$G" -c user.email=f@x -c user.name=fixture commit -qm init >/dev/null 2>&1
+rung(){ python3 "$L" check --file "$1" --root "$G" > "$W/out.txt" 2>&1; echo $?; }
+# $1 = the body that follows the shared, contract-shaped head
+mkjd(){ { printf '# Start Here — clone demo\n**Status in one line:** v2.0.0 (commit a1b2c3d).\n\n## Read these first, in order\n1. COORD.md — the ledger tail\n\n'; cat; } > "$W/j.md"; }
+
+# J1 · a command standing on a gitignored dir, with no recreate step anywhere
+mkjd <<'EOF'
+## Then do this, in order
+1. Run `python3 .engine/plugins/index.py track` — expect exit 0.
+EOF
+t "UNRUNNABLE-FROM-CLEAN-CLONE fires (exit 6)" "$(rung "$W/j.md")" "6"
+has "$W/out.txt" "UNRUNNABLE-FROM-CLEAN-CLONE" "names the rule"
+has "$W/out.txt" ".engine" "names the gitignored artifact"
+has "$W/out.txt" "FRESH CLONE WILL NOT HAVE IT" "says plainly what a stranger gets"
+t "and it is the ONLY rule that fires" "$(nfails)" "1"
+hasnt "$W/out.txt" "DEAD-REFERENCE" "the path is present here, so DEAD-REFERENCE stays quiet"
+
+# J1b · --fix-hint hands back the missing recreate skeleton
+python3 "$L" check --file "$W/j.md" --root "$G" --fix-hint > "$W/jhint.txt" 2>&1
+t "--fix-hint keeps the FAIL exit code" "$?" "6"
+has "$W/jhint.txt" "A fresh clone needs this first" "printed the recreate skeleton"
+has "$W/jhint.txt" "gitignored" "the skeleton says why the step is needed"
+
+# J2 · the same file, with the recreate command present in-file → clean
+mkjd <<'EOF'
+## A fresh clone needs this first
+```bash
+git -C /elsewhere worktree add .engine abc1234
+```
+
+## Then do this, in order
+1. Run `python3 .engine/plugins/index.py track` — expect exit 0.
+EOF
+t "a recreate command in the file clears the rule (exit 0)" "$(rung "$W/j.md")" "0"
+has "$W/out.txt" "recreates it" "the note says which line recreates it"
+hasnt "$W/out.txt" "UNRUNNABLE" "no finding when the bootstrap is present"
+
+# J3 · the recreate step exists only as a POINTER to another file → WARN, never FAIL
+mkjd <<'EOF'
+`.engine` is created by the bootstrap — see `shell/README.md` for the instructions.
+
+## Then do this, in order
+1. Run `python3 .engine/plugins/index.py track` — expect exit 0.
+EOF
+t "a pointer to another file WARNS, not FAILS (exit 5)" "$(rung "$W/j.md")" "5"
+has "$W/out.txt" "RECREATE-ELSEWHERE" "names the warn rule"
+has "$W/out.txt" "shell/README.md" "names the file it outsources to"
+t "no FAIL line — the pointer is at least honest" "$(nfails)" "0"
+
+# J4 · a cited path that is NOT ignored behaves exactly as before (no false positive)
+mkjd <<'EOF'
+## Then do this, in order
+1. Run `bash run.sh` — expect `ok` and exit 0.
+2. Read `shell/README.md`; verify it names the port.
+EOF
+t "a tracked path fires nothing (exit 0)" "$(rung "$W/j.md")" "0"
+hasnt "$W/out.txt" "UNRUNNABLE" "no finding for a path a clone will carry"
+has "$W/out.txt" "no instruction stands on a gitignored artifact" "says so in the notes"
+
+# J5 · a file matching an ignore pattern but TRACKED anyway is still in the clone
+mkjd <<'EOF'
+## Then do this, in order
+1. Read `tracked-anyway.md` — expect the TODO list; then run `bash run.sh`.
+EOF
+t "a tracked-but-ignored-pattern file is not flagged (exit 0)" "$(rung "$W/j.md")" "0"
+hasnt "$W/out.txt" "UNRUNNABLE" "git check-ignore is index-aware, and so is the rule"
+
+# J6 · a PROSE mention of an ignored dir is not an instruction (the rig sessions/ shape)
+mkjd <<'EOF'
+`.engine` and `.venv` are gitignored, so this repo's clone carries neither of them.
+
+## Then do this, in order
+1. Run `bash run.sh` — expect `ok` and exit 0.
+EOF
+t "prose that merely MENTIONS an ignored path fires nothing (exit 0)" "$(rung "$W/j.md")" "0"
+hasnt "$W/out.txt" "UNRUNNABLE" "the rule reads instructions, not prose"
+
+# J7 · the vacuous pass, caught live against rig.rest before this assert existed: a line
+# that USES two ignored artifacts must never count as the line that CREATES one, even
+# though `.venv` carries the word "venv" inside its own name.
+mkjd <<'EOF'
+## Then do this, in order
+1. Run `.venv/bin/python .engine/plugins/index.py track` — expect exit 0.
+EOF
+t "a use-line does not recreate what it uses (exit 6)" "$(rung "$W/j.md")" "6"
+t "both artifacts are reported, neither self-cleared" "$(nfails)" "2"
+has "$W/out.txt" "\.venv is gitignored" "the artifact's own name is not a creation signal"
+has "$W/out.txt" "\.engine is gitignored" "and neither is its neighbour's"
+
+# J8 · DISJOINTNESS — a path both gitignored AND absent is DEAD-REFERENCE, never rule 5.
+# Decided deliberately: it is already broken HERE, which is the plainer, more urgent thing
+# to say, and it keeps the older rule's behaviour exactly as fixtured.
+mkjd <<'EOF'
+## Then do this, in order
+1. Run `python3 .engine/plugins/GONE.py track` — expect exit 0.
+EOF
+t "an ignored AND missing path fails (exit 6)" "$(rung "$W/j.md")" "6"
+t "exactly one rule fires" "$(nfails)" "1"
+has "$W/out.txt" "DEAD-REFERENCE" "and it is DEAD-REFERENCE"
+hasnt "$W/out.txt" "UNRUNNABLE" "rule 5 judges only paths that exist"
+
+# J9 · a non-git root: the rule SKIPS honestly and every other rule still runs
+mkjd <<'EOF'
+## Then do this, in order
+1. Run `python3 .engine/plugins/index.py track` — expect exit 0.
+EOF
+t "a non-git root still produces a verdict (exit 6)" "$(run "$W/j.md")" "6"
+has "$W/out.txt" "clean-clone check SKIPPED" "the skip is reported, never a silent pass"
+hasnt "$W/out.txt" "UNRUNNABLE" "no guessing about ignore rules without a repo"
+has "$W/out.txt" "DEAD-REFERENCE" "the other rules still run"
+
+# J10 · --json publishes the new rule with its finding
+mkjd <<'EOF'
+## Then do this, in order
+1. Run `python3 .engine/plugins/index.py track` — expect exit 0.
+EOF
+python3 "$L" check --file "$W/j.md" --root "$G" --json > "$W/j3.json" 2>&1
+t "--json exits 6 on the new rule" "$?" "6"
+jq3(){ python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(eval(sys.argv[2],{'d':d}))" "$W/j3.json" "$1"; }
+t "--json names the new rule" "$(jq3 "d['fails'][0]['rule']")" "UNRUNNABLE-FROM-CLEAN-CLONE"
+t "--json carries its law text" "$(jq3 "'fresh clone' in d['fails'][0]['law']")" "True"
 
 # ── I · the instrument never touches what it judges ─────────────────────────────────────
 echo "── I · read-only against this repo's real START-HERE"

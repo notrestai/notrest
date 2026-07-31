@@ -9,7 +9,14 @@ document never did. The file carried STATUS where the contract promises ORDERED 
 INSTRUCTIONS, and it read perfectly to its author. Prose review had already passed it.
 So the check is mechanical: a document is not finished because its writer recognises it.
 
-The four FAIL rules, each earned against that file:
+Then the defect class bit a SECOND time (rig.rest, 2026-07-31), which is when a habit has
+to become a check. That START-HERE cited commands a fresh clone could not run: the
+artifacts they stand on (`.venv`, `.engine`) are GITIGNORED, and the command that recreates
+them lived in a different file. DEAD-REFERENCE passed it — in the WORKING TREE those paths
+exist. The lint proved a path was PRESENT; it never proved a command was RUNNABLE BY A
+STRANGER. Rule 5 asks the only question that separates the two.
+
+The five FAIL rules, each earned against a real file:
 
   NO-NEXT-ACTION            no section says what to DO next. Status, a read-order and a
                             "Run it" section are not a resume instruction — that exact
@@ -22,10 +29,17 @@ The four FAIL rules, each earned against that file:
   NO-STATE-ANCHOR           nothing names where the trail lives (COORD/HANDOFF/STATE or
                             equivalent), so a cold reader cannot verify the status it was
                             handed against anything.
+  UNRUNNABLE-FROM-CLEAN-CLONE  an instruction stands on a gitignored artifact and the file
+                            never says how to recreate it. It exists here; it will not
+                            exist there. The command runs for its author and fails for the
+                            stranger the file is written for.
 
 The rules are disjoint by construction — one defect lights exactly one rule. A missing
 section is NO-NEXT-ACTION and never NOT-ACTIONABLE; a dead COORD.md citation is
-DEAD-REFERENCE (the doc did name the trail) and never NO-STATE-ANCHOR.
+DEAD-REFERENCE (the doc did name the trail) and never NO-STATE-ANCHOR; and a path that is
+BOTH gitignored and absent from the working tree is DEAD-REFERENCE, never rule 5 — it is
+already broken here, which is the plainer and more urgent thing to say. Rule 5 judges only
+paths that exist, because "exists here, missing there" is the whole defect it names.
 
   starthere_lint.py check --file START-HERE.md [--root .] [--json] [--quiet] [--fix-hint]
   starthere_lint.py check --fix-hint            # skeleton only, no file needed
@@ -39,6 +53,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 
 # ── the shapes a next-action section really takes ───────────────────────────────────────
@@ -104,6 +119,24 @@ PATH_RE = re.compile(r"(?<![\w/.\-])((?:~|\.{1,2})?/?(?:[\w.@+\-]+/)*[\w.@+\-]+\
 DIR_IN_TICKS_RE = re.compile(r"`((?:~|\.{1,2})?/?(?:[\w.@+\-]+/)+[\w.@+\-]*)`")
 PLACEHOLDER = re.compile(r"[<>{}$*?|\\]|\.\.\.|\bNNN\b|\bYYYY\b|\bxxx\b", re.I)
 STRIP_FIRST = re.compile(r"https?://\S+|\bwww\.\S+|\S+@\S+\.\w+")
+
+# ── the clean-clone check ───────────────────────────────────────────────────────────────
+# A path-shaped token inside a command, extension or not: cited_paths() only sees paths
+# with a known extension, and `.venv/bin/python` has none — yet it is precisely the thing a
+# fresh clone is missing. Used by rule 5 only; the older rules keep the citation set they
+# were built and fixtured against.
+CMD_TOKEN_RE = re.compile(r"^(?:\./)?(?:[\w.@+\-]+/)+[\w.@+\-]*$")
+# What a line has to do to count as RECREATING an artifact rather than merely using it.
+# `.venv/bin/python app.py serve` uses it; `python3 -m venv .venv` creates it.
+CREATE_RE = re.compile(
+    r"\b(?:mkdir|venv|virtualenv|clone|worktree\s+add|pip3?\s+install|npm\s+(?:ci|i|install)"
+    r"|yarn\s+install|pnpm\s+install|install|bootstrap|scaffold|re-?creat\w*|re-?generat\w*"
+    r"|re-?build\w*|restore|download|fetch|unzip|untar|initiali[sz]e|\binit\b|creates?|created"
+    r"|generates?|generated|builds?|built|make|set\s?up|provision)\b", re.I)
+# What a line has to do to count as POINTING somewhere else for the bootstrap.
+POINTER_RE = re.compile(
+    r"\b(?:see|read|refer|per|instructions?|documented|describe[sd]?|explain(?:s|ed)?|steps?"
+    r"|details?|how\s+to|covered|lives?\s+in|is\s+in|are\s+in|follow|according)\b", re.I)
 
 
 def die(msg, code=2):
@@ -294,6 +327,165 @@ def elsewhere(root, raw, budget=20000):
     return hits
 
 
+# ── clean-clone machinery ───────────────────────────────────────────────────────────────
+def instruction_map(lines, fenced):
+    """[bool] per line — True when the line INSTRUCTS the reader (a command, or a verb-led
+    step) rather than describing the project. Rule 5 reads instructions, not prose: a
+    sentence that merely mentions an ignored directory is not an order to use it, and is
+    often the file honestly disclosing the gap ("`.engine` and `.venv` are gitignored")."""
+    return [bool(ln.strip()) and (is_command_line(ln, fenced[i]) or is_verb_led(ln))
+            for i, ln in enumerate(lines)]
+
+
+def command_spans(line, fenced_line):
+    """The parts of a line that are COMMAND text — the whole line inside a fence or after a
+    `$` prompt, otherwise the backticked spans that open with a command head. Rule 5 also
+    accepts a PATH-SHAPED head, which the older is_command_line deliberately does not:
+    `.venv/bin/python app.py` is a command whose interpreter is itself the missing artifact,
+    and refusing to look inside it is how the defect stayed invisible. Local to this rule —
+    the older rules keep the command test they were fixtured against."""
+    if fenced_line and line.strip():
+        return [line]
+    if re.match(r"^\s*(?:[-*+]\s*|\d+[.)]\s*|>\s*)*\$\s+\S", line):
+        return [line]
+    out = []
+    for span in re.findall(r"`([^`]+)`", line):
+        head = span.strip().split()[0] if span.strip().split() else ""
+        if head in CMD_HEADS or head.startswith("./") or CMD_TOKEN_RE.match(head):
+            out.append(span)
+    return out
+
+
+def command_paths(lines, fenced):
+    """[(line_no, raw)] — path-shaped tokens inside command text, extension or not."""
+    out, seen = [], set()
+    for n, ln in enumerate(lines, 1):
+        for span in command_spans(ln, fenced[n - 1]):
+            for tok in span.split():
+                tok = tok.strip("`\"'()[]{},;").rstrip(":")
+                if not tok or tok.startswith("-") or "=" in tok or "://" in tok:
+                    continue
+                if PLACEHOLDER.search(tok) or not CMD_TOKEN_RE.match(tok):
+                    continue
+                if (n, tok) in seen:
+                    continue
+                seen.add((n, tok))
+                out.append((n, tok))
+    return out
+
+
+def probe_path(p):
+    """An absolute path for git to judge, with the DIRECTORY chain resolved but the final
+    component left alone. Resolving the whole thing is wrong: `.venv/bin/python` is a
+    symlink to a system interpreter, and realpath() would march it out of the repo and hide
+    the very artifact the rule exists to catch (caught live against rig.rest). Resolving
+    nothing is also wrong: /tmp is a symlink to /private/tmp on macOS, and git reports the
+    resolved root."""
+    ap = os.path.abspath(str(p))
+    return os.path.join(os.path.realpath(os.path.dirname(ap)), os.path.basename(ap))
+
+
+def git_ignored(root, paths):
+    """{abs_path: matching-ignore-pattern} for the paths a fresh clone would NOT carry —
+    or None when the question cannot be asked honestly (no git, no repo, git refuses).
+    A skip is REPORTED, never silently read as "nothing is ignored".
+
+    `git check-ignore` is index-aware by default, and that is exactly the semantics wanted:
+    a TRACKED file matching an ignore rule still arrives in the clone, and git says so."""
+    try:
+        top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=15)
+    except Exception:
+        return None
+    if top.returncode != 0 or not top.stdout.strip():
+        return None
+    toproot = os.path.realpath(top.stdout.strip())
+    inside = []
+    for p in paths:
+        rp = str(p)
+        # git refuses a path outside its worktree and kills the whole batch — filter first.
+        if rp == toproot or rp.startswith(toproot + os.sep):
+            inside.append(rp)
+    if not inside:
+        return {}
+    try:
+        r = subprocess.run(["git", "-C", str(root), "check-ignore", "-v", "--stdin"],
+                           input="\n".join(inside) + "\n",
+                           capture_output=True, text=True, timeout=30)
+    except Exception:
+        return None
+    if r.returncode not in (0, 1):        # 0 = some ignored, 1 = none, anything else = ask nothing
+        return None
+    out = {}
+    for ln in r.stdout.splitlines():
+        if "\t" not in ln:
+            continue
+        left, path = ln.split("\t", 1)
+        bits = left.split(":", 2)         # <source>:<linenum>:<pattern>
+        out[path.strip()] = bits[2] if len(bits) == 3 else ""
+    return out
+
+
+def ignored_artifact(raw, pattern):
+    """The NAME of the thing the clone will be missing — the ignore pattern when it names a
+    concrete path (`/.engine/` → `.engine`), else the cited path itself (`*.pyc` names no
+    one thing, so the citation is the honest label)."""
+    pat = (pattern or "").strip().lstrip("!").strip("/")
+    if pat and not re.search(r"[*?\[\]]", pat):
+        return pat
+    return raw
+
+
+def mentions(line, name):
+    return re.search(r"(?<![\w.\-])%s(?![\w])" % re.escape(name), line) is not None
+
+
+def mask(line, names):
+    """The line with every ignored artifact and citation blanked out. Without this the rule
+    passes itself vacuously: `.venv/bin/python .engine/…/index.py` USES both artifacts and
+    creates neither, yet the artifact's own name carries the word `venv` — caught live
+    against rig.rest before this line existed. A creation signal only counts when it
+    survives the removal of the thing it is supposed to be creating."""
+    out = line
+    for nm in sorted(names, key=len, reverse=True):
+        out = re.sub(r"(?<![\w.\-])%s(?![\w])" % re.escape(nm), " ", out)
+    return out
+
+
+def recreate_step(lines, instr, art, raws, blanks=()):
+    """Line index of the instruction that CREATES the artifact, or -1. It must be an
+    instruction, name the artifact, AND carry a creation signal in what is left of the line
+    once every ignored path on it is masked out.
+
+    Stated limit: this proves a bootstrap step is PRESENT, not that it is complete or
+    correct. A line that installs INTO the artifact counts. The lint refuses the file that
+    never tells the reader to build the thing at all — it cannot run the command for you."""
+    names = set(blanks) | {art} | set(raws)
+    for i, ln in enumerate(lines):
+        if not instr[i]:
+            continue
+        if not (mentions(ln, art) or any(mentions(ln, r) for r in raws)):
+            continue
+        if CREATE_RE.search(mask(ln, names)):
+            return i
+    return -1
+
+
+def recreate_pointer(lines, art, raws):
+    """(line index, the file it defers to) — a line that names the artifact and sends the
+    reader to another document for the bootstrap, or (-1, "")."""
+    for i, ln in enumerate(lines):
+        if not (mentions(ln, art) or any(mentions(ln, r) for r in raws)):
+            continue
+        if not POINTER_RE.search(ln):
+            continue
+        others = [c for _n, c in cited_paths([ln])
+                  if c not in raws and not c.startswith(art)]
+        if others:
+            return i, others[0]
+    return -1, ""
+
+
 def anchors(cites):
     hits = []
     for _n, raw in cites:
@@ -317,6 +509,10 @@ RULES = {
     "NO-STATE-ANCHOR":
         "nothing names where the trail lives (COORD.md / HANDOFF.md / STATE.md or "
         "equivalent) — a cold reader cannot verify the status it was handed",
+    "UNRUNNABLE-FROM-CLEAN-CLONE":
+        "an instruction stands on a GITIGNORED artifact and the file never says how to "
+        "recreate it — the path exists here and will NOT exist in a fresh clone, so the "
+        "command runs for its author and fails for the stranger the file is written for",
 }
 WARNS = {
     "NO-VERSION-ANCHOR":
@@ -325,6 +521,10 @@ WARNS = {
     "NO-DONE-CONDITION":
         "the next-action names no verifiable done-condition — say what the reader should "
         "see when the step worked",
+    "RECREATE-ELSEWHERE":
+        "the recreate step for a gitignored artifact is only a POINTER to another file — a "
+        "resume file that outsources its own bootstrap is one file away from stranding its "
+        "reader; the pointer is at least honest, so this warns rather than fails",
 }
 
 
@@ -333,6 +533,7 @@ def lint(text, root):
     fenced = fence_map(lines)
     secs = sections(lines, fenced)
     fails, warns, notes = [], [], []
+    extras = []                                # artifacts rule 5 wants a recreate step for
 
     # 1 / 2 — the resume instruction
     na = None
@@ -384,6 +585,66 @@ def lint(text, root):
                       "cites %s — not found under %s%s%s" % (raw, root, hint, more)))
     notes.append("%d path citation(s) checked" % len(cites))
 
+    # 5 — the clean-clone check (the F-20 defect class, second bite: rig.rest 2026-07-31).
+    # DEAD-REFERENCE proves a path is THERE. It cannot prove a stranger will have it. The
+    # rig file cited `.venv/…` and `.engine/…` inside its own commands: both present in the
+    # working tree, both gitignored, and the command that recreates them living in another
+    # file. The lint passed a START-HERE that could not run on a fresh clone. Only paths
+    # that EXIST are judged here — absent ones are DEAD-REFERENCE's finding, so one defect
+    # still lights exactly one rule.
+    instr = instruction_map(lines, fenced)
+    cand = {}                                   # abs path -> (first line, raw as cited)
+    for n, raw in list(cites) + command_paths(lines, fenced):
+        if not instr[n - 1]:
+            continue
+        p = resolve(root, raw)
+        if not p.exists():
+            continue
+        key = probe_path(p)
+        if key not in cand or n < cand[key][0]:
+            cand[key] = (n, raw)
+    # asked even with nothing to check, so a non-repo root is REPORTED as a skip rather
+    # than silently reading as "nothing here is ignored"
+    ignored = git_ignored(root, list(cand))
+    if ignored is None:
+        notes.append("clean-clone check SKIPPED — %s is not a git repo (or git could not "
+                     "answer), so nothing can be asked about what a clone would carry"
+                     % root)
+    else:
+        groups = {}                             # artifact -> [first line, [raws], pattern]
+        for key, (n, raw) in sorted(cand.items(), key=lambda kv: kv[1][0]):
+            if key not in ignored:
+                continue
+            art = ignored_artifact(raw, ignored[key])
+            g = groups.setdefault(art, [n, [], ignored[key]])
+            g[0] = min(g[0], n)
+            if raw not in g[1]:
+                g[1].append(raw)
+        # every ignored name on the page, so a line that merely USES them cannot pose as
+        # the line that CREATES one of them
+        blanks = set(groups) | {r for g in groups.values() for r in g[1]}
+        for art, (n, raws, pat) in sorted(groups.items(), key=lambda kv: kv[1][0]):
+            where = ", ".join(raws[:3]) + (" +%d more" % (len(raws) - 3) if len(raws) > 3
+                                           else "")
+            rec = recreate_step(lines, instr, art, raws, blanks)
+            if rec >= 0:
+                notes.append("clean-clone: %s is gitignored, and line %d recreates it"
+                             % (art, rec + 1))
+                continue
+            pi, target = recreate_pointer(lines, art, raws)
+            if pi >= 0:
+                warns.append(("RECREATE-ELSEWHERE", n,
+                              "%s is gitignored (%s) and this file only POINTS at %s for "
+                              "how to recreate it (line %d)" % (art, pat, target, pi + 1)))
+                continue
+            fails.append(("UNRUNNABLE-FROM-CLEAN-CLONE", n,
+                          "instruction uses %s, and %s is gitignored (%s) — it exists here "
+                          "and a FRESH CLONE WILL NOT HAVE IT; no step in this file "
+                          "creates it" % (where, art, pat)))
+            extras.append(art)
+        if not groups:
+            notes.append("clean-clone: no instruction stands on a gitignored artifact")
+
     # 4 — the state anchor (citation, not existence: existence is DEAD-REFERENCE's job)
     anc = anchors(cites)
     if anc:
@@ -395,7 +656,7 @@ def lint(text, root):
 
     if not VERSION_ANCHOR.search(text):
         warns.append(("NO-VERSION-ANCHOR", 0, "no version string or commit sha anywhere"))
-    return fails, warns, notes
+    return fails, warns, notes, extras
 
 
 FIX_HINT = """\
@@ -418,9 +679,24 @@ FIX_HINT = """\
 HINT_WHY = """\
 Minimum to satisfy the lint: a next-action heading the reader can find (any of "Then do
 this" / "NEXT ACTION" / "Next steps" / "Resume" / "First action"), at least one verb-led
-or command-bearing step under it, one COORD/HANDOFF/STATE-class file named, and every
-cited path real. Printed only — starthere_lint never writes; sessionend writes, this
-judges.
+or command-bearing step under it, one COORD/HANDOFF/STATE-class file named, every cited
+path real, and a recreate step for anything gitignored that a command stands on. Printed
+only — starthere_lint never writes; sessionend writes, this judges.
+"""
+RECREATE_HINT = """\
+## A fresh clone needs this first
+`%s` is gitignored — a clone of this repo arrives without it, so every command below that
+stands on it fails for a stranger. Put the recreate command HERE, not one file away:
+
+```bash
+<the exact command that creates %s>
+# e.g. python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# e.g. git -C <source repo> worktree add "$PWD/.engine" <pinned sha>
+```
+"""
+RECREATE_WHY = """\
+A pointer ("see install/README.md") downgrades this to a RECREATE-ELSEWHERE warning — it is
+honest, and still one file away from stranding the reader.
 """
 
 
@@ -449,7 +725,8 @@ def main():
     if not root.is_dir():
         die("no such root: %s" % root)
 
-    fails, warns, notes = lint(p.read_text(encoding="utf-8", errors="replace"), root)
+    fails, warns, notes, extras = lint(
+        p.read_text(encoding="utf-8", errors="replace"), root)
     verdict = "FAIL" if fails else ("WARN" if warns else "PASS")
 
     if a.json:
@@ -476,6 +753,10 @@ def main():
     if a.fix_hint:
         print()
         print(FIX_HINT)
+        for art in extras:                     # one skeleton per artifact rule 5 named
+            print(RECREATE_HINT % (art, art))
+        if extras:
+            print(RECREATE_WHY, end="")
         print(HINT_WHY, end="")
 
     sys.exit(6 if fails else (5 if warns else 0))
