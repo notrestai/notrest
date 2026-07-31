@@ -170,6 +170,18 @@ cite the result:
 - **Generated artifact?** Run its consumer: execute the generator against a scratch
   target and grep the *output* for the invariants (paths absolute, tokens end-anchored,
   placeholders stamped, checklists present).
+- **A FLAKE? Never widen the margin.** Lengthening a sleep, raising a timeout or padding a
+  threshold makes a test pass because the machine happened to be fast enough — the same
+  species as a test that stopped testing. Remove the clock instead: inject the window the
+  product uses and assert BOTH extremes (nothing ever inside it, everything inside it).
+  Corollary, earned the same day: **the test bends to the product, never the reverse** —
+  if the product clamps a port range by law, the fixture binds inside that range and reads
+  back the port it actually got; it never uses a port because a probe said it was free.
+- **The CHARACTER of a failure is evidence about the character of the TEST.** A red that
+  reproduces *identically* five times cannot be timing-sensitive — so an identical
+  deterministic failure is proof the clock dependence is gone, and the remaining bug is a
+  real one. Read how a test fails, not only that it failed. (Earned 2026-07-31 by the rig
+  builder, reading 573/1-five-times-running as evidence rather than as a setback.)
 - **A test that PASSED — is it still testing anything?** The most dangerous defect class
   is *a test that quietly stops testing what it claims*: an assertion over a variable that
   was never assigned, a grep whose pattern can no longer match, a check that polls the
