@@ -138,6 +138,61 @@ The seat never hand-builds a feature; it specs, gates, and ships:
    measured on this machine: **~20-tool-call lanes land in ≈3.5 min; 72–77-call monolith
    lanes take ≈22–24 min** — near-linear in tool calls. One lane doing three domains is
    therefore three times the wall-clock for the same tokens.
+8. **Domains are computed, not guessed.** Rules 5 and 7 command domain-scoped lanes split
+   along file boundaries — but a TOUCH-ONLY list drawn from the seat's memory of the tree
+   is a guess. When lanes will touch a SHARED tree, the seat runs the partitioner and
+   reads the answer: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/graph.py domains
+   --root . (--paths P1 P2 ... | --changed | --all) [--lanes N] [--json]`. Lanes are the
+   connected components of the file-link graph restricted to the scope — hubs are
+   extracted FIRST, then components are found on the remainder, and **a component is
+   never split**; `--lanes N` merges the smallest first (by bytes) toward N. Each lane's
+   **TOUCH ONLY** list is lifted verbatim from `lanes[].files`. Files everyone links to
+   belong to no lane: **`seat_held`** (in-scope degree ≥ `max(4, 3 × median in-scope
+   degree)`) stays at the seat — manifests, shared config, the contracts the lanes compose
+   against. An empty scope is exit 2, never a silent `lanes: []` — a quiet no-op is the
+   moment a seat shrugs and hand-partitions from memory. Every `boundary` line is pasted into the commission that owns its `from` side
+   as **"you may READ `<to>`, never edit; the interface is `<name it>`"** — naming the
+   interface is the seat's job, not the tool's. The command **exits 2 rather than
+   guessing**: no scope flag, a named path missing from the tree, a non-git root.
+   *Worked example.* `lanes:[{id:1,files:["scripts/graph.py","tests/test_graph.py"]},
+   {id:2,files:["SKILL.md"]}]`, `seat_held:[{file:"plugin.json",degree:6}]`, `boundary:
+   SKILL.md -> scripts/graph.py (lane 1)` → lane 1's commission reads *"TOUCH ONLY
+   scripts/graph.py, tests/test_graph.py"*; lane 2's reads *"TOUCH ONLY SKILL.md — you may
+   READ scripts/graph.py, never edit; the interface is the `domains` argv contract"*; and
+   `plugin.json` is in neither commission because the seat edits it after both land.
+   **THE GRAPH KNOWS LINKS, NOT SEMANTICS.** Two files with no edge between them can still
+   collide at runtime — same output path, same port, same env var, same fixture directory
+   — and no link scanner can see it. The tool **PROPOSES** the partition; the seat
+   **REVIEWS** it before dispatch. A partition accepted unreviewed is a guess wearing a
+   uniform.
+
+## Synthesis at fan-in — digest, never verdict
+
+When a round returns **4+ lanes at once** — or returns totalling roughly **200+ lines** —
+reading them all at the seat spends the scarcest resource in the arrangement on
+secretarial work. The seat spawns ONE synthesis lane to do it instead. Same rules as every
+lane, no exceptions: `model: "opus"` set explicitly, receipted in the spend ledger, banked
+by the SubagentStop hook.
+
+Its commission is narrow by construction:
+
+- **Input is the N return blocks, VERBATIM** — pasted into the prompt. The lane runs **NO
+  tools and opens NO files**; anything it cannot confirm from the returns alone is marked
+  **"unverifiable in digest"** rather than looked up. A digest lane that reads the tree has
+  become an unbriefed reviewer.
+- **Output is per-lane** — *claimed / evidence cited / deviations & disclosures / counts* —
+  plus ONE **CONTRADICTIONS** section naming every shared fact two lanes report
+  differently: a count, a file's state, an exit code, whether a thing exists at all.
+- **No recommendation, and no ship/accept vocabulary.** Not "looks good", not "ready", not
+  "all green". Its output is labeled **"digest, not verdict"** — that label is VERBATIM and
+  load-bearing, because a digest arriving without it reads as a verdict, which is the
+  failure it exists to prevent.
+
+The seat still reads **every lane's verdict line itself** and still gates per builder-lane
+rule 6 — re-running the verification exit-code-checked, grepping each claimed edit against
+the tree, refuting the riskiest artifact. The digest spends one lane's context instead of
+the seat's; it never spends the seat's judgment. **Why the split is law: a summarizer that
+also gates is how "all lanes green" becomes a claim nobody checked.**
 
 ## Trail-walk — how the seat judges
 

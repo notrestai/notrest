@@ -1,5 +1,36 @@
 # Changelog — the notrest harness
 
+## 3.18.0 — 2026-07-31
+
+**Lane domains are computed, not guessed — the graph now feeds the swarm.**
+
+- **`graph.py` gains `domains`** (owner-ordered): partition any file set —
+  `--paths` / `--changed` / `--all` — into non-overlapping lane assignments at zero model
+  tokens. Lanes are connected components of the in-scope link graph; **a component is
+  never split** (splitting manufactures the shared-file collision the command exists to
+  prevent); `--lanes N` only merges, smallest-by-bytes first, and every merged lane says
+  so (`lane ≠ domain`). **Hubs out first, components second** — files everyone links to
+  (degree ≥ max(4, 3 × median in-scope degree)) go to `seat_held`, because files everyone
+  touches belong to no lane. Boundary lines print commission-pasteable ("you may READ,
+  never edit"). Empty scope, a named-but-missing path, a non-git root: exit 2, never a
+  guess. Runs in-memory on a fresh clone; no prior scan artifact needed.
+- **`agentswarm` gains two rules**: *"Domains are computed, not guessed"* — with the
+  honest limit inside the rule, not a footnote: **the graph knows links, not semantics**;
+  the tool proposes the partition, the seat reviews it before dispatch. And *"Synthesis at
+  fan-in — digest, never verdict"*: at ≥4 returning lanes, one synthesis lane compresses
+  returns (no tools, no files, no recommendation, labeled verbatim), because a summarizer
+  that also gates is how "all lanes green" becomes a claim nobody checked. The seat still
+  reads every verdict line and still gates.
+- **The two-lane build reviewed its own contract**: the doc lane refused to document
+  silently past three defects in the seat's frozen spec — hub-extraction order left
+  ambiguous (the wrong reading returns ONE transitive component and a no-op tool), a hub
+  threshold that scaled the wrong direction, and an empty scope falling through to a
+  silent success. All three ruled and amended mid-flight; the builder proved the order
+  ruling by counterfactual (order inverted → the real repo returns 1 lane, 6 asserts red).
+- Fixture: NEW `domains-fixture.sh`, 101 asserts, including the star topology and two
+  counterfactuals watched failing (the vacuous-pass law applied at birth). River (86),
+  journey (36), cockpit (60) fixtures unchanged-and-green against a pre-edit baseline.
+
 ## 3.17.0 — 2026-07-31
 
 **A resume file must run for a stranger, not just exist for its author — and six laws came home from the rig build.**

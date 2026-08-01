@@ -20,6 +20,12 @@ Subcommands:
                                       oracle's intake routes and each skill's own
                                       chain lines drawn as user-phrase → shape →
                                       skill → chains-to (graph/journey.{json,html})
+  domains (--paths…|--changed|--all)  partition files into DISJOINT lanes along
+          [--lanes N] [--json]        the link graph — connected components with
+                                      the hubs pulled out into seat_held, so a
+                                      swarm can be scoped without two lanes
+                                      being handed the same file (in memory; no
+                                      prior scan needed, nothing written)
   links <path> | orphans | stale      plain-text queries over the last scan
 
 Honesty: the graph shows REFERENCES that a text scan can see — not importance.
@@ -37,6 +43,7 @@ import os
 import pathlib
 import posixpath
 import re
+import statistics
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -3267,6 +3274,308 @@ def cmd_stale(a):
     return 0
 
 
+# =========================================== domains — lane boundaries by graph
+#
+# The seat has been computing TOUCH-ONLY lists by hand every build, reasoning
+# about dependencies the file graph already knows. This computes the mechanical
+# half: which files move together, where the seams are, and which files belong
+# to nobody. The seat still judges.
+
+HUB_FLOOR = 4          # a hub needs at least this many in-scope neighbours …
+HUB_MULT = 3           # … or this multiple of the MEDIAN degree — whichever is larger
+#
+# Why the median and not a share of the scope: a share scales the wrong way. At
+# 0.30 a 200-file scope demanded degree >= 60, so a plugin.json linked by 25
+# files rode into a lane precisely when lanes matter most — and under 5 files
+# seat_held was provably empty as a silent structural property. 3x the median is
+# scale-free: it asks "is this file far more connected than its neighbours", which
+# is the actual question, and the floor of 4 keeps a tiny scope from calling a
+# degree-2 file a hub.
+
+
+def domains_listing(root):
+    """The listing `scan` uses, git only. domains partitions a REAL tree: with
+    no git listing there is no tracked set to partition, and a bare walk would
+    quietly invent one out of whatever happens to be lying in the directory."""
+    if git_files(root) is None:
+        die(f"not a git repo: {root}\n"
+            f"domains partitions git's own file listing (the same listing scan "
+            f"uses) — run it inside a repo")
+    rels, _mode, _skipped = list_files(root)
+    return rels
+
+
+def changed_paths(root):
+    """(paths, deleted) from `git status --porcelain -z`. A rename reports its
+    NEW side — that is the file a lane would edit. Deletions come back
+    separately so the caller can DROP them and say so: nobody hand-named those,
+    and a lane cannot be scoped to a file that is gone."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "-z"],
+                           capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        die(f"could not read `git status` in {root}: {e}")
+    if r.returncode != 0:
+        die(f"`git status` failed in {root}:\n"
+            + r.stderr.decode("utf-8", "replace").strip())
+    fields = r.stdout.decode("utf-8", "replace").split("\0")
+    keep, deleted = [], []
+    i = 0
+    while i < len(fields):
+        f = fields[i]
+        i += 1
+        if len(f) < 4:
+            continue
+        xy, path = f[:2], f[3:]
+        if "R" in xy or "C" in xy:
+            i += 1                      # the ORIGIN path follows; we keep the new side
+        if "D" in xy:                   # incl. RD: renamed, then the new side deleted
+            deleted.append(path)
+            continue
+        keep.append(path)
+    return sorted(set(keep)), sorted(set(deleted))
+
+
+def expand_paths(root, raw_paths, listing, notes):
+    """Explicit files and directories → repo-relative ids. A named path that is
+    not in the tree is FATAL and named: instructions must not stand on missing
+    artifacts, and this command does not partition fictions."""
+    ids = set(listing)
+    picked = set()
+    for raw in raw_paths:
+        p = pathlib.Path(raw).expanduser()
+        ap = p if p.is_absolute() else (root / p)
+        try:
+            rel = ap.resolve().relative_to(root).as_posix()
+        except (ValueError, OSError):
+            die(f"outside the root: {raw}\n  root is {root}")
+        if rel == ".":
+            rel = ""
+        if rel and rel in ids:
+            picked.add(rel)
+            continue
+        if ap.is_dir():
+            prefix = (rel + "/") if rel else ""
+            hits = [i for i in listing if not prefix or i.startswith(prefix)]
+            if not hits:
+                notes.append(f"{raw}: a directory git lists no files under "
+                             f"(ignored, empty, or all skipped) — 0 files scoped from it")
+            picked.update(hits)
+            continue
+        if ap.exists():
+            die(f"not in the tree: {raw}\n"
+                f"  it exists on disk but git's listing does not carry it — ignored, "
+                f"inside a skipped directory, or a symlink.\n"
+                f"  domains partitions what the graph can see.")
+        die(f"no such path: {raw}\n"
+            f"  named explicitly but not in {root} — domains does not partition fictions")
+    return sorted(picked)
+
+
+def scope_edges(root, scoped, listing):
+    """Undirected file pairs, from the SAME extraction scan uses, restricted to
+    edges whose both ends are in scope. Nothing on disk is read but the scoped
+    files, and no prior graph.json is consulted — this runs on a fresh clone.
+
+    Resolution still sees the whole repo: a bare basename is only unambiguous
+    against the full tree, so scoping the Repo would invent edges."""
+    repo = Repo(root, listing)
+    inscope = set(scoped)
+    pairs = set()
+    for rel in scoped:
+        text = read_text(root / rel)
+        if text is None:
+            continue
+
+        def add(to, _kind, _r=rel):
+            if to != _r and to in inscope:
+                pairs.add((_r, to) if _r < to else (to, _r))
+
+        file_edges(repo, rel, text, add)
+    return pairs
+
+
+def hub_threshold(degrees):
+    """max(4, 3 x median in-scope degree) — scale-free, deterministic."""
+    if not degrees:
+        return float(HUB_FLOOR), 0.0
+    med = statistics.median(degrees)
+    return max(float(HUB_FLOOR), HUB_MULT * med), med
+
+
+def _numfmt(x):
+    return str(int(x)) if float(x).is_integer() else f"{x:.1f}"
+
+
+def partition(scoped, pairs, sizes, lanes_req, notes):
+    """Hubs out FIRST, connected components on the remainder SECOND, then
+    merge-to-N. The order is load-bearing: in any real repo everything is
+    transitively linked through manifests and shared config, so components over
+    the FULL graph return one giant blob — and since a component is never split
+    and --lanes only merges, the command would be a no-op on exactly the trees
+    it exists for. Returns (lanes, seat_held); a lane is (files, n_components)."""
+    nbrs = {f: set() for f in scoped}
+    for a, b in pairs:
+        nbrs[a].add(b)
+        nbrs[b].add(a)
+
+    degrees = [len(nbrs[f]) for f in scoped]
+    thresh, med = hub_threshold(degrees)
+    hubs = sorted(f for f in scoped if len(nbrs[f]) >= thresh)
+    hubset = set(hubs)
+    if hubs:
+        notes.append(f"hub rule at degree >= {_numfmt(thresh)} "
+                     f"(max of {HUB_FLOOR} and {HUB_MULT}x the median in-scope degree "
+                     f"{_numfmt(med)}): {len(hubs)} file(s) pulled out of every lane into "
+                     f"seat_held before components were computed")
+
+    # components over what is LEFT
+    seen, comps = set(), []
+    for f in scoped:                     # scoped is sorted → deterministic order
+        if f in hubset or f in seen:
+            continue
+        stack, comp = [f], []
+        seen.add(f)
+        while stack:
+            c = stack.pop()
+            comp.append(c)
+            for nb in sorted(nbrs[c]):
+                if nb in hubset or nb in seen:
+                    continue
+                seen.add(nb)
+                stack.append(nb)
+        comps.append((sorted(comp), 1))
+
+    def wt(c):
+        return sum(sizes.get(f, 0) for f in c[0])
+
+    if lanes_req:
+        if len(comps) > lanes_req:
+            notes.append(f"{len(comps)} component(s) merged down to {lanes_req} lane(s), "
+                         f"smallest-by-bytes first — merged lanes are still disjoint, and "
+                         f"no component was split")
+            while len(comps) > lanes_req:
+                comps.sort(key=lambda c: (wt(c), c[0][0]))
+                first, second = comps.pop(0), comps.pop(0)
+                comps.append((sorted(first[0] + second[0]), first[1] + second[1]))
+        elif len(comps) < lanes_req:
+            notes.append(f"asked for {lanes_req} lane(s); the graph yields {len(comps)} — "
+                         f"returning {len(comps)}. Padding would mean splitting a component, "
+                         f"and a split manufactures the shared-file collision by construction")
+
+    comps.sort(key=lambda c: (-wt(c), c[0][0]))
+    return comps, [(h, len(nbrs[h])) for h in hubs]
+
+
+def build_domains(a):
+    root = pathlib.Path(a.root).expanduser().resolve()
+    if not root.is_dir():
+        die(f"not a directory: {root}")
+    if a.lanes is not None and a.lanes < 1:
+        die(f"--lanes must be 1 or more (got {a.lanes})")
+
+    listing = domains_listing(root)
+    notes = []
+
+    if a.paths:
+        scoped = expand_paths(root, a.paths, listing, notes)
+    elif a.changed:
+        raw, deleted = changed_paths(root)
+        if deleted:
+            shown = ", ".join(deleted[:8]) + (" …" if len(deleted) > 8 else "")
+            notes.append(f"{len(deleted)} deleted path(s) dropped from the scope — "
+                         f"a lane cannot be given a file that is gone: {shown}")
+        ids = set(listing)
+        unlisted = sorted(p for p in raw if p not in ids)
+        if unlisted:
+            shown = ", ".join(unlisted[:8]) + (" …" if len(unlisted) > 8 else "")
+            notes.append(f"{len(unlisted)} changed path(s) git reports but the listing "
+                         f"does not carry (skipped directory, symlink, unreadable): {shown}")
+        scoped = sorted(p for p in raw if p in ids)
+    else:
+        scoped = sorted(listing)
+
+    # An empty scope is FATAL, never a silent lanes:[] — a shrugged-off empty
+    # answer is the exact moment a seat hand-partitions from memory instead,
+    # which is the failure this command exists to prevent.
+    if not scoped:
+        die("nothing in scope — nothing to partition")
+
+    sizes = {}
+    for rel in scoped:
+        try:
+            sizes[rel] = (root / rel).stat().st_size
+        except OSError:
+            sizes[rel] = 0
+
+    pairs = scope_edges(root, scoped, listing)
+    lanes, seat_held = partition(scoped, pairs, sizes, a.lanes, notes)
+
+    lane_of = {}
+    for i, (files, _n) in enumerate(lanes, 1):
+        for f in files:
+            lane_of[f] = i
+    hubset = {h for h, _d in seat_held}
+
+    # a merged lane is a UNION of components — lane != domain. Say so per lane,
+    # so a commission reader never reads a merge as a dependency cluster.
+    for i, (_files, ncomp) in enumerate(lanes, 1):
+        if ncomp > 1:
+            notes.append(f"lane {i} = {ncomp} components merged for --lanes {a.lanes} — "
+                         f"a merged lane is a bundle of unrelated domains, not one")
+
+    out_lanes = []
+    for i, (files, _n) in enumerate(lanes, 1):
+        mine = set(files)
+        bound = set()
+        for a_, b_ in pairs:
+            for src, dst in ((a_, b_), (b_, a_)):
+                if src in mine and dst not in mine:
+                    bound.add((src, dst, "seat-held" if dst in hubset else lane_of[dst]))
+        out_lanes.append({
+            "id": i,
+            "files": files,
+            "bytes": sum(sizes.get(f, 0) for f in files),
+            "boundary": [{"from": f, "to": t, "lane": l}
+                         for f, t, l in sorted(bound, key=lambda r: (r[0], r[1], str(r[2])))],
+        })
+    return root, out_lanes, [{"file": h, "degree": d} for h, d in seat_held], notes, sizes
+
+
+def cmd_domains(a):
+    root, lanes, seat_held, notes, sizes = build_domains(a)
+    scope_count = sum(len(l["files"]) for l in lanes) + len(seat_held)
+
+    if a.json:
+        print(json.dumps({"root": str(root), "scope_count": scope_count,
+                          "lanes": lanes, "seat_held": seat_held, "notes": notes},
+                         indent=1))
+        return 0
+
+    print(f"domains: {root}")
+    print(f"{scope_count} file(s) in scope · {len(lanes)} lane(s) · "
+          f"{len(seat_held)} seat-held")
+    print("a boundary line means: you may READ that file, never edit it.")
+    for l in lanes:
+        print(f"\nlane {l['id']} · {len(l['files'])} file(s) · {l['bytes']:,} B")
+        for f in l["files"]:
+            print(f"  {f}")
+        for b in l["boundary"]:
+            tag = b["lane"] if b["lane"] == "seat-held" else f"lane {b['lane']}"
+            print(f"  boundary: {b['from']} -> {b['to']} ({tag})")
+    if seat_held:
+        print(f"\nseat-held · {len(seat_held)} file(s) — in no lane, the seat's to edit")
+        for h in seat_held:
+            print(f"  degree {h['degree']:<4} {h['file']}")
+    if notes:
+        print("\nnotes")
+        for n in notes:
+            print(f"  note: {n}")
+    print("\nthe graph knows LINKS, not SEMANTICS: two files that never reference each "
+          "other can\nstill collide at runtime. The tool proposes, the seat disposes.")
+    return 0
+
+
 # ------------------------------------------------------------------------ main
 
 def main():
@@ -3332,6 +3641,65 @@ def main():
     st.add_argument("--days", type=int, default=90)
     st.add_argument("--limit", type=int, default=200, help="0 = no limit")
     st.set_defaults(f=cmd_stale)
+
+    dm = sub.add_parser(
+        "domains", help="partition files into disjoint lanes along the link graph",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="""Partition a set of files into non-overlapping lanes, so work can be
+handed out without two lanes being given the same file.
+
+A lane is a CONNECTED COMPONENT of the link graph restricted to the scoped
+files: files that reference each other move together. A component is NEVER
+split — splitting one manufactures the shared-file collision this command
+exists to prevent.
+
+ORDER IS LAW — hubs out FIRST, components SECOND. In-scope degree is computed
+on the full scoped graph, hubs are extracted to seat_held, and only then are
+components computed on the remainder. The other order is fatal: in a real repo
+everything is transitively linked through manifests and shared config, so
+components-on-the-full-graph return ONE giant component — and since components
+are never split and --lanes only merges, the command would be a no-op on
+exactly the trees it exists for.
+
+HUB RULE: a scoped file whose in-scope degree (distinct neighbours, either
+direction) is at least max(4, 3 x median in-scope degree) is pulled out of every
+lane into seat_held. The median is statistics.median over every scoped file's
+degree. Files everyone links to belong to no lane — they are the seat's
+contracts (think manifests, shared config). One pass, no re-thresholding.
+
+--lanes N: more components than N and the smallest (by total bytes) are merged
+pairwise until N remain; fewer components than N and you get what exists plus a
+note. Never padded. A merged lane is a UNION of components — LANE != DOMAIN —
+and every merged lane says so in notes[].
+
+Scope (exactly one): --paths takes files and directories (a directory expands
+to the tracked files under it; a named path that is not in the tree is fatal and
+named); --changed reads `git status --porcelain` (a rename reports its NEW side,
+deletions are dropped and noted); --all takes the whole listing. An empty scope
+exits 2 — a silent lanes:[] is the moment a seat shrugs and hand-partitions from
+memory instead.
+
+The graph is built IN MEMORY from the same extraction `scan` uses — no prior
+graph/graph.json is needed and none is written, so this runs on a fresh clone.
+Outside a git repo it exits 2: there is no tracked set to partition.
+
+--json emits {root, scope_count, lanes[{id, files, bytes, boundary[{from, to,
+lane}]}], seat_held[{file, degree}], notes[]}; a boundary's `lane` is the
+integer lane id of the other end, or the string "seat-held".
+
+THE GRAPH KNOWS LINKS, NOT SEMANTICS: two files that never reference each other
+can still collide at runtime. The tool proposes, the seat disposes.""")
+    dm.add_argument("--root", default=".")
+    scope = dm.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--paths", nargs="+", metavar="P",
+                       help="explicit files/dirs to partition")
+    scope.add_argument("--changed", action="store_true",
+                       help="the working tree's changed paths (git status)")
+    scope.add_argument("--all", action="store_true", help="every file in the listing")
+    dm.add_argument("--lanes", type=int, default=None,
+                    help="target lane count (merge smallest-first; never splits)")
+    dm.add_argument("--json", action="store_true", help="machine-readable output")
+    dm.set_defaults(f=cmd_domains)
 
     args = ap.parse_args()
     raise SystemExit(args.f(args) or 0)

@@ -99,3 +99,7 @@
 [2026-07-31 18:10Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a16d27d1c660b495c
 [2026-07-31 20:54Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a4e7754e26736c978
 [2026-07-31 21:11Z] lane=subagent model=claude-opus-5 tokens=10530869 grade=observed purpose="auto-receipt: Now the instrument self-checks." agent=acce335e4f0efa030
+[2026-07-31 21:13Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a85347b24f2f76e1e
+[2026-08-01 20:00Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a6c93e34c3d94c612
+[2026-08-01 20:06Z] lane=subagent model=claude-opus-5 tokens=1196212 grade=observed purpose="auto-receipt: Now the self-check: instruments, grep-back of both titles, a" agent=a2bf8a7b39cb5abf0
+[2026-08-01 20:17Z] lane=subagent model=claude-opus-5 tokens=7603823 grade=observed purpose="auto-receipt: Now the full self-check gate — all four fixtures, py_compile" agent=abaeb6d59edaad839

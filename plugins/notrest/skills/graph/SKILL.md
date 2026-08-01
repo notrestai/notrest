@@ -343,6 +343,50 @@ or `~/.claude/skills/…`). `<graph-skill>` below means that path.
   then one `note:` line per disclosure (no router, no chains section, prose-only hand-offs,
   a dirty tree, a missing git HEAD).
 
+### `domains` — the lane boundaries, computed instead of reasoned
+
+```bash
+python3 <graph-skill>/scripts/graph.py domains --root <project> \
+  (--paths P1 P2 … | --changed | --all) [--lanes N] [--json]
+```
+
+**When.** Before dispatching a swarm. `agentswarm` says "scope the lanes by domain" and
+"split along file boundaries" — this computes that split from the link graph instead of the
+seat reasoning about dependencies by hand every build. Output is a lane per domain, a file
+list per lane, and `boundary:` lines that paste straight into a commission.
+
+- **Scope, exactly one flag.** `--paths` takes files and directories (a directory expands to
+  the tracked files under it); `--changed` reads `git status --porcelain` (a rename reports
+  its **new** side; deletions are dropped and named); `--all` takes the whole listing.
+- **Lanes are connected components** of the link graph over the scoped set. A component is
+  **never split** — splitting one manufactures the shared-file collision the command exists
+  to prevent. `--lanes N` merges the smallest components (by bytes) until N remain; with
+  fewer components than N you get what exists and a note. Never padded.
+- **Hubs out first, components second.** In-scope degree is computed on the full scoped
+  graph, hubs are pulled into `seat_held`, and only then are components computed on the
+  remainder. The other order is fatal: everything in a real repo is transitively linked
+  through manifests, so components-first returns one giant lane and the command is
+  decorative.
+- **Hub rule:** in-scope degree ≥ `max(4, 3 × median in-scope degree)`. Files everyone links
+  to belong to no lane — they are the seat's own contracts (manifests, shared config).
+- **No prior scan needed.** The graph is built in memory from the same extraction `scan`
+  uses; nothing is read but the scoped files and nothing is written. It runs on a fresh
+  clone.
+- **Exit 2** on: no scope flag, a named path that is not in the tree (it is **named** — this
+  command does not partition fictions), a non-git root, and an **empty scope**. A silent
+  `lanes: []` is the moment a seat shrugs and hand-partitions from memory instead.
+
+`--json` emits `{root, scope_count, lanes[{id, files, bytes, boundary[{from, to, lane}]}],
+seat_held[{file, degree}], notes[]}`; a boundary's `lane` is the other end's integer lane id
+or the string `"seat-held"`.
+
+> **The honest limit: THE GRAPH KNOWS LINKS, NOT SEMANTICS.** Two files that never reference
+> each other can still collide at runtime — a shared convention, a hook that fires on both,
+> two lanes editing different files that must agree. A boundary line is a *read-only*
+> instruction, not a proof of independence, and a merged lane (`--lanes N`) is a **bundle of
+> unrelated domains**, not one — every merged lane says so in `notes`. **The tool proposes,
+> the seat disposes:** read the partition, then decide.
+
 ### Queries over the last scan
 
 These answer from `graph/graph.json` — the scan's own output. They never re-derive it and
@@ -433,6 +477,10 @@ explicit `/graph` invocations only.
 - **Mentions are textual, not semantic.** A path inside a code fence, a changelog line, or a
   "don't use this" warning all produce the same edge. Read the line before drawing a
   conclusion from it.
+- **A `domains` partition is a proposal about FILES, not about work.** It proves no two
+  lanes were handed the same file; it cannot see a shared convention, a hook that fires on
+  both, or two unlinked files that must agree at runtime. Never report a partition as
+  "the lanes are independent" — report it as "no lane shares a file", which is all it says.
 - **The scan is a snapshot.** Counts move as the repo moves (a lane writing files right now
   changes them). Quote the `generated` stamp with any count you report.
 - **Never hand-edit the six generated files** (`graph.json`/`graph.html`,
@@ -511,6 +559,18 @@ view you did not see.
   phases it fully owns: a plugin tree with no `router.sh` (shapes 0, disclosed, not silently
   empty) and a throwaway git repo proving the stamp is the **commit** — a touched input
   re-renders identically, an edited one turns the stamp `+dirty`. Exit 0 = all held.
+- `scripts/domains-fixture.sh` — the lane partitioner, asserted on scratch repos whose graph
+  shape is known before the command runs. Two laws are checked in **every** phase: lanes are
+  disjoint, and lanes + `seat_held` account for the whole scope. Its phase D is **the star**
+  — N files all linking one manifest, which returns 1 lane if components are computed before
+  hubs are extracted and N if the order is right; phase E pins the threshold on **outcome**,
+  with one scope where the 3×median multiplier binds and one where the floor of 4 does, plus
+  a 20-file scope where a share-of-scope rule and the median rule disagree about a degree-5
+  file. Then: a component refusing to split under `--lanes`, the merge notes accounting for
+  every component, the `--json` key set in order, all four exit-2 refusals (missing path,
+  non-git root, no scope flag, empty scope three ways), `--changed` taking a rename's new
+  side and naming the deletion it dropped, a real-repo run under 2s, and a byte-identical
+  re-partition. Exit 0 = all held.
 - `scripts/cockpit-fixture.sh` — the live window, asserted as a **client**: it stands a server
   up on a scratch estate (and a scratch `CHATROOM_ROOT`), then proves the loopback bind at the
   socket, every `/data` panel 200-and-parses against seeded files, a banked brief served
