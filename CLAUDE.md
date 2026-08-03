@@ -12,7 +12,7 @@ Last updated: 2026-07-25
   scope-drift is disclosed at delivery (fable-mode 12a).
 
 ## Project
-- This repo IS the `notrest` marketplace: `plugins/notrest/` (28 skills); manifests
+- This repo IS the `notrest` marketplace: `plugins/notrest/` (31 skills); manifests
   `plugins/notrest/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` —
   **versions must match**. `plugins/oracle-suite-tombstone/` is the rename stub pinned
   at 9.0.0 — **never bump it**.

@@ -18,11 +18,19 @@
 # exit 0 — a broken hook must never break a session teardown. The whole body is
 # wrapped so any error still exits 0.
 
-# ── drain stdin (the SessionEnd payload; unused — the git root is the only input
-# this hook needs) so the writer never sees a broken pipe. Outside a git repo:
-# exit 0 silently, having written nothing.
+# ── drain stdin (the SessionEnd payload; unused — the estate root is the only
+# input this hook needs) so the writer never sees a broken pipe.
 cat >/dev/null 2>&1 || true
-GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+
+# ── estate root: ONE resolver, shared by every estate hook (hooks/estate-root.sh).
+# git root, else the nearest COORD.md walking up at most 3 levels — stopping at any
+# directory carrying its OWN project marker (a project boundary is never walked through,
+# 2026-08-02 adversarial round) and never reaching $HOME or /. An escaping-symlink
+# COORD.md is skipped, never adopted. Neither answer: exit 0 silently, having written
+# nothing, exactly as before. The variable keeps its historical name; it is the ESTATE
+# root, not only a git one.
+. "$(cd "$(dirname "$0")" && pwd)/estate-root.sh" 2>/dev/null || true
+GIT_ROOT="${NR_ESTATE_ROOT:-}"
 [ -z "$GIT_ROOT" ] && exit 0
 
 # ── everything else in python3 (stdlib only): shell can't do the whole-line
@@ -38,7 +46,21 @@ try:
     if not git_root:
         sys.exit(0)
 
-    COORD = os.path.join(git_root, "COORD.md")
+    def safe(p):
+        """CONTAINMENT (2026-08-02 adversarial round): a symlinked COORD.md pointing out
+        of the estate made this hook append its cushion — and seal its volume — into
+        another tree entirely. Returns the REALPATH to operate on, so an in-root link
+        keeps working and SURVIVES the roll's atomic replace (which would otherwise
+        destroy the link and orphan its target); returns None when the target escapes,
+        and the caller writes nothing."""
+        try:
+            r = os.path.realpath(git_root)
+            rp = os.path.realpath(p)
+            return rp if rp == r or rp.startswith(r + os.sep) else None
+        except Exception:
+            return None
+
+    COORD = safe(os.path.join(git_root, "COORD.md"))
     MARKER = "## LEDGER"
     CUSHION_MARK = "auto-cushion"
     CLOSE_MARK = "[sessionend] session closed"
@@ -56,7 +78,7 @@ try:
     # session that did real work from one that only read — it marks the ledger's
     # tail as "resume point, not a deliberate close", which is true either way.
     try:
-        if os.path.exists(COORD):
+        if COORD and os.path.exists(COORD):
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
             entry = (f"- [{ts}] [hook] session ended without /sessionend — "
                      f"auto-cushion: resume from this tail; agents ledger "
@@ -92,9 +114,16 @@ try:
     # where a repo still has them they are left exactly as found: not migrated,
     # not appended to, not deleted (readers still read them for old history).
     def roll(path, prefix, threshold, fallback_header):
-        if not os.path.exists(path):
-            return
+        # The SEAL belongs to the ESTATE ROOT (2026-08-02 round 2). /recap's walk.py and
+        # compile.py glob COORD-*.md at the root, so a volume sealed beside a symlink's
+        # TARGET silently disappears from both readers and the continues-pointer resolves
+        # from the wrong directory. `d` is therefore the link's home — the root — while
+        # only the fresh ACTIVE volume is written through the realpath, which is what lets
+        # an in-root link survive the atomic replace.
         d = os.path.dirname(path) or "."
+        path = safe(path)
+        if not path or not os.path.exists(path):
+            return
         fd = os.open(path, os.O_RDWR)
         with os.fdopen(fd, "r+", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
@@ -178,7 +207,7 @@ try:
     )
 
     try:
-        roll(COORD, "COORD", 500, COORD_FALLBACK)
+        roll(os.path.join(git_root, "COORD.md"), "COORD", 500, COORD_FALLBACK)
     except Exception:
         pass
     try:

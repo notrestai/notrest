@@ -96,12 +96,13 @@ picture of a whole working day costs zero tokens.
 
 *Why:* rules that depend on remembering get forgotten. These don't ask.
 
-### The 30 skills — the specialists
+### The 31 skills — the specialists
 
 Research, decide, fact-check, red-team, plan, turn plans into commands, draft what you
 send, watch facts for drift, recap the story, compile repeated work into scripts, run
-multi-model rooms, beam work to the cloud, and the meta ones — `oracle` (start a session),
-`sessionend` (close one), `mentor` (teach another session), `fable-mode` (the discipline).
+multi-model rooms, beam work to the cloud, and the meta ones — `notrest` (establish the harness
+in a project), `oracle` (start a session), `sessionend` (close one), `mentor` (teach
+another session), `fable-mode` (the discipline).
 
 ---
 
@@ -179,7 +180,7 @@ run in seconds.
 
 ## 6. Where it stands
 
-**Done and running:** the engine (v3.16.0, 30 skills), all instruments green, the cockpit,
+**Done and running:** the engine (v3.19.0, 31 skills), all instruments green, the cockpit,
 the estate, the library.
 
 **Built and gated, not live:** rig.rest v0.1 — ~1,536 fixture assertions across six

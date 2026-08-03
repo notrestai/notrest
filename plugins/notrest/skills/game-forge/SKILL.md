@@ -1,6 +1,6 @@
 ---
 name: game-forge
-description: "Build a complete, playable game from a short request — real game loop, game feel, self-contained assets, automated playtest. Use on \"/game-forge\" or any ask to make, build, generate, prototype, or vibe-code a game: arcade, platformer, shooter, puzzle, tower defense, snake/breakout/tetris, idle/clicker, roguelike, \"a game like X but Y\", browser or pygame. Fires on casual asks (\"something fun to play\"). NOT for game reviews, buying advice, lore, or non-interactive animations."
+description: "Build a complete, playable game from a short request — no game ships unrun. Use on \"/game-forge\" or any ask to make, build, generate, prototype, or vibe-code a game: arcade, platformer, shooter, puzzle, tower defense, snake/breakout/tetris, idle/clicker, roguelike, \"a game like X but Y\", browser or pygame. Fires on casual asks (\"something fun to play\"). NOT for game reviews, buying advice, lore, or non-interactive animations."
 ---
 
 # Game Forge

@@ -10,10 +10,19 @@
 # exit 0 — a broken hook must never break a session. The whole body is wrapped so
 # any error still exits 0.
 
-# ── capture the payload off stdin, then decide git-root early (no stdin needed
-# for git). Outside a git repo: exit 0 silently, having written nothing.
+# ── capture the payload off stdin, then decide the estate root early (no stdin
+# needed for the root).
 PAYLOAD="$(cat 2>/dev/null || true)"
-GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+
+# ── estate root: ONE resolver, shared by every estate hook (hooks/estate-root.sh).
+# git root, else the nearest COORD.md walking up at most 3 levels — stopping at any
+# directory carrying its OWN project marker (a project boundary is never walked through,
+# 2026-08-02 adversarial round) and never reaching $HOME or /. An escaping-symlink
+# COORD.md is skipped, never adopted. Neither answer: exit 0 silently, having written
+# nothing, exactly as before. The variable keeps its historical name; it is the ESTATE
+# root, not only a git one.
+. "$(cd "$(dirname "$0")" && pwd)/estate-root.sh" 2>/dev/null || true
+GIT_ROOT="${NR_ESTATE_ROOT:-}"
 [ -z "$GIT_ROOT" ] && exit 0
 
 # ── everything else in python3 (stdlib only): defensive JSON parse of the
@@ -33,6 +42,20 @@ try:
     git_root = os.environ.get("GIT_ROOT", "").strip()
     if not git_root:
         sys.exit(0)
+
+    def safe(p):
+        """CONTAINMENT (2026-08-02 adversarial round): never write through a symlink that
+        escapes the estate root — a hostile or careless link turned this hook into a
+        writer in someone else's tree, carrying the lane's verbatim commission with it.
+        Returns the REALPATH to operate on, so an in-root link keeps working and survives
+        the write; returns None when the target resolves outside, and the caller then
+        writes nothing at all (the hook's silence law does the rest)."""
+        try:
+            r = os.path.realpath(git_root)
+            rp = os.path.realpath(p)
+            return rp if rp == r or rp.startswith(r + os.sep) else None
+        except Exception:
+            return None
 
     # ── defensive parse: tolerate absent/malformed JSON entirely.
     data = {}
@@ -205,6 +228,9 @@ try:
                     "---\n\n")
             try:
                 os.makedirs(os.path.join(git_root, "briefs"), exist_ok=True)
+                bpath = safe(bpath) or bpath
+                if safe(bpath) is None:
+                    raise OSError("brief path escapes the estate root")
                 if not os.path.exists(bpath):
                     fd = os.open(bpath, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
                     with os.fdopen(fd, "w", encoding="utf-8") as bf:
@@ -256,8 +282,10 @@ try:
         # effectively blank (empty or whitespace-only) — so a whitespace-only file
         # still recovers its header, while a hand-damaged file with real content
         # but no marker just gets the entry appended (never a header mid-file).
-        ledger = os.path.join(git_root, "COORD-AGENTS.md")
+        ledger = safe(os.path.join(git_root, "COORD-AGENTS.md"))
         try:
+            if ledger is None:
+                raise OSError("COORD-AGENTS.md escapes the estate root")
             fd = os.open(ledger, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o644)
             with os.fdopen(fd, "a+", encoding="utf-8") as lf:
                 fcntl.flock(lf, fcntl.LOCK_EX)
@@ -303,8 +331,8 @@ try:
         # Wrapped in its own try/except: a receipt failure must never disturb the
         # COORD-AGENTS write above.
         try:
-            sledger = os.path.join(git_root, "spend", "ledger.md")
-            if os.path.isfile(sledger):
+            sledger = safe(os.path.join(git_root, "spend", "ledger.md"))
+            if sledger and os.path.isfile(sledger):
                 marker = f" agent={agent_id}"
                 purpose = "" if snippet == "?" else snippet[:60]
                 purpose = re.sub(r"\s+", " ", purpose).replace('"', "'").strip()

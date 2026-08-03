@@ -1,6 +1,6 @@
 ---
 name: compile
-description: "Compile repeated work into code — a script mines the estate (COORD, agent ledger, spend) for the same job done three or more times, then a ritual reconstructs its contract from the trail, builds an isolated runtime under compile/<slug>/, has an independent lane attack it, and fair-benchmarks it against that history. Use on \"/compile\", \"compile this workflow\", \"what should we compile\", \"workflow compiler\", \"make repeat work cheaper\". Runtimes stay isolated until the owner ships them."
+description: "Compile repeated work into code — a script mines the estate for the same job done three or more times, then a ritual builds an isolated runtime under compile/<slug>/ and fair-benchmarks it against that history. Use on \"/compile\", \"compile this workflow\", \"what should we compile\", \"workflow compiler\", \"make repeat work cheaper\". Runtimes stay isolated until the owner ships them."
 ---
 
 # compile — the estate's fourth verb

@@ -23,12 +23,13 @@ claude plugin uninstall oracle-suite
 **The session harness** — the scaffolding a working session runs inside: discipline auto-anchored into
 every session, delegation as an arrangement (agentswarm) with a spend ledger that makes the model-routing
 policy checkable, an append-only estate that records every prompt and every agent, continuity + successor
-escort across sessions, and an eval suite the harness runs against its own rules. Twenty-eight skills ride
+escort across sessions, and an eval suite the harness runs against its own rules. Thirty-one skills ride
 on it — structured thinking from intake to handoff, built on three principles: **token-lean** (progressive disclosure, `--quick` modes, built-in search budgets), **verified** (real tiered sources, disconfirmation passes, honesty labels on every claim), and **model-agnostic** (the discipline lives in the skills, so any model runs them reliably):
 
 | Skill | What it does |
 |---|---|
 | **oracle** | Session intake — six setup questions (Objective, Role, Architecture, Content, Leverage, Evaluation) + loads/creates the `CLAUDE.md` foundation. Invoke with "hey oracle" or `/oracle`. |
+| **notrest** | The **establishment verb** — the harness auto-nudges every session, but presence is not establishment. `/notrest` writes the two surfaces that make a project governed (a `COORD.md` ledger with the header every estate reader parses, and a marker-delimited, versioned protocol block in `CLAUDE.md` — idempotent, atomic, and byte-safe outside its own markers), then BINDS the invoking session: a ledger line recording the establishment, and the protocol in force from that turn on. `check` is the read-only drift check for "is this session actually following the plugin?" — the script reports establishment facts and adoption facts separately, and only the first kind moves the exit code, because adherence is a judgment the seat makes out loud. Exits 0 established / 5 partial / 6 not established / 2 a refused root — `~/Desktop` is not a project. **Never runs `git init` uninvited, never installs anything, never writes outside the resolved root, never touches `CLAUDE.md` outside its markers.** |
 | **researcher** | Rigorous multi-pass research → a background doc + a decision dossier. |
 | **marketresearcher** | Funnel-shaped market research → sizing, competitors, whitespace, an opportunity dossier. |
 | **stepbystep** | Turns a goal/docs into a stress-tested, converged, ordered action plan. |

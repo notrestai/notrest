@@ -38,20 +38,20 @@ Overriding a route deliberately is fine. Silently ad-hoc'ing the same job is not
 ## Toolsets — hooks (plugins/notrest/hooks/, all silent-on-failure, always exit 0)
 
 ### session-start.sh
-does: anchors the discipline + offload laws into every session; conditional resume/COORD/compile nudges; background `git pull --ff-only` self-update.
+does: anchors the discipline + offload laws into every session; conditional resume/COORD/compile nudges; background `git pull --ff-only` self-update. Since 2026-08-02 the root is git root OR an established non-git cwd (a `COORD.md` there earns the full treatment); a project-like non-git dir with no ledger gets ONE nudge to say `/notrest` and is never auto-scaffolded.
 how: 2 standing echoes (~680 chars post-diet) + 3 conditional nudges; the pull is real under skills-dir (was a silent no-op on cache installs).
 upgrades: 1) skip nudges when the session is itself a subagent lane (env-detectable) — lanes never need resume hints. 2) echo the loaded version+HEAD short-hash on drift (pull moved the tree) so staleness is visible at a glance.
 
 ### coord-nudge.sh
-does: per-prompt one-line COORD ledger reminder (96 chars).
+does: per-prompt one-line COORD ledger reminder (96 chars). Since 2026-08-02 it resolves git root, else the nearest `COORD.md` at cwd/parent/grandparent — so established non-git projects get the discipline too.
 upgrades: 1) sibling router.sh (in flight, v3.7.0). 2) suppress on prompts that are themselves /notrest: skill invocations — the skill's own contract already owns the ledger line.
 
 ### agent-ledger.sh
-does: SubagentStop auto-receipt — appends COORD-AGENTS.md + spend/ledger.md, flock'd, idempotent-by-intent, honest grading (observed vs estimate).
+does: SubagentStop auto-receipt — appends COORD-AGENTS.md + spend/ledger.md, flock'd, idempotent-by-intent, honest grading (observed vs estimate). Since 2026-08-02 the old line-17 git bail is a COORD-root walk (git root, else cwd/parent/grandparent) — the exact hole the ungoverned non-git session fell through.
 upgrades: 1) close the guard hole (identical duplicate lines passed the agent-id guard; race fixed at root in 3.6.1, guard still latent — chip open). 2) record duration + tool-call count when the payload carries them: free speed-law instrumentation per lane.
 
 ### session-end.sh
-does: crash cushion — auto-appends a resume line when a session dies without /sessionend; rolls COORD.md into sealed volumes at 500 lines (fsync-then-replace, inode guard).
+does: crash cushion — auto-appends a resume line when a session dies without /sessionend; rolls COORD.md into sealed volumes at 500 lines (fsync-then-replace, inode guard). Since 2026-08-02 it uses the same COORD-root resolver, so non-git projects get the cushion and the roll.
 upgrades: 1) cushion line should carry version + HEAD + dirty-file count — a cold resume currently learns those separately. 2) roll COORD-AGENTS at its 1000-line law in the same pass (verify it actually does).
 
 ### pre-compact.sh
@@ -208,6 +208,12 @@ upgrades: 1) `scripts/playtest.py` — the pygame SDL-dummy smoketest is instruc
 gap: The playtest proves it loads and draws, not that it plays.
 
 ## Skills — meta & estate verbs
+
+### notrest
+does: The establishment verb — writes the two surfaces that make a project governed (`COORD.md` with the ledger header, a marker-delimited versioned protocol block in `CLAUDE.md`), then binds the invoking session to the protocol. `check` is the read-only drift check for "is this session following the plugin?".
+how: `establish.py check|establish [--root PATH] [--git-init]`, exits 0/5/6/2; every write idempotent and atomic (tmp + `os.replace`), the COORD scaffold reproduced verbatim from `session-start.sh` and asserted byte-equal by the fixture. Establishment facts drive the exit code; adoption facts (ledger lines beyond the scaffold, age of the newest line, agent/spend ledgers present) are INFO and can never move it — the script reports, the seat judges. A root that is neither a git repo nor carries a project marker is refused with exit 2. `fixture.sh` (78 asserts) also drives the four patched hooks in non-git and git roots.
+upgrades: 1) A `--json` mode so a scheduler or a parent lane can consume the establishment verdict without parsing lines. 2) Block versions beyond v1 need a migration note per bump — today an older block is replaced wholesale, which is right for prose and would be wrong the moment the block carries project-specific values. 3) `check` could read the newest COORD stamps against session start and say *this session has banked nothing yet*, turning the drift judgment into evidence rather than an inference.
+gap: It proves the FILES exist; it cannot prove a session is obeying them — adherence stays a labeled judgment, by construction.
 
 ### oracle
 does: Session front door — load foundation, offer resume, six ORACLE questions, then recommend which sibling skill fits.

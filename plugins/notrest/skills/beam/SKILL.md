@@ -1,6 +1,6 @@
 ---
 name: beam
-description: "Checkpoint in-flight agent lanes and move the remaining work to the cloud — \"beam up\" banks each lane's brief, digest and files, publishes them on a git ref, then respawns them as remote Opus lanes; \"beam down\" folds their work home. Use on \"/beam\", \"beam up\", \"beam down\", \"beam status\", or \"I have to leave — keep the lanes running\". Checkpoint→respawn: nothing teleports."
+description: "Checkpoint in-flight agent lanes and move the remaining work to the cloud — \"beam up\" banks each lane and respawns it as a remote Opus lane; \"beam down\" folds the work home. Use on \"/beam\", \"beam up\", \"beam down\", \"beam status\", or \"I have to leave — keep the lanes running\". Checkpoint→respawn: nothing teleports."
 ---
 
 # beam — the lanes keep working after you close the lid

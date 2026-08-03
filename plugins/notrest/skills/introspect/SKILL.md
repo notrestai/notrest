@@ -1,6 +1,6 @@
 ---
 name: introspect
-description: "Validated workspace self-report — at checkpoints the model emits a fast, unjustified snapshot of the concepts most active in its thinking, then the harness SCORES those reports against subsequent behavior (verbalized vs silent concepts, predictive lift, turnover) into an append-only ledger. Use on /introspect, \"what are you thinking right now\", \"snapshot your workspace\", \"j-space check\", or \"run an introspection experiment\". It does NOT observe internal activations."
+description: "Validated workspace self-report — the model snapshots the concepts most active in its thinking, and the harness SCORES those reports against subsequent behavior. Use on /introspect, \"what are you thinking right now\", \"snapshot your workspace\", \"j-space check\", or \"run an introspection experiment\". It does NOT observe internal activations."
 ---
 
 # Introspect — validated workspace self-reports

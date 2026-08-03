@@ -1,6 +1,6 @@
 ---
 name: fable-director
-description: "Seat the \"3 DEVS AND A RELAY\" arrangement — a metered director session running flat dev/QC lanes through per-lane blackboard files with token-watch wakes. Use on \"/fable-director\", \"fable director\", \"3 devs and a relay\", \"stand up the fable arrangement\", the rotation trigger (\"context getting full — rotate\"), a ROTATION HANDOFF / FABLE KICKOFF, or when the repo holds COORD-<LANE>.md blackboards. Not `director` (that chains SKILLS; this runs SESSIONS). Not for ordinary tasks."
+description: "Seat the \"3 DEVS AND A RELAY\" arrangement — a metered director session running dev/QC lanes on per-lane blackboards. Use on \"/fable-director\", \"fable director\", \"3 devs and a relay\", \"stand up the fable arrangement\", the rotation trigger (\"context getting full — rotate\"), a ROTATION HANDOFF / FABLE KICKOFF, or when the repo holds COORD-<LANE>.md blackboards. Not `director` (that chains SKILLS; this runs SESSIONS). Not for ordinary tasks."
 ---
 
 # fable-director — the "3 DEVS AND A RELAY" seat

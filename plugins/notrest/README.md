@@ -1,9 +1,13 @@
 # ORACLE Suite
 
 A working-session toolkit for Claude Code by [Not Rest Inc.](https://do.not.rest) — structured
-thinking from intake to handoff. Thirty skills that compose:
+thinking from intake to handoff. Thirty-one skills that compose:
 
 - **oracle** — session intake (the ORACLE six-question setup) + loads/scaffolds the `CLAUDE.md` foundation. Say "hey oracle" or `/oracle`.
+- **notrest** — the establishment verb: writes `COORD.md` + a marker-delimited protocol block in
+  `CLAUDE.md` (idempotent, atomic, nothing outside the markers touched), then binds the invoking
+  session to the protocol. `check` is the read-only drift check — establishment facts drive the
+  exit code, adoption facts stay INFO, and adherence is the seat's judgment, said out loud.
 - **researcher** — multi-pass research → background + decision dossier.
 - **marketresearcher** — market sizing, competitors, whitespace → opportunity dossier.
 - **stepbystep** — goal/docs → a stress-tested, converged, ordered action plan.

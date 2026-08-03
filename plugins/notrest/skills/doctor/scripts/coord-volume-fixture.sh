@@ -115,15 +115,27 @@ chk "L: legacy COORD-ARCHIVE.md untouched" "$(md5of "$L/COORD-ARCHIVE.md")" "$LE
 [ -f "$L/COORD-001.md" ] && ok "L: legacy repo still rolls into volumes" \
   || no "L: legacy repo still rolls into volumes"
 
-# ── outside a git repo: silent, exit 0, writes nothing ───────────────────────
+# ── outside a git repo (2026-08-02): the volume law follows the LEDGER, not git.
+# It used to follow git, and that is precisely the defect this fixture now guards:
+# a whole session ran ungoverned in a non-git folder because every estate hook was
+# git-gated. An ESTABLISHED non-git project (a COORD.md is what establishment
+# means) gets the full treatment; a directory with no ledger within reach still
+# gets absolute silence, which is the half of the old law that was always right.
 N="$TMP/not-a-repo"; mkdir -p "$N"
 seed "$N/COORD.md" "COORD.md — session coordination ledger" 505 closed
-NG_MD5="$(md5of "$N/COORD.md")"
 OUT="$( cd "$N" && bash "$END_HOOK" </dev/null 2>&1; echo "rc=$?" )"
-chk "N: outside git exits 0"      "$(printf '%s' "$OUT" | tail -1)" "rc=0"
-chk "N: outside git is silent"    "$(printf '%s' "$OUT" | grep -vc '^rc=')" "0"
-chk "N: outside git writes nothing" "$(md5of "$N/COORD.md")" "$NG_MD5"
-chk "N: outside git seals nothing" "$(ls "$N" | grep -c '^COORD-[0-9][0-9][0-9]\.md$')" "0"
+chk "N: outside git exits 0"   "$(printf '%s' "$OUT" | tail -1)" "rc=0"
+chk "N: outside git is silent" "$(printf '%s' "$OUT" | grep -vc '^rc=')" "0"
+chk "N: established non-git project SEALS its volume" \
+  "$(ls "$N" | grep -c '^COORD-[0-9][0-9][0-9]\.md$')" "1"
+has "N: fresh non-git volume continues-line" "> Continues COORD-001.md · volume 2" "$N/COORD.md"
+
+# no ledger anywhere within reach → the silence law, unchanged.
+NB="$TMP/not-a-repo-bare/a/b/c"; mkdir -p "$NB"
+OUT="$( cd "$NB" && bash "$END_HOOK" </dev/null 2>&1; echo "rc=$?" )"
+chk "N: no-ledger dir exits 0"       "$(printf '%s' "$OUT" | tail -1)" "rc=0"
+chk "N: no-ledger dir is silent"     "$(printf '%s' "$OUT" | grep -vc '^rc=')" "0"
+chk "N: no-ledger dir writes nothing" "$(ls -A "$TMP/not-a-repo-bare" | wc -l | tr -d ' ')" "1"
 
 # ── director-detect: sealed volumes must NOT look like lane blackboards ──────
 # The hook is copied in so its fire-and-forget self-update targets the throwaway

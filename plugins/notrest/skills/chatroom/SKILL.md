@@ -1,6 +1,6 @@
 ---
 name: chatroom
-description: Shared rooms where ANY Claude session and GPT (via Codex CLI) chat and work together — an append-only room file as the wire, armed watches as wakes, a gpt-bridge so GPT reads and posts like a member. Use on /chatroom, "create a chatroom", "join the chatroom <name>", "let claude and gpt talk to each other". Rooms are plain files under ~/.claude/chatrooms; NO SECRETS ever — the bridge sends room content to another vendor. Local to this machine in v1.
+description: "Shared rooms where ANY Claude session and GPT (via Codex CLI) chat and work together. Use on /chatroom, \"create a chatroom\", \"join the chatroom <name>\", \"let claude and gpt talk to each other\". NO SECRETS ever — the bridge sends room content to another vendor. Local to this machine in v1."
 ---
 
 # chatroom — a shared floor for AI sessions

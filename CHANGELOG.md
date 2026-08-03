@@ -1,5 +1,105 @@
 # Changelog — the notrest harness
 
+## 3.19.0 — 2026-08-02
+
+**Presence is not establishment — and a governed session looked exactly like an ungoverned one.**
+
+- **The live failure that earned this release.** The owner ran a whole session in a
+  project folder believing the harness governed it. It did not. The folder was not a git
+  repo, and **every estate hook was git-gated**: `session-start.sh` scaffolded `COORD.md`
+  only at a git root, `agent-ledger.sh` bailed on line 17, and `coord-nudge.sh` and
+  `session-end.sh` did the same. So the session got the *discipline echoes* — the fable
+  anchor, the offload rule, the identity line, all unconditional — and **none of the
+  estate**: no ledger, no per-prompt discipline, no agent index, no crash cushion, no
+  volume roll. Nothing errored. Nothing logged. From inside the session the two states
+  were indistinguishable, which is the worst property a harness can have: the failure
+  mode was *silence*, and silence is what the estate exists to replace.
+- **NEW skill `notrest` — the establishment verb (31st skill).** `scripts/establish.py`
+  (`check` · `establish`, python3 stdlib, no network, no model calls) writes the two
+  surfaces that make a project governed — a `COORD.md` carrying the ledger header every
+  estate reader parses, and a **marker-delimited, versioned protocol block** in
+  `CLAUDE.md` (fable discipline · the opus-only offload HARD RULE · the COORD law ·
+  `/sessionend` at the close). Every write is idempotent and atomic; an older block is
+  replaced **in place**, a current one is left alone, and everything outside the markers
+  is the project's own text and survives byte for byte. The skill's ritual is PROBE →
+  ESTABLISH → **BIND** → REPORT, and BIND is the half no script can do: the invoking
+  session appends its own establishment line and operates under the protocol *from that
+  turn on*, not from the next session.
+- **The report/judge split, kept absolute.** Establishment facts (both surfaces, block
+  version) drive the exit code — 0 established · 5 partial · 6 not established · 2 a
+  refused root. **Adoption facts are INFO and can never move it**: ledger lines beyond
+  the scaffold, age of the newest line, whether the agent and spend ledgers exist. An
+  exit code that swung on how busy a ledger looked would be non-deterministic in the
+  fixture and unfalsifiable in the report at the same time. Whether a session is
+  *actually following* the plugin is a judgment, it belongs to the seat, and it is said
+  out loud with a label — the files are `[cited]`, adherence is `[unverified]` until the
+  trail shows it.
+- **The estate never scatters.** A root that is neither a git repo nor carries a project
+  marker (`CLAUDE.md`, `README.md`, `package.json`, `pyproject.toml`, `.claude/`,
+  `COORD.md`) is **refused** with exit 2 naming what it looked for. `~/Desktop` is not a
+  project. `--git-init` exists and is opt-in only: `git init` changes what a directory
+  *is*, and that is the owner's decision, never a side effect of establishing a ledger.
+- **Four hooks, ONE resolver — `hooks/estate-root.sh`, sourced by all of them.** Four
+  hooks that disagree about the root are four different estates, so the resolver is a file
+  rather than a paragraph repeated four times. It answers: git toplevel, else the nearest
+  `COORD.md` walking up at most 3 levels — **stopping at any directory carrying its own
+  project marker**, because an un-established subproject must never be adopted into an
+  unrelated parent's estate; never reaching `$HOME` or `/`; and **skipping** a `COORD.md`
+  whose symlink escapes the directory rather than adopting it. Every hook write path now
+  resolves its target and refuses one landing outside the root, while writing *through* an
+  in-root link so it survives instead of being replaced by a regular file. `session-start`
+  uses the same resolver for its COORD branch and keeps its nudge branch cwd-only — that
+  branch speaks about *this* directory, and its marker list carries no `.claude`, since
+  `~/.claude` exists on every machine and made $HOME a project. Every hook keeps its
+  silence-on-failure law and its `exit 0`.
+- **What the fixture proves (155 asserts, hermetic).** The hooks are **copied into the
+  sandbox before they run**, because `session-start.sh` resolves its own directory and
+  fires a background `git pull` at that repo — run in place, a fixture would pull the
+  owner's working tree. Beyond the script contract (double-establish leaves a
+  byte-identical `COORD.md` and exactly **one** block; unrelated `CLAUDE.md` content
+  survives byte for byte; an older block is replaced in place; a bare directory is
+  refused), it drives all four patched hooks in non-git roots **and** in a scratch git
+  repo for the regression, and pins three things worth naming: the two scaffold writers
+  produce **byte-identical** files (strip the ledger line and the hashes match — one
+  shape, or `/recap` and `/compile` meet two dialects of their own ledger); a symlinked
+  `CLAUDE.md` pointing outside the root is **refused rather than followed**, with the
+  outside file asserted unchanged (the symlink-marching-out-of-the-repo defect class,
+  third appearance); and the resolver **stops at a project boundary** rather than adopting
+  a stranger's ledger.
+- **Two adversarial rounds rewrote half of this before it shipped.** An independent refuter
+  attacked the script and the four hooks and confirmed twelve findings with reproductions,
+  every one of them fixed here: a CLAUDE.md round trip that ate latin-1 bytes and rewrote
+  every CRLF; a stray marker above the block that would have swallowed the user's own text
+  while reporting success; a fenced documentation *example* counting as the block; `$HOME`
+  qualifying as a project because `~/.claude` was on the marker list; the walk adopting an
+  unrelated parent project; hooks writing through escaping symlinks and atomic writes
+  destroying in-root ones; a git subdirectory that established cleanly and was dead on
+  arrival; a verdict that said "wrote nothing" when every write had failed. The
+  thirteenth finding was the one that mattered most: **the fixture was vacuous** — 78
+  assertions passed against a deliberately de-atomized `atomic_write`, so two assertions
+  were added whose only job is to fail on that mutant. A gate that cannot be falsified was
+  never a gate. **The verify pass then found five more, two of them introduced by the
+  first round's own fixes**: a fence-masker that blanked to end-of-file, hiding a real
+  block so every run appended another (idempotency, broken by a bug in the fix for
+  something else); a boundary list missing `CLAUDE.md`, which is the commonest project
+  shape there is; a seal written beside a symlink's target, where `/recap` and `/compile`
+  would never glob it; a UTF-16 foundation appended to in UTF-8; and `~/Desktop`
+  establishable while the docs said it was not. Fixture **78 → 187**. A fix is not a fix
+  until something has tried to break it — twice.
+- **The 31st skill had to pay for itself — first bite of the rightsizing pass.** Adding
+  the skill put the always-on cost at 5,307 tokens against doctor's 5,200 ceiling, and
+  the calibration law held: the ceiling never rises to absorb our own growth. The ruling
+  went the other way — **224 tokens of narrative fat cut from 7 non-routed descriptions**
+  (chatroom, introspect, compile, gpt, beam, game-forge, fable-director), mechanism
+  recitals the SKILL.md bodies already carry. Always-on lands at **5,083, with more
+  headroom than before the skill existed** (117 vs 33). Every quoted trigger phrase,
+  slash verb and flag survived verbatim — 39/39, diffed mechanically, not eyeballed —
+  and chatroom's description picked up the quoting the scalar law requires while we were
+  in there. Live-CLI measured throughout, per-skill receipts in the trail.
+- Routing parity both sides: `establish` shape in `hooks/router.sh` and `/notrest` in
+  oracle's routing bullet, live-probed. Register, tutorial, roster, understanding page and
+  the rendered flow all carry 31.
+
 ## 3.18.0 — 2026-07-31
 
 **Lane domains are computed, not guessed — the graph now feeds the swarm.**

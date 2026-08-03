@@ -103,3 +103,15 @@
 [2026-08-01 20:00Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a6c93e34c3d94c612
 [2026-08-01 20:06Z] lane=subagent model=claude-opus-5 tokens=1196212 grade=observed purpose="auto-receipt: Now the self-check: instruments, grep-back of both titles, a" agent=a2bf8a7b39cb5abf0
 [2026-08-01 20:17Z] lane=subagent model=claude-opus-5 tokens=7603823 grade=observed purpose="auto-receipt: Now the full self-check gate — all four fixtures, py_compile" agent=abaeb6d59edaad839
+[2026-08-03 04:15Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=afce0d26d254454a7
+[2026-08-03 04:21Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a01ac8c8459ec4971
+[2026-08-03 04:25Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a8d66d405393b0384
+[2026-08-03 04:37Z] lane=subagent model=claude-opus-5 tokens=19527512 grade=observed purpose="auto-receipt: Build complete. Report follows. ## Files created - `/Users/e" agent=ab6763706789de5f6
+[2026-08-03 04:41Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a63b89baff8fac1aa
+[2026-08-03 04:44Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a125dc89c4546bed6
+[2026-08-03 04:52Z] lane=subagent model=claude-opus-5 tokens=5343044 grade=observed purpose="auto-receipt: Sandboxes removed; repo tree untouched by me (all work in mk" agent=a3e1865fd6c6cff43
+[2026-08-03 04:54Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a30154efa02c569ac
+[2026-08-03 05:11Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a1a174257207cc693
+[2026-08-03 05:20Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a954b6f270722ce03
+[2026-08-03 05:22Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ad7e8d2cfcacf70cf
+[2026-08-03 05:26Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=aa8855a006735ecaa

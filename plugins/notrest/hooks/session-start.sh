@@ -39,8 +39,34 @@ fi
 # ── COORD.md: the session coordination ledger (the fable-coord behavior, generalized
 # to every session). Auto-created at the git root of any repo a session starts in;
 # the UserPromptSubmit hook (coord-nudge.sh) injects the per-prompt append discipline.
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$REPO_ROOT" ] && [ ! -f "$REPO_ROOT/COORD.md" ] && ! ls "$REPO_ROOT"/FABLE-COORD*.md >/dev/null 2>&1; then
+# ── non-git projects (2026-08-02 — live failure: a whole session ran in the non-git
+# "not.rest website" folder believing the harness governed it; every estate hook was
+# git-gated, so it got the discipline echoes and none of the estate). Two cases, and
+# the difference between them is deliberate:
+#   · ALREADY ESTABLISHED — the SHARED resolver (hooks/estate-root.sh) answers, exactly
+#     as it answers for coord-nudge, agent-ledger and session-end, so all four hooks
+#     agree about which project this session belongs to. Full treatment below.
+#   · NOT ESTABLISHED — nudge, and write NOTHING. Auto-scaffolding a ledger into any
+#     project-shaped directory a session happens to open is how the estate scatters;
+#     establishing outside git is /notrest's deliberate act, never a hook's side effect.
+#     The NUDGE branch stays cwd-only on purpose: it speaks about THIS directory. Its
+#     marker list carries no `.claude`, because ~/.claude exists on every machine and
+#     that one entry made $HOME a project (2026-08-02 adversarial round); $HOME and /
+#     are refused outright, there being no legitimate $HOME estate.
+. "$(cd "$(dirname "$0")" && pwd)/estate-root.sh" 2>/dev/null || true
+REPO_ROOT="${NR_ESTATE_ROOT:-}"
+GIT_BACKED=""
+[ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT/.git" ] && GIT_BACKED=1
+if [ -z "$GIT_BACKED" ] && [ -n "$REPO_ROOT" ]; then
+  git -C "$REPO_ROOT" rev-parse --show-toplevel >/dev/null 2>&1 && GIT_BACKED=1
+fi
+# A dangling or escaping symlink at COORD.md would make the scaffold below write THROUGH
+# it, outside the repo entirely — refuse rather than follow (2026-08-02 adversarial round).
+COORD_SAFE=1
+if [ -n "$REPO_ROOT" ] && [ -L "$REPO_ROOT/COORD.md" ] && ! nr_contained "$REPO_ROOT" "$REPO_ROOT/COORD.md"; then
+  COORD_SAFE=""
+fi
+if [ -n "$REPO_ROOT" ] && [ -n "$GIT_BACKED" ] && [ -n "$COORD_SAFE" ] && [ ! -f "$REPO_ROOT/COORD.md" ] && ! ls "$REPO_ROOT"/FABLE-COORD*.md >/dev/null 2>&1; then
   cat > "$REPO_ROOT/COORD.md" <<'COORDEOF'
 # COORD.md — session coordination ledger
 
@@ -59,6 +85,13 @@ COORDEOF
   echo "[notrest] COORD.md created at the repo root — the session coordination ledger. Append one ledger line per substantive prompt when its work lands (ask -> landed | evidence)."
 elif [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/COORD.md" ]; then
   echo "[notrest] COORD.md is live in this repo — read its ledger tail before starting (prior sessions' trail), and append one line per substantive prompt's work (ask -> landed | evidence)."
+elif [ -z "$REPO_ROOT" ] && [ "$PWD" != "$HOME" ] && [ "$PWD" != "/" ]; then
+  for NR_MARK in CLAUDE.md README.md package.json pyproject.toml; do
+    if [ -e "$PWD/$NR_MARK" ]; then
+      echo "[notrest] Project-like directory without git — estate hooks are limited here. Say /notrest to establish the harness in this project (COORD ledger + CLAUDE.md protocol)."
+      break
+    fi
+  done
 fi
 # ── compile: surface a ripe candidate the estate has already recorded three or
 # more times. This READS the last scan only — scanning belongs to /sessionend, and

@@ -51,6 +51,13 @@ case "$NORM" in
       SKILL=doctor;           SHAPE=health-check ;;
   *" check the laws"*|*" conformance check"*)
       SKILL=eval;             SHAPE=law-check ;;
+  # the ESTABLISHMENT shape (2026-08-02): "does this project follow the plugin" is neither
+  # an install question (/doctor) nor a law question (/eval) — it asks whether this project
+  # has the estate at all. Deliberately carries no phrase containing the verb's own name:
+  # "establish notrest" is a user who already named the route, and the guard below owns it.
+  *" establish the harness"*|*" set up the plugin"*|*" follow the plugin"*|\
+  *" following the plugin"*|*" follow the harness"*|*" following the harness"*)
+      SKILL=notrest;          SHAPE=establish ;;
   # SELFNAMED: the trigger phrase contains the verb's own name, so the
   # "prompt already named the verb" guard below would swallow every match.
   *" project graph"*|*" file graph"*)

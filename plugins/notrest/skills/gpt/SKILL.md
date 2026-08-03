@@ -1,6 +1,6 @@
 ---
 name: gpt
-description: "Chat-first GPT lane — /gpt talks to a persistent GPT-5.6 conversation (Codex CLI on the user's ChatGPT account); first use runs a 2-question setup, every message after continues the chat. Flags when asked: --once, --task, --vs, --new, --setup. Use on /gpt, \"ask gpt\", \"chat with gpt\", \"continue the gpt chat\", \"leave gpt a task\", \"gpt second opinion\". Opinions never sources ([model-opinion]); prompts leave the machine to OpenAI — no secrets, ever."
+description: "Chat-first GPT lane — /gpt talks to a persistent GPT-5.6 conversation (Codex CLI). Flags when asked: --once, --task, --vs, --new, --setup. Use on /gpt, \"ask gpt\", \"chat with gpt\", \"continue the gpt chat\", \"leave gpt a task\", \"gpt second opinion\". Opinions never sources ([model-opinion]); prompts leave the machine to OpenAI — no secrets, ever."
 ---
 
 # gpt — the chat-first cross-model lane
