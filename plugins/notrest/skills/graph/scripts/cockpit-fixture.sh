@@ -22,9 +22,12 @@ PASSES=0
 FAILS=0
 PID=""
 
+PID2=""
 cleanup() {
   [ -n "$PID" ] && kill "$PID" 2>/dev/null
   [ -n "$PID" ] && wait "$PID" 2>/dev/null
+  [ -n "$PID2" ] && kill "$PID2" 2>/dev/null
+  [ -n "$PID2" ] && wait "$PID2" 2>/dev/null
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -282,6 +285,64 @@ PID=""
 sleep 0.5
 if [ "$(code "$U/health")" = "000" ]; then ok "nothing is listening on $PORT any more"
 else bad "something is still answering on $PORT"; fi
+
+echo "── phase H: always-on — the opt-in marker and status ──────────────────"
+# The surfacing gap (2026-08-04): the window existed and nothing pointed at it. `--always`
+# is how a project says "keep this open" ONCE; `status` is how every later session finds
+# out. Everything here runs on its OWN scratch root and an EPHEMERAL port (--port 0), so
+# it can never collide with — or reap — a cockpit the owner is actually using.
+R2="$TMP/estate2"
+mkdir -p "$R2"
+MARK="$R2/graph/.cockpit-always"
+
+chk "status: no marker at all is exit 6" 6 \
+  "$(python3 "$COCKPIT" status --root "$R2" >/dev/null 2>&1; echo $?)"
+
+python3 "$COCKPIT" serve --root "$R2" --port 0 --always --no-open > "$TMP/always.log" 2>&1 &
+PID2=$!
+for _ in $(seq 1 40); do [ -s "$MARK" ] && break; sleep 0.25; done
+
+if [ -s "$MARK" ]; then ok "--always wrote $MARK"; else bad "--always wrote no marker"; fi
+MPORT="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['port'])" "$MARK" 2>/dev/null || echo ERR)"
+UPORT="$(sed -n 's|^cockpit: http://127.0.0.1:\([0-9]*\)/.*|\1|p' "$TMP/always.log" | head -1)"
+# --port 0 binds an EPHEMERAL port: a marker that recorded the REQUESTED port would say
+# 0 here, which is the whole point of writing it after the bind.
+chk "the marker holds the REAL bound port, not the requested one" "$UPORT" "$MPORT"
+if [ "$MPORT" = "0" ]; then bad "the marker recorded the requested port (0)"; else ok "the marker is not 0"; fi
+chk "status: marker + live server is exit 0" 0 \
+  "$(python3 "$COCKPIT" status --root "$R2" >/dev/null 2>&1; echo $?)"
+python3 "$COCKPIT" status --root "$R2" > "$TMP/st.txt" 2>/dev/null || true
+grep -q -- "running" "$TMP/st.txt" \
+  && ok "status names the state 'running'" || bad "status did not print 'running'"
+grep -q "http://127.0.0.1:$MPORT/" "$TMP/st.txt" \
+  && ok "status prints the URL to open" || bad "status printed no URL"
+
+# serve WITHOUT --always must leave an existing opt-in exactly as it found it: opting in
+# is deliberate, and so is opting out.
+MCK1="$(cksum < "$MARK")"
+python3 "$COCKPIT" serve --root "$R2" --port 0 --no-open > "$TMP/noalways.log" 2>&1 &
+PID3=$!
+for _ in $(seq 1 40); do grep -q '^cockpit: http' "$TMP/noalways.log" && break; sleep 0.25; done
+kill "$PID3" 2>/dev/null; wait "$PID3" 2>/dev/null
+chk "serve WITHOUT --always leaves the marker byte-identical" "$MCK1" "$(cksum < "$MARK")"
+
+kill "$PID2" 2>/dev/null; wait "$PID2" 2>/dev/null; PID2=""
+for _ in $(seq 1 40); do python3 "$COCKPIT" status --root "$R2" >/dev/null 2>&1 || break; sleep 0.25; done
+chk "status: marker but DOWN is exit 5" 5 \
+  "$(python3 "$COCKPIT" status --root "$R2" >/dev/null 2>&1; echo $?)"
+python3 "$COCKPIT" status --root "$R2" > "$TMP/st.txt" 2>/dev/null || true
+grep -q -- "down" "$TMP/st.txt" \
+  && ok "status names the state 'down'" || bad "status did not print 'down'"
+
+printf 'not json at all{' > "$MARK"
+chk "status: a malformed marker degrades to exit 6" 6 \
+  "$(python3 "$COCKPIT" status --root "$R2" >/dev/null 2>&1; echo $?)"
+python3 "$COCKPIT" status --root "$R2" > "$TMP/st.txt" 2>/dev/null || true
+grep -q -- "unopted" "$TMP/st.txt" \
+  && ok "a malformed marker reads as unopted, never as a crash" \
+  || bad "malformed marker did not report 'unopted'"
+python3 "$COCKPIT" status --root "$R2" >/dev/null 2>&1
+chk "status never repairs a marker it cannot read" "not json at all{" "$(cat "$MARK")"
 
 echo "----"
 echo "fixture: $PASSES passed, $FAILS failed"

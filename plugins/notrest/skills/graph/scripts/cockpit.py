@@ -47,6 +47,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import graph as G                                        # noqa: E402
 
 DEFAULT_PORT = 8788
+# The always-on OPT-IN marker. A project that wants its window open says so ONCE, on
+# disk, and every later session can find that out without asking the owner to remember
+# (2026-08-04: the cockpit was doing exactly what the owner wanted and nothing surfaced
+# it — presence is not display). Per-machine state, not shared history: this repo's
+# .gitignore already ignores /graph/, and SKILL.md tells user projects to do the same.
+ALWAYS_MARKER = "graph/.cockpit-always"
+HEALTH_TIMEOUT = 0.5        # a probe, not a wait: status must never hang a session start
 COORD_TAIL = 40
 AGENT_TAIL = 30
 ROOM_TAIL = 40
@@ -995,6 +1002,76 @@ def build_page(root):
     return PAGE.replace("__TITLE__", G.esc(root.name))
 
 
+def marker_path(root):
+    return pathlib.Path(root) / ALWAYS_MARKER
+
+
+def write_marker(root, port):
+    """(ok, why). Atomic: tmp beside the target + os.replace, so a reader never sees a
+    half-written marker and a crash cannot leave one. graph/ may not exist yet."""
+    target = marker_path(root)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_text(json.dumps({"port": int(port)}) + "\n", encoding="utf-8")
+        os.replace(str(tmp), str(target))
+        return True, ""
+    except OSError as exc:
+        return False, str(exc)
+
+
+def read_marker(root):
+    """The opted port, or None. A malformed marker is NOT an error to shout about — it
+    reads as 'not opted in', because the alternative is a broken JSON file that makes
+    every session start noisy."""
+    try:
+        blob = json.loads(marker_path(root).read_text(encoding="utf-8"))
+        port = blob.get("port")
+        if isinstance(port, bool):
+            return None
+        port = int(port)
+        return port if 1 <= port <= 65535 else None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def probe_health(port, timeout=HEALTH_TIMEOUT):
+    """(alive, served_root). Loopback only, stdlib only, one short probe."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health",
+                                    timeout=timeout) as resp:
+            blob = json.loads(resp.read().decode("utf-8", "replace"))
+        return bool(blob.get("ok")), str(blob.get("root", "?"))
+    except Exception:
+        return False, ""
+
+
+def cmd_status(a):
+    """Is the window this project asked for actually open? One line, typed exit.
+    0 = opted in and serving · 5 = opted in and DOWN (the interesting one: the project
+    wants a cockpit and does not have one) · 6 = never opted in."""
+    root = pathlib.Path(a.root).expanduser().resolve()
+    if not root.is_dir():
+        G.die(f"not a directory: {root}")
+    port = read_marker(root)
+    if port is None:
+        exists = marker_path(root).exists()
+        why = "unreadable marker" if exists else f"no {ALWAYS_MARKER} marker"
+        print(f"cockpit: unopted — {why} · opt in with: cockpit.py serve --root "
+              f"{root} --always --no-open &")
+        return 6
+    url = f"http://127.0.0.1:{port}/"
+    alive, served = probe_health(port)
+    if alive:
+        note = "" if served in ("", "?", str(root)) else f" · WARNING serving {served}"
+        print(f"cockpit: {url} — running (opted always-on, root {root}){note}")
+        return 0
+    print(f"cockpit: {url} — down (opted always-on) · start it: cockpit.py serve "
+          f"--root {root} --port {port} --always --no-open &")
+    return 5
+
+
 def cmd_serve(a):
     root = pathlib.Path(a.root).expanduser().resolve()
     if not root.is_dir():
@@ -1016,6 +1093,13 @@ def cmd_serve(a):
     srv.pics = Pictures(root, script)
     host, port = srv.server_address[0], srv.server_address[1]
     url = f"http://{host}:{port}/"
+    # --always writes the opt-in marker with the REAL bound port (never the requested
+    # one — they differ the moment a port is taken). Without the flag an existing marker
+    # is left exactly as it was: opting in is a deliberate act, and so is opting out.
+    if getattr(a, "always", False):
+        ok, why = write_marker(root, port)
+        print(f"  always: {ALWAYS_MARKER} written (port {port})" if ok
+              else f"  always: NOT written ({why})")
     print(f"cockpit: {url}")
     print(f"  root:  {root}")
     print(f"  page:  {wrote}")
@@ -1054,7 +1138,12 @@ def main():
     s.add_argument("--open", dest="open", action="store_true", help="open a browser")
     s.add_argument("--no-open", dest="open", action="store_false")
     s.add_argument("--verbose", action="store_true", help="log every request")
+    s.add_argument("--always", action="store_true",
+                   help="opt this project in: write the always-on marker with the bound port")
     s.set_defaults(f=cmd_serve, open=True)
+    st = sub.add_parser("status", help="is the opted-in cockpit actually up? (0/5/6)")
+    st.add_argument("--root", default=".")
+    st.set_defaults(f=cmd_status)
     args = ap.parse_args()
     raise SystemExit(args.f(args) or 0)
 

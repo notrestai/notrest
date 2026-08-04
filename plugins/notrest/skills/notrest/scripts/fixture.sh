@@ -481,6 +481,48 @@ ln -s "$WR/outside/DANGLING.md" "$G3/COORD.md"
 t "escaping COORD link is never scaffolded through" \
   "$([ -f "$W/outside/DANGLING.md" ] && echo wrote || echo none)" "none"
 
+echo "── v3.20.0: the cockpit always-on nudge (surfacing, not doing)"
+
+# Ports here are deliberately NOT 8788 (the owner's real cockpit) and not 8790-8799
+# (render-check's range): this fixture must never collide with a window someone is using.
+CKN="$W/cockpit-nogit"; mkdir -p "$CKN"; est establish --root "$CKN" >/dev/null 2>&1
+( cd "$CKN" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+t "cockpit nudge: hook still exits 0 with no marker" "$?" "0"
+hasnt "no marker → session-start says nothing about a cockpit" "Cockpit is opted always-on" "$W/o"
+
+mkdir -p "$CKN/graph"; printf '{"port":8123}\n' > "$CKN/graph/.cockpit-always"
+( cd "$CKN" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+t "cockpit nudge: hook exits 0 with a marker" "$?" "0"
+has "marker at a NON-GIT COORD root → the nudge fires" \
+  "Cockpit is opted always-on here (port 8123)" "$W/o"
+has "the nudge points at the built-in browser pane" "built-in browser pane" "$W/o"
+has "the nudge names the probe verb" "cockpit.py status" "$W/o"
+
+CKG="$W/cockpit-git"; mkdir -p "$CKG/graph"; ( cd "$CKG" && git init -q ) >/dev/null 2>&1
+printf '{"port":8124}\n' > "$CKG/graph/.cockpit-always"
+( cd "$CKG" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+has "marker at a GIT root → the nudge fires too" \
+  "Cockpit is opted always-on here (port 8124)" "$W/o"
+
+# A SessionStart hook must not do work: one echo, no probe, no spawn, no opener.
+t "the nudge started NO server on the opted port" \
+  "$(python3 -c "
+import socket
+s = socket.socket(); s.settimeout(0.4)
+try:
+    s.connect(('127.0.0.1', 8123)); print('listening')
+except Exception:
+    print('none')
+finally:
+    s.close()")" "none"
+
+for BADMARK in 'garbage{' '{\"port\":\"not-a-number\"}' '{\"port\":0}' '{}' ''; do
+  printf '%s' "$BADMARK" > "$CKN/graph/.cockpit-always"
+  ( cd "$CKN" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+  hasnt "malformed marker [$BADMARK] keeps the hook silent" "Cockpit is opted always-on" "$W/o"
+done
+rm -f "$CKN/graph/.cockpit-always"
+
 echo
 echo "fixture: $PASS pass, $FAIL fail"
 [ "$FAIL" -eq 0 ] || exit 1

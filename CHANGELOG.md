@@ -1,5 +1,52 @@
 # Changelog — the notrest harness
 
+## 3.20.0 — 2026-08-04
+
+**The window existed. Nothing surfaced it. Presence is not display.**
+
+- **The field note that earned this release.** The cockpit did exactly what the owner
+  wanted — a live estate window: river, journey, file graph, library, lanes, watch, all
+  re-read every few seconds — and it sat there unopened. **No session opened it. No
+  project remembered wanting it.** The failure was not in the window; it was that nothing
+  in the harness *pointed at* the window. That is the same shape as the release before
+  this one, one floor up: **presence is not establishment** became **presence is not
+  display**. A capability nothing surfaces is a capability nobody has.
+- **`cockpit.py serve --always` — the opt-in a project states once.** It writes
+  `graph/.cockpit-always`, a one-key JSON marker holding the **port actually bound** —
+  written *after* the bind and atomically (tmp + `os.replace`), because the requested port
+  and the bound port stop agreeing the moment a port is taken. `serve` **without**
+  `--always` never touches an existing marker: opting in is deliberate, and so is opting
+  out. The marker is per-machine state, not shared history — this repo's `.gitignore`
+  already anchors `/graph/`, and the SKILL tells user projects to do the same rather than
+  enforcing it.
+- **`cockpit.py status` — one line, three exits.** URL plus running / down / unopted, and
+  **0** serving · **5** opted in and DOWN (the interesting one: the project asked for a
+  window and does not have it) · **6** never opted in, so say nothing. It probes `/health`
+  on loopback with a half-second timeout — a probe, never a wait, because a status call
+  that can hang is a status call that will hang an intake. If the port answers but reports
+  a *different root*, the line says so: another project's cockpit holding that port must
+  not be reported as this project's window.
+- **One echo at session start, and not one thing more.** `session-start.sh` prints a single
+  nudge when the marker is at the resolved estate root — git root or the `COORD.md` root
+  the shared resolver finds, so an established non-git project gets it too. The hook
+  **never probes the port, never spawns a server, never opens anything**: a SessionStart
+  hook that shells out is a hook that can hang a session start. A malformed marker — bad
+  JSON, a non-numeric port, port 0, an empty file — prints nothing at all.
+- **The ritual belongs to the seat, the stopping belongs to the owner.** `graph`'s SKILL.md
+  now carries it whole: opt in, then at every session start probe → start if down → **open
+  it in the built-in browser pane** so the owner finds the estate already on screen.
+  Stopping is the owner's call — kill the process, `rm` the marker — and the harness never
+  starts a cockpit in a project that has not opted in. `oracle`'s intake surfaces it at the
+  estate-temperature step, before the six questions.
+- **The window-plus-one-mail-slot law and the 127.0.0.1 bind are untouched.** Nothing here
+  adds a route, a write, or a way to widen the bind.
+- Fixtures: cockpit **73** asserts (its always-on phase runs on its own scratch root and an
+  **ephemeral** port, so it can never collide with — or reap — a cockpit the owner is
+  actually using; `--port 0` is what proves the marker records the *bound* port and not the
+  requested one), notrest **200** (+13 for the nudge: fires at a git root and at a non-git
+  `COORD.md` root, silent without a marker, silent on five malformed shapes, and asserted
+  to have started no server at all).
+
 ## 3.19.0 — 2026-08-02
 
 **Presence is not establishment — and a governed session looked exactly like an ungoverned one.**

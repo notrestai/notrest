@@ -250,6 +250,55 @@ pane `http://127.0.0.1:8788/` directly; on a plain macOS CLI the command opens i
 same machine. It binds **127.0.0.1 only, always** — there is no flag to widen that. Stop it
 with Ctrl-C in the shell that owns it, or kill the pid that shell reports.
 
+### Always-on — surfacing it is the seat's job, not the owner's to remember
+
+A window nobody opens is not a window. The cockpit did exactly what the owner wanted for
+weeks and **nothing surfaced it**: no session opened it, and no project remembered wanting
+it. **Presence is not display** — the same law as `/notrest`'s *presence is not
+establishment*, one floor up. The fix is an opt-in the project states once and the harness
+carries from then on:
+
+**(i) Opt in — once, by the owner.**
+
+```bash
+python3 <graph-skill>/scripts/cockpit.py serve --root "$ROOT" --always --no-open &
+```
+
+`--always` writes `<root>/graph/.cockpit-always` — a one-key JSON marker holding the
+**port actually bound** (not the one requested; those differ the moment a port is taken).
+It is written *after* the bind, atomically. `serve` **without** `--always` never touches an
+existing marker: opting in is deliberate, and so is opting out. The marker is **per-machine
+state, not shared history** — this repo's `.gitignore` already ignores `/graph/`, and a
+user project that opts in should do the same (`/graph/` anchored, so it never swallows a
+skill directory of that name). Nothing enforces that; it is yours to add.
+
+**(ii) At every session start — probe, and start it if it is down.** The SessionStart hook
+prints one line when the marker is there. It only *echoes*: a hook that probes ports or
+spawns servers is a hook that can hang a session start. The probing is the seat's:
+
+```bash
+python3 <graph-skill>/scripts/cockpit.py status --root "$ROOT"
+#   exit 0 → running (the URL is on the line)
+#   exit 5 → opted in and DOWN  → start it:
+#            python3 <graph-skill>/scripts/cockpit.py serve --root "$ROOT" --port <p> --always --no-open &
+#   exit 6 → never opted in     → say nothing, do nothing
+```
+
+`status` probes `/health` on loopback with a half-second timeout, so it can never stall an
+intake. If the server answers but reports a **different root**, the line says so — some
+other project's cockpit holds that port, and the seat should notice rather than report a
+window onto someone else's estate as this project's.
+
+**(iii) Then OPEN it — for the owner, not for yourself.** In an environment with the
+**built-in browser pane**, hand the pane the printed `http://127.0.0.1:<port>/` and leave
+it open. Otherwise use the system opener (plain `serve` does it for you; `--no-open`
+suppresses it). This step is the whole point: the owner should find the estate already on
+screen, not discover later that a window they asked for has been sitting closed.
+
+**(iv) Stopping is the owner's call, always.** Kill the process that owns the port, and
+`rm <root>/graph/.cockpit-always` to opt out. The harness never stops a cockpit, never
+removes the marker, and never starts one in a project that has not opted in.
+
 **THE WINDOW-NOT-CONTROL-PANEL LAW.** Every route is a read except exactly one:
 `POST /room/<name>`, which posts a line to a chatroom by shelling to chatroom's own
 `room.py post`. **The no-secrets screen is chatroom's, and the cockpit neither pre-screens
@@ -334,10 +383,15 @@ or `~/.claude/skills/…`). `<graph-skill>` below means that path.
 - **Draw the river:** `python3 <graph-skill>/scripts/graph.py river --root <project> [--session S] [--cap N] [--out graph/river.html] [--open|--no-open] [--now]`
   Prints `…/river.html: N records · C channels (M merged, D dead-end) · R rocks (K resting on refuted) · B backtracks · F milestones · mode=…`,
   then one `note:` line per honesty note (degrade mode, cap, unparseable ledger lines).
-- **Open the cockpit:** `python3 <graph-skill>/scripts/cockpit.py serve --root <project> [--port 8788] [--no-open]`
+- **Open the cockpit:** `python3 <graph-skill>/scripts/cockpit.py serve --root <project> [--port 8788] [--no-open] [--always]`
   A loopback-only live window over the estate. Prints the URL, the page path, the bind, the
   route list and the stop instruction, then serves until Ctrl-C. Reads everything; writes
   exactly one thing, a chatroom post, through chatroom's own screened `room.py post`.
+  `--always` additionally writes the opt-in marker `graph/.cockpit-always` with the bound port.
+- **Is the opted-in cockpit up?** `python3 <graph-skill>/scripts/cockpit.py status [--root <project>]`
+  One line — URL plus running / down / unopted — and a typed exit: **0** running · **5**
+  opted in but down (start it) · **6** never opted in (say nothing). Reads the marker and
+  probes `/health` on loopback with a half-second timeout. Writes nothing, ever.
 - **Draw the journey:** `python3 <graph-skill>/scripts/graph.py journey --root <project> [--out graph/journey.html] [--open|--no-open]`
   Prints `…/journey.html: N skills · S router shapes · P phrases (R router, I intake) · C chain arrows · B by name only · stamp=<commit> (git-head)`,
   then one `note:` line per disclosure (no router, no chains section, prose-only hand-offs,
@@ -577,7 +631,13 @@ view you did not see.
   verbatim while an outside-root pointer is refused unread, a render rebuilt when its input
   moves and *not* rebuilt inside the debounce, the mail slot round-tripping a post and passing
   chatroom's exit-5 refusal through as 422 with nothing written, a POST to any other route
-  404-ing, and the server reaping its own port. Exit 0 = all held.
+  404-ing, and the server reaping its own port. Its always-on phase proves the opt-in on its
+  OWN scratch root and an EPHEMERAL port — so it can never collide with, or reap, a cockpit
+  the owner is actually using: `--always` writes the **real bound port** (asserted against
+  `--port 0`, where a marker recording the *requested* port would say `0`), `serve` without
+  the flag leaves an existing marker byte-identical, and `status` returns 0 / 5 / 6 for
+  running / opted-but-down / unopted, treating a malformed marker as unopted and never
+  repairing it. Exit 0 = all held.
 
 ## Self-check before finishing
 

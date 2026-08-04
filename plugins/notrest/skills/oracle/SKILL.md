@@ -58,6 +58,15 @@ the last scan found. A ripe row that matches the stated Objective is worth one l
 user: this project keeps doing this, and `/compile <slug>` can move its stable parts into
 code. Say nothing when the file is absent or nothing is ripe.
 
+**Cockpit (one line, only if the project asked for it).** If `graph/.cockpit-always` sits at
+the estate root, this project has opted its live window on. Run `python3
+"${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/cockpit.py" status --root .` — exit 0 means it is
+already up (hand the URL to the built-in browser pane if it is not on screen), exit 5 means
+start it (`serve --root . --port <p> --always --no-open &`) and then open it, exit 6 means the
+project never opted in and you say nothing. Surfacing the owner's window is the seat's job,
+not something the owner should have to remember; it is never started in a project that has
+not opted in.
+
 **Estate pulse (script-only, and usually free).** Between the foundation load and question 1,
 take the estate's temperature: `bash "${CLAUDE_PLUGIN_ROOT}/skills/doctor/scripts/pulse.sh"
 --if-stale 6 --root .` — existence-guarded like every sibling call; if the script is absent, say

@@ -93,6 +93,30 @@ elif [ -z "$REPO_ROOT" ] && [ "$PWD" != "$HOME" ] && [ "$PWD" != "/" ]; then
     fi
   done
 fi
+# ── cockpit (2026-08-04 — the owner's field note: the cockpit did exactly what they
+# wanted and NOTHING SURFACED IT; no session opened it and no project remembered
+# wanting it. Presence is not display, the same way presence is not establishment).
+# A project opts in ONCE with `cockpit serve --always`, which leaves the marker below;
+# from then on every session is TOLD, and surfacing the window becomes the seat's job
+# rather than something the owner has to remember. This hook only ECHOES: it never
+# probes the port, never spawns a server, never opens anything — a SessionStart hook
+# must not do work, and a hook that shells out is a hook that can hang a session start.
+# A malformed marker prints nothing at all.
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/graph/.cockpit-always" ]; then
+  CK_PORT="$(python3 -c 'import json,sys
+try:
+    p = json.load(open(sys.argv[1])).get("port")
+    if isinstance(p, bool):
+        raise ValueError
+    p = int(p)
+    if 1 <= p <= 65535:
+        sys.stdout.write(str(p))
+except Exception:
+    pass' "$REPO_ROOT/graph/.cockpit-always" 2>/dev/null)"
+  if [ -n "$CK_PORT" ]; then
+    echo "[notrest] Cockpit is opted always-on here (port $CK_PORT) — probe with cockpit.py status; if down, start it, then OPEN it in the built-in browser pane so the owner sees the estate live (graph SKILL.md, cockpit section)."
+  fi
+fi
 # ── compile: surface a ripe candidate the estate has already recorded three or
 # more times. This READS the last scan only — scanning belongs to /sessionend, and
 # a SessionStart hook must never do work. Silent when absent, unreadable, or when

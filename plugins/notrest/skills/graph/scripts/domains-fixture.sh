@@ -405,8 +405,18 @@ runj real --root "$ROOT" --paths plugins/notrest/skills/graph plugins/notrest/sk
 chk "real repo: exit" 0 "$RC"
 chk "real repo: a partition actually happened" "True" \
     "$(J "$TMP/real.json" 'len(d["lanes"]) >= 2')"
-chk "real repo: graph.py and its SKILL.md move together" "True" \
-    "$(J "$TMP/real.json" 'any("plugins/notrest/skills/graph/scripts/graph.py" in l["files"] and "plugins/notrest/skills/graph/SKILL.md" in l["files"] for l in d["lanes"])')"
+# A skill's script and its doc must never be handed to TWO DIFFERENT LANES — that is the
+# collision the partition exists to prevent. Same-lane is one way to satisfy it; the other
+# is seat_held, which is strictly safer (the seat holds the file and no lane may edit it).
+# The original assert demanded same-lane, so it went red the moment graph/SKILL.md legitimately
+# crossed the documented hub threshold (2026-08-04: degree 6 against a rule of exactly 6) and
+# was promoted to seat_held — the tool behaving exactly as its own doctrine says. Asserted
+# here is the PROPERTY, not one of its two shapes. The first clause is the non-vacuity guard:
+# rename either file and this fails instead of passing on an empty set.
+chk "real repo: graph.py and its SKILL.md are both placed" "True" \
+    "$(J "$TMP/real.json" 'all(f in [h["file"] for h in d["seat_held"]] or any(f in l["files"] for l in d["lanes"]) for f in ("plugins/notrest/skills/graph/scripts/graph.py","plugins/notrest/skills/graph/SKILL.md"))')"
+chk "real repo: graph.py and its SKILL.md are never split across two lanes" "True" \
+    "$(J "$TMP/real.json" '(lambda a,b: not (a and b and a != b))({i for i,l in enumerate(d["lanes"]) if "plugins/notrest/skills/graph/scripts/graph.py" in l["files"]},{i for i,l in enumerate(d["lanes"]) if "plugins/notrest/skills/graph/SKILL.md" in l["files"]})')"
 LAWS "phase J" "$TMP/real.json"
 NOGRAPHJSON=$( [ -e "$ROOT/graph/graph.json" ] && echo present || echo absent )
 run realh --root "$ROOT" --paths plugins/notrest/skills/graph
