@@ -1,5 +1,52 @@
 # Changelog — the notrest harness
 
+## 3.21.0 — 2026-08-04
+
+**"How is this a graph readable?" — RENDERED IS NOT READABLE.**
+
+- **The owner's verdict, and the lineage it completes.** *Presence is not establishment*
+  (3.19.0) put the estate in the project. *Presence is not display* (3.20.0) put the
+  window on the screen. Then the owner looked at the window and asked how any of it was
+  readable. Every number on those pages was right; the fixtures gated determinism, counts
+  and HTTP 200, and **not one of them had ever gated whether a human could read the first
+  screen**. A correct render nobody can read is a failed render.
+- **THE COCKPIT IS THE OWNER'S REDESIGN.** Five views — `river` · `journey` · `file graph`
+  · `coord` · `lanes` — one at a time, each owning the whole viewport under a bar of
+  exactly six controls. Gone: the title, the version/pulse/spend/watch/lane chips, the
+  live toggle, the theme button, and the library / chatroom / findings / watch panels.
+  The chrome was reporting the harness to the seat while the picture it existed to show
+  was squeezed into a corner — **the ledgers already hold all of that, so the window now
+  shows the work, not the paperwork**. Theme follows the OS; polling stays always-on at
+  5s. **UI removal only:** every `/data/*` route and the `POST /room/<name>` mail slot are
+  still served, still asserted, still there for any API consumer.
+- **The staleness law survived the redesign** — a live monitor that cannot say how stale
+  it is is worse than none. The server's `X-Cockpit-Generated` read time is now one faint
+  line in the bottom-right corner instead of a chip in the bar. Still the server's stamp,
+  never the browser's clock.
+- **Every view opens STAGED, and every threshold comes from the data.** File graph: labels
+  for the top **K = min(40, nodes/8)** by degree, with the header stating *"labels: top K
+  of N by degree"*. Journey: above **30 phrases** they fold into one *"N phrases"* pill per
+  shape, above **40 chains** the arrows start off, and a filter match **auto-opens its
+  fold**. River: flags inside one bank span collapse to a glyph carrying **+K**, click to
+  expand. Cockpit: pictures load `?embed=1` with the legend folded, and a small **open full
+  page ↗** now sits in the picture's own corner instead of being tribal knowledge.
+- **Staging is never hiding — and the page says so in words.** Nothing leaves the data, the
+  JSON, the hit-testing or the panel; a staged node is drawn, clickable and countable, it
+  just has not been handed a label yet. The file graph's header states K of N *and* that
+  every node is still there. A view that quietly omitted records would be a lying picture.
+- **The byte-identical render law is untouched, and that is the load-bearing constraint.**
+  All staging is client-side JS reading data counts and the query string — never the clock
+  — so river, journey and the file graph each still render byte-identically twice, and a
+  picture served with `?embed=1` is byte-for-byte the one served without it. Asserted, not
+  asserted-about.
+- **The render gate grew the clause it was missing:** confirm the glyphs render, the counts
+  match, **and the first screen is legible at the width you are viewing**.
+- Fixtures: cockpit **73 → 109** (a whole phase on the new page shape — the six controls
+  present, every removed chip and panel absent from the served HTML, both feed views, the
+  staleness line, the embed hook, and every departed panel's route still 200), river
+  **86 → 92** (a purpose-built 24-flag pileup, clustered, re-rendered byte-identical),
+  journey **36 → 42** (fold and chain thresholds, filter placeholder, embed hook).
+
 ## 3.20.0 — 2026-08-04
 
 **The window existed. Nothing surfaced it. Presence is not display.**

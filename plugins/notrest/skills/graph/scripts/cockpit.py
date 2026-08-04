@@ -620,37 +620,34 @@ header{display:flex;flex-wrap:wrap;gap:.4rem .7rem;align-items:center;padding:.5
   border-bottom:1px solid var(--border);background:var(--surface-1);flex:none}
 h1{font-size:13.5px;font-weight:600;margin:0;letter-spacing:.02em}
 .grow{flex:1}
-.chip{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--border);
-  background:var(--surface-0);border-radius:999px;padding:.2rem .6rem;font-size:11.5px;
-  color:var(--text-secondary);white-space:nowrap}
-.chip b{font-weight:600;color:var(--text-primary)}
-.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex:none}
-.chip.ok .dot{background:var(--ok)} .chip.warn .dot{background:var(--warn)}
-.chip.bad .dot{background:var(--bad)} .chip.na{opacity:.55}
 button{background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border);
   border-radius:999px;padding:.22rem .65rem;font-size:11.5px;cursor:pointer;font-family:inherit}
 button:hover{border-color:var(--border-strong);color:var(--text-primary)}
 button.on{background:var(--surface-2);color:var(--text-primary);border-color:var(--border-strong)}
-main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 380px;min-height:0}
-@media (max-width:1080px){main{grid-template-columns:minmax(0,1fr)}
-  #side{border-left:none;border-top:1px solid var(--border);max-height:46vh}}
-#stage{display:flex;flex-direction:column;min-width:0;min-height:0}
-.tabs{display:flex;gap:.3rem;padding:.4rem .6rem;border-bottom:1px solid var(--border);
-  background:var(--surface-1);flex:none;align-items:center}
+main{flex:1;min-height:0;display:flex}
+/* ONE VIEW AT A TIME, OWNING THE VIEWPORT (owner's redesign, 2026-08-04). No second
+   column, no stacked panels: whatever is selected gets everything under the bar. The
+   picture views cannot be starved by feeds, because the feeds are views of their own. */
+.view{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:auto}
+[hidden]{display:none!important}
+#stage{position:relative;padding:0;overflow:hidden}
 iframe{flex:1;width:100%;border:0;background:var(--surface-0);min-height:0}
-#side{border-left:1px solid var(--border);background:var(--surface-1);overflow:auto;
-  display:flex;flex-direction:column}
-/* ALWAYS PRESENT is the whole point of the side column: every panel keeps its
-   own bounded scroll so a 40-line COORD tail cannot push the chatroom off the
-   bottom of the screen. The column scrolls only when the panels themselves
-   cannot fit. */
-section{border-bottom:1px solid var(--border);padding:.55rem .7rem;flex:none;
-  display:flex;flex-direction:column;min-height:0}
-.feed{overflow:auto;min-height:0}
-#coord{max-height:190px}
-#lanes{max-height:200px}
-#library{max-height:150px}
-#findings{max-height:130px}
+/* the escape hatch sits ON the picture, in its corner — discoverable, and out of the
+   bar the owner asked to keep to six controls */
+a.fullpage{position:absolute;right:.6rem;bottom:.6rem;z-index:2;
+  background:color-mix(in srgb,var(--surface-1) 88%,transparent);
+  color:var(--text-secondary);border:1px solid var(--border);border-radius:999px;
+  padding:.2rem .6rem;font-size:11px;text-decoration:none;white-space:nowrap}
+a.fullpage:hover{border-color:var(--border-strong);color:var(--text-primary)}
+#v-coord,#v-lanes{padding:.5rem .8rem}
+.feed{min-height:0}
+/* THE STALENESS LAW SURVIVES THE REDESIGN (cockpit's own docstring: a live monitor
+   that cannot tell you how stale it is is worse than no monitor). It is no longer a
+   chip in the bar — it is one faint line in the corner, visually negligible and always
+   there, still read from the SERVER's X-Cockpit-Generated header and never a browser
+   clock. */
+#stamp{position:fixed;right:.55rem;bottom:.4rem;z-index:3;pointer-events:none;
+  font-size:10px;color:var(--text-muted);opacity:.6;font-family:var(--mono,ui-monospace,monospace)}
 section>h2{margin:0 0 .4rem;font-size:10.5px;letter-spacing:.1em;color:var(--text-muted);
   font-weight:600;display:flex;align-items:center;gap:.4rem}
 section>h2 .n{color:var(--text-secondary);letter-spacing:0;font-weight:500}
@@ -685,14 +682,6 @@ textarea,input[type=text]{width:100%;font:inherit;font-size:12px;padding:.3rem .
 textarea:focus,input:focus{outline:none;border-color:var(--border-strong)}
 .roomline{font-size:11.5px;padding:.15rem 0;border-top:1px dotted var(--border);
   white-space:pre-wrap;word-break:break-word}
-#roomlog{max-height:190px;overflow:auto;margin-bottom:.4rem}
-.postrow{display:flex;gap:.35rem;margin-top:.35rem;align-items:center}
-.postrow input{flex:none;width:110px}
-.msg{font-size:11px;margin-top:.35rem;padding:.3rem .45rem;border-radius:7px;display:none}
-.msg.show{display:block}
-.msg.err{background:color-mix(in srgb,var(--bad) 16%,transparent);color:var(--text-primary);
-  border:1px solid var(--bad)}
-.msg.good{background:color-mix(in srgb,var(--ok) 16%,transparent);border:1px solid var(--ok)}
 #pane{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:20;
   align-items:center;justify-content:center;padding:2rem}
 #pane.show{display:flex}
@@ -708,65 +697,23 @@ textarea:focus,input:focus{outline:none;border-color:var(--border-strong)}
 </head>
 <body>
 <header>
-  <h1>COCKPIT</h1>
-  <span class="chip mono" id="c-ver" title="manifest version · git HEAD"><span class="dot"></span><b>—</b></span>
-  <span class="chip" id="c-pulse" title="the newest [pulse] line in COORD.md"><span class="dot"></span>pulse <b>—</b></span>
-  <span class="chip" id="c-spend" title="spend.py report — routing policy verdict"><span class="dot"></span>spend <b>—</b></span>
-  <span class="chip" id="c-watch" title="watch.py due"><span class="dot"></span>watch <b>—</b></span>
-  <span class="chip" id="c-lanes" title="lanes that FINISHED recently — the agent ledger is written at SubagentStop"><span class="dot"></span>lanes <b>—</b></span>
+  <button data-view="river" class="on" type="button">river</button>
+  <button data-view="journey" type="button">journey</button>
+  <button data-view="graph" type="button">file graph</button>
+  <button data-view="coord" type="button">coord</button>
+  <button data-view="lanes" type="button">lanes</button>
   <span class="grow"></span>
-  <span class="chip mono na" id="c-stamp" title="server read time, from the X-Cockpit-Generated response header">—</span>
-  <button id="poll" class="on" type="button">live</button>
-  <button id="theme" type="button">light / dark</button>
+  <button id="picreload" type="button">rebuild</button>
 </header>
 <main>
-  <div id="stage">
-    <div class="tabs">
-      <button data-pic="river" class="on" type="button">river</button>
-      <button data-pic="journey" type="button">journey</button>
-      <button data-pic="graph" type="button">file graph</button>
-      <span class="grow"></span>
-      <span class="note" id="picnote">renders are deterministic — rebuilt only when their inputs move</span>
-      <button id="picreload" type="button">rebuild</button>
-    </div>
-    <iframe id="pic" title="picture" src="/pic/river.html"></iframe>
+  <div id="stage" class="view">
+    <iframe id="pic" title="picture" src="/pic/river.html?embed=1"></iframe>
+    <a id="picfull" class="fullpage" href="/pic/river.html" target="_blank" rel="noopener">open full page &#8599;</a>
   </div>
-  <div id="side">
-    <section>
-      <h2>COORD <span class="n" id="coord-n"></span></h2>
-      <div id="coord" class="feed"></div>
-    </section>
-    <section>
-      <h2>LANES &amp; COMMISSIONS <span class="n" id="lane-n"></span></h2>
-      <div id="lanes" class="feed"></div>
-      <div class="note">A ruled sheet means that lane's exact prompt is banked on disk. Click it.</div>
-    </section>
-    <section>
-      <h2>LIBRARY <span class="n" id="lib-n"></span></h2>
-      <div id="library" class="feed"></div>
-    </section>
-    <section>
-      <h2>CHATROOM</h2>
-      <div class="postrow" style="margin:0 0 .4rem">
-        <input id="room" type="text" value="lobby" title="room name" style="width:120px">
-        <button id="roomload" type="button">read</button>
-        <span class="note" id="roomnote"></span>
-      </div>
-      <div id="roomlog"></div>
-      <textarea id="msg" rows="2" placeholder="post a line to the room…"></textarea>
-      <div class="postrow">
-        <input id="handle" type="text" value="cockpit" title="your handle">
-        <button id="send" type="button">post</button>
-        <span class="note">room.py screens every post — secrets are refused there, not here.</span>
-      </div>
-      <div class="msg" id="roommsg"></div>
-    </section>
-    <section>
-      <h2>FINDINGS <span class="n" id="find-n"></span></h2>
-      <div id="findings" class="feed"></div>
-    </section>
-  </div>
+  <div id="v-coord" class="view" hidden><div id="coord" class="feed"></div></div>
+  <div id="v-lanes" class="view" hidden><div id="lanes" class="feed"></div></div>
 </main>
+<div id="stamp" title="server read time, from the X-Cockpit-Generated response header">—</div>
 <div id="pane"><div id="paneBox">
   <h3 id="paneTitle">commission</h3>
   <div class="note mono" id="panePath"></div>
@@ -790,7 +737,7 @@ function get(path, cb){
   x.open('GET', path, true);
   x.onload = function(){
     var h = x.getResponseHeader('X-Cockpit-Generated');
-    if (h){ lastStamp = h; $('c-stamp').textContent = 'read ' + h.replace('T',' ').replace('Z','Z'); }
+    if (h){ lastStamp = h; $('stamp').textContent = 'read ' + h.replace('T',' ').replace('Z','Z'); }
     var d = null;
     try { d = JSON.parse(x.responseText); } catch(e){ d = {available:false, why:'bad JSON'}; }
     cb(d, x.status);
@@ -798,46 +745,10 @@ function get(path, cb){
   x.onerror = function(){ cb({available:false, why:'server unreachable'}, 0); };
   x.send();
 }
-function chip(id, cls, label, value, title){
-  var e = $(id);
-  e.className = 'chip ' + cls + (id === 'c-ver' ? ' mono' : '');
-  e.innerHTML = '<span class="dot"></span>' + (label ? esc(label) + ' ' : '') + '<b>' + esc(value) + '</b>';
-  if (title) e.title = title;
-}
-
-/* ---------------------------------------------------------------- the chips */
-function pollStatus(){
-  get('/data/version.json', function(d){
-    if (!d.available) return chip('c-ver','na','','—');
-    chip('c-ver', d.dirty ? 'warn' : 'ok', '', (d.version ? 'v' + d.version + ' ' : '') + d.stamp,
-         'manifest ' + (d.manifest || '?') + ' · git ' + d.stamp);
-  });
-  get('/data/pulse.json', function(d){
-    if (!d.available) return chip('c-pulse','na','pulse','none', d.why || '');
-    chip('c-pulse', d.verdict === 'OK' ? 'ok' : 'warn', 'pulse',
-         d.verdict + ' · ' + d.ts, d.line);
-  });
-  get('/data/spend.json', function(d){
-    if (!d.available) return chip('c-spend','na','spend','n/a', d.why || '');
-    chip('c-spend', d.verdict === 'CLEAN' ? 'ok' : 'bad', 'spend', d.verdict,
-         (d.entries !== undefined ? d.entries + ' entries' : (d.verdict_line || '')));
-  });
-  get('/data/watch.json', function(d){
-    if (!d.available) return chip('c-watch','na','watch','n/a', d.why || '');
-    var due = (d.due === null || d.due === undefined) ? '?' : d.due;
-    chip('c-watch', (due === 0 ? 'ok' : 'warn'), 'watch', due + ' due',
-         d.due_line + ' · ' + d.count + ' rows, ' + d.drifted + ' not HOLDS');
-    renderWatch(d);
-  });
-}
-var watchNote = '';
-function renderWatch(d){ watchNote = d.drift_block ? d.drift_block.split('\n')[0] : ''; }
-
 /* ----------------------------------------------------------------- the feeds */
 function pollCoord(){
   get('/data/coord.json', function(d){
     if (!d.available) { $('coord').innerHTML = '<div class="empty">no COORD ledger here</div>'; return; }
-    $('coord-n').textContent = d.shown + '/' + d.total;
     var out = d.lines.slice().reverse().map(function(c){
       return '<div class="row"><span class="t mono">' + esc(c.ts) + '</span> ' +
         (c.lane ? '<span class="pill">' + esc(clip(c.lane, 22)) + '</span> ' : '') +
@@ -852,9 +763,6 @@ function pollCoord(){
 function pollLanes(){
   get('/data/agents.json', function(d){
     if (!d.available) { $('lanes').innerHTML = '<div class="empty">no agent ledger</div>'; return; }
-    $('lane-n').textContent = d.commissions + ' commissioned / ' + d.shown;
-    chip('c-lanes', d.recent ? 'ok' : 'na', 'lanes',
-         d.recent + ' in ' + d.recent_window_min + 'm', d.recent_means);
     $('lanes').innerHTML = d.lanes.slice().reverse().map(function(l){
       var id = (l.agent || '').replace(/^agent-/, '');
       return '<div class="lane' + (l.commission ? ' comm' : '') + '">' +
@@ -870,39 +778,6 @@ function pollLanes(){
     });
   });
 }
-function pollLibrary(){
-  get('/data/library.json', function(d){
-    if (!d.available) { $('library').innerHTML = '<div class="empty">' + esc(d.why || 'no shelf') + '</div>'; return; }
-    $('lib-n').textContent = d.named + ' named / ' + d.concepts.length;
-    var cs = d.concepts.slice(0, 12).map(function(c){
-      return '<div class="concept"><span class="mono">' + esc(c.id) + '</span> ' +
-        '<b>' + esc(c.name === '?' ? '(unnamed)' : c.name) + '</b> ' +
-        '<span class="pill">' + esc(c.members) + ' members</span> ' +
-        (c.settled ? '<span class="crown">⭐ settled</span> ' : '') +
-        (c.status ? '<span class="pill">' + esc(c.status) + '</span>' : '') +
-        '<div class="t">' + esc((c.terms || []).join(' · ')) + '</div></div>';
-    }).join('');
-    $('library').innerHTML = (cs || '<div class="empty">no concepts yet</div>') +
-      '<div class="note">generation ' + esc(d.generation || '?') + ' · ' +
-      esc(d.projects.length) + ' project(s) on the shelf' +
-      (watchNote ? '<br>watch: ' + esc(clip(watchNote, 90)) : '') + '</div>';
-  });
-}
-function pollFindings(){
-  get('/data/findings.json', function(d){
-    if (!d.available) { $('findings').innerHTML = '<div class="empty">' + esc(d.why || 'no store') + '</div>'; return; }
-    var b = d.by_status || {};
-    $('find-n').textContent = (b.live || 0) + ' live · ' + (b.superseded || 0) +
-      ' sup · ' + (b.refuted || 0) + ' ref';
-    $('findings').innerHTML = (d.records || []).slice().reverse().slice(0, 8).map(function(r){
-      return '<div class="row"><span class="mono t">' + esc(r.id) + '</span> ' +
-        '<span class="pill">' + esc(r.kind) + '</span> ' +
-        '<span class="pill">' + esc(r.status) + '</span>' +
-        '<div class="ask">' + esc(clip(r.ask, 120)) + '</div></div>';
-    }).join('') || '<div class="empty">no records</div>';
-  });
-}
-
 /* ------------------------------------------------------------ the commission */
 function openBrief(id){
   get('/data/briefs/' + encodeURIComponent(id) + '.json', function(d, status){
@@ -923,74 +798,47 @@ $('paneClose').onclick = function(){ $('pane').classList.remove('show'); };
 $('pane').onclick = function(e){ if (e.target === $('pane')) $('pane').classList.remove('show'); };
 document.addEventListener('keydown', function(e){ if (e.key === 'Escape') $('pane').classList.remove('show'); });
 
-/* -------------------------------------------------------------- the chatroom */
-function loadRoom(){
-  var name = $('room').value.trim() || 'lobby';
-  get('/room/' + encodeURIComponent(name) + '?tail=30', function(d){
-    if (!d.available){
-      $('roomlog').innerHTML = '<div class="empty">' + esc(d.detail || d.why || 'room not found') + '</div>';
-      $('roomnote').textContent = '';
-      return;
-    }
-    $('roomnote').textContent = d.lines.length + ' lines';
-    $('roomlog').innerHTML = d.lines.map(function(l){
-      return '<div class="roomline">' + esc(l) + '</div>';
-    }).join('') || '<div class="empty">room is empty</div>';
-    $('roomlog').scrollTop = $('roomlog').scrollHeight;
-  });
+/* ----------------------------------------------------------------- the views
+   OWNER'S REDESIGN (2026-08-04): five views, one at a time, each owning the whole
+   viewport under a six-control bar. The chrome that used to ride the top — title,
+   version/pulse/spend/watch/lane chips, the live toggle, the theme button — is gone
+   on purpose: it reported the harness to the seat, and the ledgers already hold all
+   of it. The window shows the WORK, not the paperwork. */
+var pic = 'river', VIEWS = {river:1, journey:1, graph:1};
+function show(v){
+  var isPic = !!VIEWS[v];
+  $('stage').hidden = !isPic;
+  $('v-coord').hidden = (v !== 'coord');
+  $('v-lanes').hidden = (v !== 'lanes');
+  /* rebuild acts on a PICTURE. On the feeds there is nothing to rebuild, so the
+     control is hidden rather than left there doing nothing. */
+  $('picreload').hidden = !isPic;
+  if (isPic && v !== pic){
+    pic = v;
+    $('pic').src = '/pic/' + pic + '.html?embed=1';
+    $('picfull').href = '/pic/' + pic + '.html';
+  }
 }
-function say(kind, text){
-  var m = $('roommsg');
-  m.className = 'msg show ' + kind;
-  m.textContent = text;
-}
-$('roomload').onclick = loadRoom;
-$('send').onclick = function(){
-  var name = $('room').value.trim() || 'lobby';
-  var body = JSON.stringify({handle: $('handle').value.trim(), text: $('msg').value});
-  var x = new XMLHttpRequest();
-  x.open('POST', '/room/' + encodeURIComponent(name), true);
-  x.setRequestHeader('Content-Type', 'application/json');
-  x.onload = function(){
-    var d = {};
-    try { d = JSON.parse(x.responseText); } catch(e){}
-    if (x.status === 422){ say('err', d.why || 'refused'); return; }
-    if (x.status !== 200){ say('err', (d.error || 'post failed') + ' — ' + (d.stderr || d.why || '')); return; }
-    say('good', 'posted'); $('msg').value = ''; loadRoom();
-  };
-  x.onerror = function(){ say('err', 'server unreachable'); };
-  x.send(body);
-};
-
-/* --------------------------------------------------------------- the picture */
-var pic = 'river';
-Array.prototype.forEach.call(document.querySelectorAll('[data-pic]'), function(b){
+Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function(b){
   b.onclick = function(){
-    Array.prototype.forEach.call(document.querySelectorAll('[data-pic]'), function(o){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function(o){
       o.classList.toggle('on', o === b);
     });
-    pic = b.getAttribute('data-pic');
-    $('pic').src = '/pic/' + pic + '.html';
+    show(b.getAttribute('data-view'));
   };
 });
-$('picreload').onclick = function(){ $('pic').src = '/pic/' + pic + '.html?force=1&t=' + Date.now(); };
-
-/* ------------------------------------------------------------------ the loop */
-function tick(){ pollStatus(); pollCoord(); pollLanes(); pollLibrary(); pollFindings(); }
-function setLive(on){
-  live = on;
-  $('poll').classList.toggle('on', on);
-  $('poll').textContent = on ? 'live' : 'paused';
-  if (timer){ clearInterval(timer); timer = null; }
-  if (on) timer = setInterval(tick, 5000);
-}
-$('poll').onclick = function(){ setLive(!live); if (live) tick(); };
-$('theme').onclick = function(){
-  var cur = root.getAttribute('data-theme') ||
-    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+$('picreload').onclick = function(){
+  $('pic').src = '/pic/' + pic + '.html?embed=1&force=1&t=' + Date.now();
 };
-tick(); loadRoom(); setLive(true);
+
+/* ------------------------------------------------------------------ the loop
+   Polling stays ALWAYS ON at 5s — the live toggle was chrome, and a monitor you have
+   to switch on is a monitor that is off when it matters. Theme follows the OS via
+   prefers-color-scheme; there is no button because there is no decision to make. */
+function tick(){ pollCoord(); pollLanes(); }
+show('river');
+tick();
+setInterval(tick, 5000);
 })();
 </script>
 </body>

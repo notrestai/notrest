@@ -275,6 +275,74 @@ for P in / data/coord.json pic/river.html data/briefs/aaa111.json; do
   chk "POST /$P is not a write route" 404 "$C"
 done
 
+echo "── phase P: the page shape (owner's five-view redesign) ────────────────"
+# The owner's verdict was "how is this a graph readable?" and the redesign is theirs:
+# five views, one at a time, six controls in the bar, and none of the chrome that used
+# to report the harness to the seat. These asserts are what stops the chrome creeping
+# back one chip at a time.
+body "$U/" > "$TMP/page.html"
+
+for V in river journey graph coord lanes; do
+  chk "bar carries the $V view button" 1 \
+    "$(grep -c "data-view=\"$V\"" "$TMP/page.html")"
+done
+chk "bar carries rebuild" 1 "$(grep -c 'id="picreload"' "$TMP/page.html")"
+chk "the bar has EXACTLY five view buttons" 5 \
+  "$(grep -o 'data-view="[a-z]*"' "$TMP/page.html" | wc -l | tr -d ' ')"
+
+# the chrome the owner asked to remove must be GONE, markup and styles alike
+for DEAD in 'COCKPIT</h1>' 'id="c-ver"' 'id="c-pulse"' 'id="c-spend"' 'id="c-watch"' \
+            'id="c-lanes"' 'id="poll"' 'id="theme"' 'class="chip' 'id="roomlog"'; do
+  chk "chrome removed: $DEAD" 0 "$(grep -c -- "$DEAD" "$TMP/page.html")"
+done
+
+chk "coord view container present" 1 "$(grep -c 'id="v-coord"' "$TMP/page.html")"
+chk "lanes view container present" 1 "$(grep -c 'id="v-lanes"' "$TMP/page.html")"
+chk "the staleness micro-line survives the redesign" 1 \
+  "$(grep -c 'id="stamp"' "$TMP/page.html")"
+grep -q 'X-Cockpit-Generated' "$TMP/page.html" \
+  && ok "the stamp is still the SERVER's, not a browser clock" \
+  || bad "the staleness line lost its server-header provenance"
+grep -q 'querySelectorAll(.\[data-view\].)' "$TMP/page.html" \
+  && ok "view-switch hook present" || bad "no [data-view] switch hook in the page"
+chk "the picture loads embedded (legend folded)" 1 \
+  "$(grep -c 'pic/river.html?embed=1' "$TMP/page.html")"
+chk "the full-page escape hatch is on the picture" 1 \
+  "$(grep -c 'class="fullpage"' "$TMP/page.html")"
+
+# UI REMOVAL ONLY: every data route the departed panels used is still served, and the
+# mail slot still takes a post. A panel leaving the page must never quietly retire an API.
+for R in library findings watch version coord agents; do
+  chk "route /data/$R.json still served" 200 "$(code "$U/data/$R.json")"
+done
+
+# ?embed=1 folds the legend CLIENT-SIDE — the served HTML is byte-identical either way.
+body "$U/pic/river.html?force=1" > "$TMP/pic-embed.html"
+grep -q 'EMBED' "$TMP/pic-embed.html" \
+  && ok "the render carries the ?embed=1 client hook" \
+  || bad "the render has no embed hook — the cockpit cannot fold its legend"
+# FILE GRAPH: labels are staged to the top K by degree, and the header SAYS SO — K is
+# derived from the node count (min(40, nodes/8), floored at 8), so it is a function of
+# the data and stages identically twice. Staging is never hiding: the note says every
+# node is still drawn, clickable and in the data.
+body "$U/pic/graph.html?force=1" > "$TMP/pic-graph.html"
+grep -q 'LABEL_K = Math.min(40, Math.max(8, Math.round(nodes.length / 8)))' "$TMP/pic-graph.html" \
+  && ok "file graph derives its label budget K from the node count" \
+  || bad "file graph has no derived label budget"
+grep -q "labels: top ' + lim + ' of ' + nodes.length" "$TMP/pic-graph.html" \
+  && ok "the header states K of N by degree" || bad "no K-of-N label note in the header"
+grep -q 'staging, not filtering' "$TMP/pic-graph.html" \
+  && ok "the note says staging, never hiding" || bad "the label note is not honest about staging"
+grep -q 'EMBED' "$TMP/pic-graph.html" \
+  && ok "file graph carries the ?embed=1 client hook" || bad "file graph has no embed hook"
+
+body "$U/pic/river.html" > "$TMP/pic-plain.html"
+if cmp -s "$TMP/pic-embed.html" "$TMP/pic-plain.html"; then
+  ok "embed and plain serve BYTE-IDENTICAL html (staging is client-side)"
+else
+  bad "embed changed the rendered bytes — the determinism law is broken"
+fi
+
 echo "── phase G: reap ───────────────────────────────────────────────────────"
 kill "$PID" 2>/dev/null
 wait "$PID" 2>/dev/null              # reap here, so the shell prints no job notice

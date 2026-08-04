@@ -706,6 +706,7 @@ canvas.drag{cursor:grabbing}
   border:1px solid var(--border);border-radius:10px;padding:.45rem .6rem;font-size:11.5px;
   color:var(--text-secondary);display:flex;flex-wrap:wrap;gap:.25rem .7rem;max-width:min(560px,80%)}
 #legend span{display:inline-flex;align-items:center;gap:.3rem}
+#legend.embed-fold{display:none}
 .dot{width:9px;height:9px;border-radius:50%;flex:none}
 #tip{position:absolute;pointer-events:none;background:var(--surface-1);border:1px solid var(--border-strong);
   border-radius:7px;padding:.25rem .5rem;font-size:12px;display:none;max-width:60ch;
@@ -731,8 +732,9 @@ canvas.drag{cursor:grabbing}
     <div class="sub mono path" title="__ROOT__">__ROOT__</div>
   </div>
   <div class="sub">__COUNTS__ · generated __GENERATED__</div>
+  <div class="sub" id="labelnote"></div>
   <span class="grow"></span>
-  <input id="q" type="search" placeholder="filter nodes…" autocomplete="off">
+  <input id="q" type="search" placeholder="search a file — matches always get their label…" autocomplete="off">
   <span id="qn" class="sub"></span>
   <button id="fit" type="button">fit</button>
   <button id="reheat" type="button">re-layout</button>
@@ -750,6 +752,15 @@ canvas.drag{cursor:grabbing}
 <script>
 (function(){
 var DATA = "__GRAPH_DATA__";
+/* ---------------------------------------------------------------- EMBEDDED VIEW
+   ?embed=1 — the cockpit's iframe asks for the compact first screen: legend folded,
+   so the picture itself owns the pane. Read from the QUERY STRING at runtime, never
+   from the render: the HTML this file emits is byte-identical with or without it,
+   which is what keeps the determinism law and the legibility work from colliding. */
+var EMBED = /(?:^|[?&])embed=1(?:&|$)/.test(location.search);
+if (EMBED){ var _lg0 = document.getElementById('legend');
+  if (_lg0) _lg0.classList.add('embed-fold'); }
+
 var merged = DATA.mode === "merged";
 var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 var tip = document.getElementById('tip'), panel = document.getElementById('panel');
@@ -764,6 +775,26 @@ var nodes = DATA.nodes.map(function(n, i){
           x:Math.cos(ang)*rad, y:Math.sin(ang)*rad, vx:0, vy:0, pin:false, on:true};
 });
 var index = {}; nodes.forEach(function(n,i){ index[n.id] = i; });
+
+/* ------------------------------------------------------- the label budget (K of N)
+   K is DERIVED FROM THE DATA — min(40, nodes/8), floored at 8 so a small graph is
+   never stripped of the labels that make it readable in the first place. It is a
+   function of the node count and nothing else: no clock, no randomness, so two
+   renders of the same graph stage identically. */
+var LABEL_K = Math.min(40, Math.max(8, Math.round(nodes.length / 8)));
+var TOPK = {};
+(function(){
+  var order = nodes.map(function(n, i){ return i; });
+  order.sort(function(a, b){
+    return (nodes[b].deg - nodes[a].deg) || (nodes[a].label < nodes[b].label ? -1 : 1);
+  });
+  var lim = Math.min(LABEL_K, order.length);
+  for (var i = 0; i < lim; i++) TOPK[order[i]] = 1;
+  var ln = document.getElementById('labelnote');
+  if (ln) ln.textContent = 'labels: top ' + lim + ' of ' + nodes.length +
+    ' by degree — search or zoom for the rest (staging, not filtering: every node is ' +
+    'drawn, clickable and in the data)';
+})();
 var edges = [];
 DATA.edges.forEach(function(e){
   var a = index[e.from], b = index[e.to];
@@ -898,7 +929,6 @@ function draw(){
   }
   ctx.globalAlpha = 1;
   var labelAll = view.k > 1.25;
-  var degMin = view.k > 0.9 ? 6 : (view.k > 0.55 ? 10 : 16);
   for (var k = 0; k < nodes.length; k++){
     var nd = nodes[k], P = toScreen(nd), r = radius(nd) * Math.min(1.6, Math.max(0.55, view.k));
     if (P.x < -40 || P.y < -40 || P.x > W + 40 || P.y > H + 40) continue;
@@ -908,8 +938,14 @@ function draw(){
     if (k === selected || k === hover || nd.pin){
       ctx.lineWidth = 2; ctx.strokeStyle = COL.edgeHi; ctx.stroke();
     }
-    if (nd.on && (labelAll || k === selected || k === hover || nd.type === 'project'
-                  || nd.deg >= degMin)){
+    /* FIRST-LOAD LEGIBILITY (2026-08-04): a label on every node is a grey smear at
+       pane width, so only the top K by degree are drawn until you zoom past 1.25x or
+       search — a SEARCH MATCH always gets its label, whatever its degree. This is
+       STAGING, never filtering: every node is still drawn, still hit-testable, still
+       in the panel and still in the data. The header says K of N so the reader knows
+       what is being held back and how to get it. */
+    if (nd.on && (labelAll || query || k === selected || k === hover ||
+                  nd.type === 'project' || TOPK[k])){
       var t = shortLabel(nd);
       ctx.font = (nd.type === 'project' ? '600 ' : '') + '11px -apple-system,system-ui,sans-serif';
       ctx.fillStyle = (k === selected || k === hover) ? COL.text : COL.muted;
@@ -1910,6 +1946,15 @@ svg.far .commcount{display:none}
 <script>
 (function(){
 var D = "__RIVER_DATA__";
+/* ---------------------------------------------------------------- EMBEDDED VIEW
+   ?embed=1 — the cockpit's iframe asks for the compact first screen: legend folded,
+   so the picture itself owns the pane. Read from the QUERY STRING at runtime, never
+   from the render: the HTML this file emits is byte-identical with or without it,
+   which is what keeps the determinism law and the legibility work from colliding. */
+var EMBED = /(?:^|[?&])embed=1(?:&|$)/.test(location.search);
+if (EMBED){ var _lg0 = document.getElementById('legend');
+  if (_lg0) _lg0.removeAttribute('open'); }
+
 var NS = 'http://www.w3.org/2000/svg';
 var root = document.documentElement;
 var svg = document.getElementById('sv'), scene = document.getElementById('scene');
@@ -2066,15 +2111,47 @@ nodes.forEach(function(n, idx){
   gNode.appendChild(g); groups.push(g);
 });
 
-/* milestone flags along the top bank */
-(D.milestones || []).forEach(function(m, idx){
-  var g = el('g', {'data-m':idx}, 'flag'), y = TOPY - 30 - (idx % 3) * 30;
-  g.appendChild(el('path', {d:'M' + m.x + ',' + y + ' V' + (TOPY - 2)}, 'pole'));
-  g.appendChild(el('path', {d:'M' + m.x + ',' + y + ' l26,7 l-26,7 z'}, 'pennant ' + m.flag));
-  var t = el('text', {x:m.x + 31, y:y + 11}, 'flaglabel');
-  t.textContent = clip(m.label, 24); g.appendChild(t);
-  gFlag.appendChild(g);
-});
+/* milestone flags along the top bank.
+   CLUSTERING (2026-08-04): a ship-heavy stretch put a dozen pennants inside one bank
+   span and the labels became a grey hedge — correct, and unreadable. Flags closer than
+   FLAG_GAP apart collapse to ONE glyph carrying "+K"; clicking it expands that cluster
+   in place. Purely client-side and derived from the flags' own x positions, so the
+   render stays byte-identical and two runs cluster identically. */
+var FLAG_GAP = 74;
+(function flags(){
+  var ms = (D.milestones || []).map(function(m, i){ return {m:m, i:i}; });
+  ms.sort(function(a, b){ return a.m.x - b.m.x; });
+  var packs = [], cur = null;
+  ms.forEach(function(o){
+    if (cur && o.m.x - cur.x0 < FLAG_GAP){ cur.items.push(o); return; }
+    cur = {x0:o.m.x, items:[o]}; packs.push(cur);
+  });
+  function drawOne(o, slot){
+    var m = o.m, g = el('g', {'data-m':o.i}, 'flag'), y = TOPY - 30 - (slot % 3) * 30;
+    g.appendChild(el('path', {d:'M' + m.x + ',' + y + ' V' + (TOPY - 2)}, 'pole'));
+    g.appendChild(el('path', {d:'M' + m.x + ',' + y + ' l26,7 l-26,7 z'}, 'pennant ' + m.flag));
+    var t = el('text', {x:m.x + 31, y:y + 11}, 'flaglabel');
+    t.textContent = clip(m.label, 24); g.appendChild(t);
+    gFlag.appendChild(g);
+  }
+  packs.forEach(function(pk, pi){
+    if (pk.items.length === 1){ drawOne(pk.items[0], pi); return; }
+    var head = pk.items[0], y = TOPY - 30 - (pi % 3) * 30;
+    var g = el('g', {'data-cluster':pi}, 'flag cluster');
+    g.appendChild(el('path', {d:'M' + head.m.x + ',' + y + ' V' + (TOPY - 2)}, 'pole'));
+    g.appendChild(el('path', {d:'M' + head.m.x + ',' + y + ' l26,7 l-26,7 z'},
+                   'pennant ' + head.m.flag));
+    var t = el('text', {x:head.m.x + 31, y:y + 11}, 'flaglabel');
+    t.textContent = '+' + pk.items.length + ' flags';
+    g.appendChild(t);
+    g.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      if (g.parentNode) g.parentNode.removeChild(g);
+      pk.items.forEach(function(o, k){ drawOne(o, pi + k); });
+    });
+    gFlag.appendChild(g);
+  });
+})();
 
 /* lane ticks along the bottom bank. A lane whose COMMISSION is banked gets a
    sheet glyph on its own row BELOW the plain ticks — the point of the row is
@@ -2816,7 +2893,7 @@ svg.far .pill text,svg.far .colcap{display:none}
   <div class="sub">__COUNTS__ · <span class="mono">__GENERATED__</span>
     <span title="stamp source">(__STAMPFROM__)</span></div>
   <span class="grow"></span>
-  <input id="q" type="search" placeholder="filter phrases · skills…" autocomplete="off">
+  <input id="q" type="search" placeholder="type a verb or phrase…" autocomplete="off">
   <span id="qn" class="sub"></span>
   <button id="chains" type="button">chains</button>
   <button id="fit" type="button">fit</button>
@@ -2838,6 +2915,15 @@ svg.far .pill text,svg.far .colcap{display:none}
 <script>
 (function(){
 var D = "__JOURNEY_DATA__";
+/* ---------------------------------------------------------------- EMBEDDED VIEW
+   ?embed=1 — the cockpit's iframe asks for the compact first screen: legend folded,
+   so the picture itself owns the pane. Read from the QUERY STRING at runtime, never
+   from the render: the HTML this file emits is byte-identical with or without it,
+   which is what keeps the determinism law and the legibility work from colliding. */
+var EMBED = /(?:^|[?&])embed=1(?:&|$)/.test(location.search);
+if (EMBED){ var _lg0 = document.getElementById('legend');
+  if (_lg0) _lg0.removeAttribute('open'); }
+
 var NS = 'http://www.w3.org/2000/svg';
 var root = document.documentElement;
 var svg = document.getElementById('sv'), scene = document.getElementById('scene');
@@ -2905,9 +2991,11 @@ gCap.appendChild(el('path', {d:'M' + __JPX__ + ',' + (D.bandTop - 18) + ' H' + (
   var a = byId[e.from], b = byId[e.to];
   if (!a || !b) return;
   var y1 = a.cy !== undefined ? a.cy : a.y + a.h / 2;
-  gWire.appendChild(el('path',
+  var wp = el('path',
     {d:wire(a.x + a.w, y1, b.x, b.cy)},
-    'wire' + (e.kind === 'intake' ? ' intake' : (a.kind === 'shape' ? ' hop' : ''))));
+    'wire' + (e.kind === 'intake' ? ' intake' : (a.kind === 'shape' ? ' hop' : '')));
+  wp.setAttribute('data-a', e.from); wp.setAttribute('data-b', e.to);
+  gWire.appendChild(wp);
 });
 
 /* pills */
@@ -2927,6 +3015,75 @@ nodes.forEach(function(n){
   t.textContent = n.name; g.appendChild(t);
   gNode.appendChild(g); gById[n.id] = g;
 });
+
+/* ------------------------------------------------- FIRST-LOAD OVERVIEW (2026-08-04)
+   Everything-at-once is not a view, it is an inventory. Above the thresholds below the
+   page opens as an OVERVIEW — phrases folded into one pill per shape, chain arrows off
+   — and every fold is one click from open. Thresholds are read from the DATA counts and
+   nothing else (never the clock), so the same estate stages identically every time, and
+   all of it is client-side: the rendered HTML is byte-identical either way. */
+var PHRASE_FOLD_AT = 30, CHAIN_OFF_AT = 40;
+var groups = {}, pillGroup = {};
+(function stage_(){
+  if (!(D.counts.phrases > PHRASE_FOLD_AT)) return;
+  (D.edges || []).forEach(function(e){
+    if (e.kind === 'chain') return;
+    var a = byId[e.from];
+    if (!a || (a.kind !== 'router' && a.kind !== 'intake')) return;
+    (groups[e.to] = groups[e.to] || []).push(e.from);
+    pillGroup[e.from] = e.to;
+  });
+  Object.keys(groups).forEach(function(target){
+    var mem = groups[target];
+    if (mem.length < 2) { delete groups[target]; return; }
+    var xs = 1e9, ws = 0, sy = 0, n = 0;
+    mem.forEach(function(id){
+      var p = byId[id]; if (!p) return;
+      xs = Math.min(xs, p.x); ws = Math.max(ws, p.w);
+      sy += (p.cy !== undefined ? p.cy : p.y + p.h / 2); n++;
+    });
+    if (!n) { delete groups[target]; return; }
+    var cy = sy / n, h = 26;
+    var g = el('g', {'data-fold': target}, 'pill fold');
+    g.appendChild(el('rect', {x:xs, y:cy - h / 2, width:ws, height:h, rx:11}));
+    var t = el('text', {x:xs + 11, y:cy + 4});
+    t.textContent = mem.length + ' phrases  \u25B8';
+    g.appendChild(t);
+    gNode.appendChild(g);
+    groups[target] = {members:mem, el:g, open:false};
+    setGroup(target, false);
+  });
+})();
+function setGroup(target, open){
+  var G = groups[target];
+  if (!G) return;
+  G.open = open;
+  if (G.el) G.el.style.display = open ? 'none' : '';
+  G.members.forEach(function(id){
+    if (gById[id]) gById[id].style.display = open ? '' : 'none';
+  });
+  var ch = gWire.childNodes, i;
+  for (i = 0; i < ch.length; i++){
+    var a = ch[i].getAttribute('data-a');
+    if (a && pillGroup[a] === target) ch[i].style.display = open ? '' : 'none';
+  }
+}
+svg.addEventListener('click', function(ev){
+  var t = ev.target;
+  while (t && t !== scene){
+    if (t.hasAttribute && t.hasAttribute('data-fold')){
+      setGroup(t.getAttribute('data-fold'), true);
+      ev.stopPropagation();
+      return;
+    }
+    t = t.parentNode;
+  }
+}, true);
+if (D.counts.chains > CHAIN_OFF_AT){
+  svg.classList.add('nochain');
+  var cb0 = document.getElementById('chains');
+  if (cb0) cb0.classList.add('off');
+}
 
 /* ------------------------------------------------------------------- cards */
 function list(a){ return (a && a.length) ? a.map(esc).join(' · ') : '<span class="st">—</span>'; }
@@ -3075,8 +3232,13 @@ q.addEventListener('input', function(){
                (o.shape || '')).toLowerCase();
     var on = !s || hay.indexOf(s) >= 0;
     if (gById[o.id]) gById[o.id].classList.toggle('dim', !on);
+    /* a match inside a folded group OPENS it — a filter that silently skips what it
+       matched is worse than no filter. Clearing the box refolds. */
+    if (on && s && pillGroup[o.id] && groups[pillGroup[o.id]] &&
+        !groups[pillGroup[o.id]].open) setGroup(pillGroup[o.id], true);
     if (on) shown++;
   });
+  if (!s) Object.keys(groups).forEach(function(t){ setGroup(t, false); });
   qn.textContent = s ? shown + '/' + all.length : '';
 });
 (function legend(){

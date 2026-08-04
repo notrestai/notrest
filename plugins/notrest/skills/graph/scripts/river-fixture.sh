@@ -459,6 +459,33 @@ chk "query without a scan exits 2" 2 "$?"
 python3 "$GRAPH" links nope.zzz --root "$R" >/dev/null 2>&1
 chk "unknown path exits 2" 2 "$?"
 
+echo "── readability: flag clustering on a pileup ────────────────────────────"
+# A ship-heavy stretch put a dozen pennants inside one bank span and the labels became
+# a grey hedge: correct, unreadable. Clustering is CLIENT-SIDE, so the two things that
+# matter are that the glyph exists in the render and that the bytes did not move.
+PILE="$TMP/pile"; mkdir -p "$PILE"
+{ echo "# COORD.md — session coordination ledger"; echo; echo "## LEDGER"
+  i=1
+  while [ "$i" -le 24 ]; do
+    printf -- "- [2026-08-0%d %02d:00Z] [lane] ship %d -> v9.9.%d shipped | evidence: commit abc%d\n" \
+      $(( (i % 9) + 1 )) $(( i % 24 )) "$i" "$i" "$i"
+    i=$((i+1))
+  done; } > "$PILE/COORD.md"
+python3 "$GRAPH" river --root "$PILE" --out "$PILE/r1.html" >/dev/null 2>&1
+chk "pileup river renders" 0 "$?"
+grep -q 'FLAG_GAP' "$PILE/r1.html" && ok "the render carries the clustering rule" \
+  || bad "no FLAG_GAP clustering rule in the render"
+grep -q 'data-cluster' "$PILE/r1.html" && ok "a pileup produces a cluster glyph" \
+  || bad "a 24-flag pileup produced no cluster glyph"
+grep -q "'+' + pk.items.length + ' flags'" "$PILE/r1.html" \
+  && ok "the cluster glyph carries its +K count" || bad "cluster glyph has no +K label"
+python3 "$GRAPH" river --root "$PILE" --out "$PILE/r2.html" >/dev/null 2>&1
+if cmp -s "$PILE/r1.html" "$PILE/r2.html"; then
+  ok "clustering did NOT break byte-identical re-render"
+else bad "river re-render is no longer byte-identical"; fi
+grep -q 'EMBED' "$PILE/r1.html" && ok "river carries the ?embed=1 client hook" \
+  || bad "river has no embed hook"
+
 echo "----"
 echo "fixture: $PASSES passed, $FAILS failed"
 [ "$FAILS" -eq 0 ] || exit 1

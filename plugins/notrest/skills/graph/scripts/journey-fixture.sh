@@ -226,6 +226,29 @@ else
   chk "the edit is actually read (a second chain arrow)" 2 "$(val "$TMP/g3.json" counts.chains)"
 fi
 
+echo "── readability: the phrase-fold threshold ──────────────────────────────"
+# The fold is client-side and its THRESHOLD IS READ FROM THE DATA (phrase count), never
+# the clock — so the same estate stages the same way twice. Both sides are asserted: it
+# must fire on a crowded estate and stay out of the way on a small one.
+chk "the fold rule is in the render" 1 "$(grep -c 'PHRASE_FOLD_AT = 30' "$H" 2>/dev/null || echo 0)"
+grep -q "data-fold" "$H" && ok "the fold draws a group pill" \
+  || bad "no data-fold group pill in the render"
+grep -q "CHAIN_OFF_AT = 40" "$H" \
+  && ok "chains default off above their own threshold" || bad "no chain threshold"
+grep -q 'placeholder="type a verb or phrase' "$H" \
+  && ok "the filter box says what it is for" || bad "filter placeholder not updated"
+grep -q 'EMBED' "$H" && ok "journey carries the ?embed=1 client hook" \
+  || bad "journey has no embed hook"
+BIGP="$(python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+print(d['counts']['phrases'])" "$J" 2>/dev/null || echo 0)"
+if [ "$BIGP" -gt 30 ] 2>/dev/null; then
+  ok "the real estate is over the fold threshold ($BIGP phrases) — staging is live, not theoretical"
+else
+  ok "the real estate is under the fold threshold ($BIGP phrases) — folds stay out of the way"
+fi
+
 echo "----"
 echo "fixture: $PASSES passed, $FAILS failed"
 [ "$FAILS" -eq 0 ] || exit 1

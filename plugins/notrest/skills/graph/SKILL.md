@@ -342,16 +342,32 @@ still deterministic. The staleness stamp is taken from the `X-Cockpit-Generated`
 header**, never the browser's clock, so the page reports the server's read time — a viewer
 with a skewed clock cannot make the page lie about freshness.
 
-**What the page shows.** A status bar of five chips across the top — pulse verdict + its
-timestamp, manifest version + git HEAD, spend verdict, watch due count, and recent lane
-activity. Below it, the left two-thirds is the picture stage: three tabs (river · journey ·
-file graph) over an iframe, with a `rebuild` button. The right column is four always-present
-feeds, each with its own bounded scroll so none can push the others off-screen: the **COORD
-tail** (newest first, ship/gate/correction flags), **lanes & commissions** (one row per
-agent-ledger entry, each with a ruled-sheet glyph — a filled sheet means that lane's exact
-prompt is banked, and clicking it opens the whole commission in a readable pane), the
-**library** concepts, the **chatroom** (pick a room, read its tail, post a line), and
-**findings** by status.
+**What the page shows — five views, one at a time (the owner's redesign, 2026-08-04).**
+The bar holds exactly six controls: `river` · `journey` · `file graph` · `coord` · `lanes`,
+and `rebuild`. Whatever is selected owns the entire viewport under that bar.
+
+| view | what it is |
+|---|---|
+| river · journey · file graph | the picture, full height, in the stage iframe (loaded `?embed=1`, legend folded); a small **open full page ↗** sits in the picture's own corner |
+| coord | the **COORD tail** as the whole view — newest first, ship/gate/correction flags, its own scroll |
+| lanes | **lanes & commissions** as the whole view — one row per agent-ledger receipt, ruled-sheet glyph, click opens the banked commission in a readable pane |
+
+`rebuild` acts on the active *picture* and is hidden on the two feed views, where there is
+nothing to rebuild. Theme follows `prefers-color-scheme`; polling is always on at 5s.
+
+**What left the page, and why.** The status chips (version, pulse, spend, watch, lanes), the
+title, the live toggle and the theme button are gone, and so are the library, chatroom,
+findings and watch panels. The owner's verdict on the old page was *"how is this a graph
+readable?"* — the chrome was reporting the harness to the seat while the picture it existed
+to show was squeezed into a corner. **The ledgers already hold all of it**; the window now
+shows the work, not the paperwork. This is a **UI removal only**: every `/data/*` route and
+the `POST /room/<name>` mail slot are still served, still tested, and still available to any
+API consumer.
+
+**The staleness law survives the redesign.** A live monitor that cannot say how stale it is
+would be worse than no monitor, so the server's `X-Cockpit-Generated` read time is still on
+the page — one faint line in the bottom-right corner instead of a chip in the bar. Still the
+server's stamp, never the browser's clock.
 
 **Honesty about the lane chip.** It counts lanes that **finished** in the last hour, not lanes
 running: the agent ledger is written at `SubagentStop`, so a lane still working is in no file
@@ -572,11 +588,40 @@ explicit `/graph` invocations only.
 - **A dead end is a shape, not a judgement.** It says nothing later linked that route —
   which is what an abandoned experiment and an unfinished-but-live one both look like.
 
+## Readable by default
+
+**A correct render nobody can read is a failed render.** Every view here draws the whole
+truth; above a certain density, drawing all of it at once is an inventory, not a picture. So
+each one opens **staged** — the important thing first, the rest one gesture away — and every
+threshold is **derived from the data's own counts, never from the clock**, so the same estate
+stages identically twice and the byte-identical law is untouched. All staging is client-side
+JS; the rendered HTML does not change.
+
+| view | first load | how to get the rest |
+|---|---|---|
+| **file graph** | labels for the top **K = min(40, nodes/8)** nodes by degree (floored at 8); the header states *"labels: top K of N by degree"* | zoom past 1.25×, or search — a **match always gets its label** |
+| **journey** | above **30 phrases**, phrases fold into one *"N phrases ▸"* pill per shape; above **40 chains**, chain arrows start off | click a fold, hit the `chains` button, or type in the filter — **a match auto-opens its fold** |
+| **river** | flags closer than one bank span collapse to a single glyph carrying **+K** | click the cluster to expand it in place |
+| **cockpit** | pictures load `?embed=1` — legend folded, picture full height | the legend's own summary, or **open full page ↗** |
+
+**Staging is never hiding.** Nothing is dropped from the data, the JSON, the hit-testing or
+the panel — a staged node is drawn, clickable and countable, it just has not been given a
+label yet, and the page **says so in words** where the reader will see it. A view that
+quietly omitted records would be a lying picture; a view that defers labels and says which
+ones is a readable one.
+
+**`?embed=1`** is the cockpit's request for the compact first screen. It is read from the
+query string at runtime, so a page served with it and without it is **byte-identical** — the
+determinism law and the legibility work never touch each other.
+
 ## Render gate
 
 **Open the HTML before saying it works.** A run that writes a file is not a page that
-draws. Confirm the glyphs actually render and the header counts match the summary line,
-then report. Two traps that have both bitten:
+draws. Confirm the glyphs actually render, the header counts match the summary line, **and
+the first screen is legible at the width you are viewing** — then report. **A correct render
+nobody can read fails this gate**: that is not a style note, it is the defect that produced
+the readability work above, reported by the owner as *"how is this a graph readable?"* about
+a page whose every number was right. Two traps that have both bitten:
 - **A `file://` page in the browser pane is a static snapshot** — JS dead, canvas blank.
   Verify by serving it, never by an `open file://`: `doctor/scripts/render-check.sh
   <page.html>` binds 127.0.0.1 on a private port, curls the page, and only prints a URL
