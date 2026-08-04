@@ -479,6 +479,11 @@ grep -q 'data-cluster' "$PILE/r1.html" && ok "a pileup produces a cluster glyph"
   || bad "a 24-flag pileup produced no cluster glyph"
 grep -q "'+' + pk.items.length + ' flags'" "$PILE/r1.html" \
   && ok "the cluster glyph carries its +K count" || bad "cluster glyph has no +K label"
+# A glyph a real cursor cannot hit is a glyph that does not exist (seat-proven: the
+# synthetic click landed, the physical one slid between pennant and label).
+grep -q "fill:'transparent', 'class':'hit'" "$PILE/r1.html" \
+  && ok "every cluster carries an invisible fattened hit rect" \
+  || bad "cluster glyphs have no hit target — only the painted pixels are clickable"
 python3 "$GRAPH" river --root "$PILE" --out "$PILE/r2.html" >/dev/null 2>&1
 if cmp -s "$PILE/r1.html" "$PILE/r2.html"; then
   ok "clustering did NOT break byte-identical re-render"

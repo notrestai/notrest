@@ -30,6 +30,7 @@ Exit codes: 0 established · 5 partially established · 6 not established · 2 u
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -364,6 +365,12 @@ def claude_state(root):
 
 
 # ── adoption facts (INFO ONLY — never move the exit code) ─────────────────────────────
+SHIP_RE = re.compile(r"(\bship(?:s|ped|ping)?\b|\brelease[ds]?\b|\bv\d+\.\d+\.\d+\b)", re.I)
+GATE_RE = re.compile(r"(\bgat(?:e|es|ed|ing)\b)", re.I)
+CORR_RE = re.compile(r"(\bcorrection\b|\bcorrected\b|\brevert\w*\b|\brolled back\b|"
+                     r"\brollback\b|\bwithdraw\w*\b|\bstopped\b|\bnot landed\b)", re.I)
+COORD_TAIL, AGENT_TAIL, FLAG_TAIL = 25, 10, 5
+
 LEDGER_LINE_RE = re.compile(r"^- \[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})Z\]")
 SCAFFOLD_MARK = "COORD.md scaffolded by"
 
@@ -409,6 +416,141 @@ NONGIT_WARNS = [
 
 
 # ── subcommands ───────────────────────────────────────────────────────────────────────
+def tail_lines(path, cap):
+    """The last `cap` ledger lines of a file, oldest first. Missing file → []."""
+    txt = read_text(path)
+    if txt is None:
+        return []
+    return [ln for ln in txt.splitlines() if ln.startswith("- ")][-cap:]
+
+
+def sealed_volumes(root, prefix):
+    """How many volumes this ledger has already sealed — the depth of the trail behind
+    the tail you are about to read."""
+    pat = re.compile(r"^%s-\d{3}\.md$" % re.escape(prefix))
+    try:
+        return sorted(f for f in os.listdir(root) if pat.match(f))
+    except OSError:
+        return []
+
+
+def spend_verdict(root):
+    """The spend ledger's own last line, READ not computed. Deliberately never shells to
+    spend.py: continuation must stay read-only, deterministic and instant, and a report
+    that can exit 4 is a gate, not a packet."""
+    txt = read_text(os.path.join(root, "spend", "ledger.md"))
+    if txt is None:
+        return None
+    lines = [ln.strip() for ln in txt.splitlines() if ln.strip() and not ln.startswith("#")]
+    return lines[-1] if lines else None
+
+
+def git_facts(root):
+    """(is_repo, head, dirty, subject). A repo with NO COMMITS YET is still a repo — it
+    has a dirty count and no HEAD, and reporting it as "not a git repo" would be a plain
+    lie to the successor about what the project is."""
+    if git_toplevel(root) != root:
+        return False, None, None, None
+    rc, head = git(root, "rev-parse", "--short", "HEAD")
+    rc2, status = git(root, "status", "--porcelain")
+    rc3, subj = git(root, "log", "-1", "--pretty=%s")
+    dirty = len([l for l in status.splitlines() if l.strip()]) if rc2 == 0 else None
+    return True, (head if rc == 0 and head else None), dirty, (subj if rc3 == 0 and subj else None)
+
+
+def packet(root):
+    """Everything a fresh seat needs to continue, in one gulp. NO CLOCK: every timestamp
+    here comes off a file, so the same estate yields the same packet twice."""
+    coord = tail_lines(os.path.join(root, "COORD.md"), COORD_TAIL)
+    agents = tail_lines(os.path.join(root, "COORD-AGENTS.md"), AGENT_TAIL)
+    all_coord = tail_lines(os.path.join(root, "COORD.md"), 10 ** 9)
+    flags = {"ship": [], "gate": [], "correction": []}
+    for ln in all_coord:
+        body = ln
+        if CORR_RE.search(body):
+            flags["correction"].append(ln)
+        elif SHIP_RE.search(body):
+            flags["ship"].append(ln)
+        elif GATE_RE.search(body):
+            flags["gate"].append(ln)
+    try:
+        briefs = len([f for f in os.listdir(os.path.join(root, "briefs"))
+                      if f.endswith(".md")])
+    except OSError:
+        briefs = 0
+    is_repo, head, dirty, subj = git_facts(root)
+    cs, _cd = coord_state(root)
+    ks, _kd, ver = claude_state(root)
+    return {
+        "root": root,
+        "established": cs == PASS and ks == PASS,
+        "coord_state": cs,
+        "claude_block": ks,
+        "protocol_version": ver,
+        "coord_lines_shown": len(coord),
+        "coord_tail": coord,
+        "coord_sealed_volumes": len(sealed_volumes(root, "COORD")),
+        "agents_tail": agents,
+        "agents_sealed_volumes": len(sealed_volumes(root, "COORD-AGENTS")),
+        "newest_ships": flags["ship"][-FLAG_TAIL:],
+        "newest_gates": flags["gate"][-FLAG_TAIL:],
+        "newest_corrections": flags["correction"][-FLAG_TAIL:],
+        "briefs": briefs,
+        "spend_last_line": spend_verdict(root),
+        "git_repo": is_repo,
+        "git_head": head,
+        "git_dirty_files": dirty,
+        "git_last_subject": subj,
+    }
+
+
+def cmd_continuation(args):
+    """The successor's one-gulp read of where the build stands. Read-only, always."""
+    root, err = resolve_root(args.root)
+    if err:
+        sys.stderr.write("notrest: %s\n" % err)
+        return EXIT_USAGE
+    p = packet(root)
+    if not p["established"]:
+        if args.json:
+            print(json.dumps({"root": root, "established": False}, indent=1, sort_keys=True))
+        else:
+            print("notrest: NOT ESTABLISHED — %s carries no continuable estate. "
+                  "Run `/notrest establish` first." % root)
+        return EXIT_NONE
+    if args.json:
+        print(json.dumps(p, indent=1, sort_keys=True))
+        return EXIT_OK
+    print("notrest continuation — %s" % root)
+    print("  ESTABLISHED · protocol v%s · COORD volumes sealed: %d · agent volumes sealed: %d"
+          % (p["protocol_version"], p["coord_sealed_volumes"], p["agents_sealed_volumes"]))
+    if p["git_repo"] and p["git_head"]:
+        print("  git %s · %d dirty file(s) · last commit: %s"
+              % (p["git_head"], p["git_dirty_files"], p["git_last_subject"]))
+    elif p["git_repo"]:
+        print("  git repo with no commits yet · %s dirty file(s) · no HEAD to compare against"
+              % p["git_dirty_files"])
+    else:
+        print("  not a git repo — no HEAD, no diff; the ledger is the whole trail here")
+    print("  briefs banked: %d%s" % (p["briefs"],
+          ("" if p["spend_last_line"] is None else "\n  spend (last line): %s" % p["spend_last_line"])))
+    for label, key in (("NEWEST SHIPS", "newest_ships"), ("NEWEST GATES", "newest_gates"),
+                       ("NEWEST CORRECTIONS", "newest_corrections")):
+        if p[key]:
+            print("\n%s" % label)
+            for ln in p[key]:
+                print("  %s" % ln)
+    print("\nCOORD TAIL (last %d)" % p["coord_lines_shown"])
+    for ln in p["coord_tail"]:
+        print("  %s" % ln)
+    if p["agents_tail"]:
+        print("\nAGENT TAIL (last %d)" % len(p["agents_tail"]))
+        for ln in p["agents_tail"]:
+            print("  %s" % ln)
+    print("\nnotrest: CONTINUABLE — %s (exit 0)" % root)
+    return EXIT_OK
+
+
 def emit(status, name, detail):
     print("  %-4s  %-13s — %s" % (status, name, detail))
 
@@ -490,8 +632,10 @@ def write_claude(root, kp, failures):
             # some masking rule swallowed a real block — and appending would add one more
             # every run, without bound. Never append past that disagreement.
             if BLOCK_OPEN_RE.search(txt):
-                emit(WARN, "CLAUDE-BLOCK", "block present but inside an unterminated fence "
-                     "/ masked region — nothing written")
+                emit(WARN, "CLAUDE-BLOCK",
+                     "protocol markers exist only inside a fenced/masked region (a code-fence "
+                     "example, or an unterminated fence) — not a live block; add the block "
+                     "outside the fence by hand — nothing written")
                 return wrote
             sep = "" if txt.endswith("\n\n") else ("\n" if txt.endswith("\n") else "\n\n")
             atomic_write(target, txt + sep + block, roundtrip=True)
@@ -614,13 +758,19 @@ def main(argv=None):
     e.add_argument("--root", help="project root (default: git root, else a marked cwd)")
     e.add_argument("--git-init", action="store_true",
                    help="also run `git init` (and nothing else) when the root is not a repo")
+    n = sub.add_parser("continuation",
+                       help="read-only: the packet a successor seat needs to continue")
+    n.add_argument("--root", help="project root (default: git root, else a marked cwd)")
+    n.add_argument("--json", action="store_true", help="machine output, stable key order")
     args = ap.parse_args(argv)
     if args.cmd == "check":
         return cmd_check(args)
     if args.cmd == "establish":
         return cmd_establish(args)
+    if args.cmd == "continuation":
+        return cmd_continuation(args)
     ap.print_usage(sys.stderr)
-    sys.stderr.write("establish.py: expected 'check' or 'establish'\n")
+    sys.stderr.write("establish.py: expected 'check', 'establish' or 'continuation'\n")
     return EXIT_USAGE
 
 

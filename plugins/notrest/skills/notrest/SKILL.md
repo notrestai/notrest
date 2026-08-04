@@ -1,13 +1,14 @@
 ---
 name: notrest
-description: "Establish the harness in a project and bind this session to it — presence is not establishment. Use on \"/notrest\", \"establish notrest\", \"establish the harness\", \"set up the plugin in this project\", \"make this project follow the plugin\", or the drift check \"is this session following notrest?\". Writes COORD.md + a marked CLAUDE.md protocol block, idempotently; `check` reads only and never runs git init uninvited."
+description: "Establish the harness in a project, or CONTINUE the build already running there — a successor seat reads the trail packet, asks the previous session as its mentor, verifies at tier 0 and goes. Use on \"/notrest\", \"continue the build\", \"pick up the build\", \"establish the harness\", \"set up the plugin in this project\", \"make this project follow the plugin\", or the drift check \"is this session following notrest?\". `check` and `continuation` read only; never runs git init uninvited."
 ---
 
 # notrest — the establishment verb
 
 ```bash
-python3 plugins/notrest/skills/notrest/scripts/establish.py check       # is it established here?
-python3 plugins/notrest/skills/notrest/scripts/establish.py establish   # make it so (idempotent)
+python3 plugins/notrest/skills/notrest/scripts/establish.py check         # is it established here?
+python3 plugins/notrest/skills/notrest/scripts/establish.py establish     # make it so (idempotent)
+python3 plugins/notrest/skills/notrest/scripts/establish.py continuation  # continue the build here
 ```
 
 **Router shape:** `establish` — the UserPromptSubmit router (`hooks/router.sh`) nudges a
@@ -87,6 +88,100 @@ immediately** — not deferred, not "from now on" in the abstract:
 
 **4 · REPORT.** Establishment status, the adoption facts as facts, and — when the root is
 not a git repo — the warning, in the owner's hearing rather than in a footnote.
+
+## The CONTINUATION ritual — `/notrest` in a project that already has an estate
+
+> *"if i open any session in the same folder and i type /notrest i should be able to
+> continue the build immidiately there, it would contact the previous session as its
+> mentor and will take all the instructions it needs and run a few verification rounds
+> and we are good to go — the less verification needed the better."* — the owner, 2026-08-04
+
+**ROUTE.** `/notrest` has two modes and the estate picks which: exit **5 or 6** →
+establishment (above). Exit **0 → CONTINUATION**, and the ritual below *is* the response.
+Do not re-establish an established project, and do not run the six ORACLE questions — this
+is the fast lane; `/oracle` remains the full intake for new work.
+
+**1 · READ THE PACKET (always first, one gulp, zero tokens).**
+
+```bash
+python3 <notrest-skill>/scripts/establish.py continuation --root .
+```
+
+Root and established state · the COORD tail (last 25) · the agent tail (last 10) · how many
+volumes are already sealed behind them · the newest **ship / gate / correction** lines ·
+briefs banked · the spend ledger's own last line · git HEAD, dirty count, last subject.
+Read-only, no clock, byte-identical twice on an unchanged estate. **This is where you stand
+before anyone tells you anything.**
+
+**2 · FIND THE MENTOR — ask once, batched.** Where the session-management tools exist
+(Claude Code desktop: `list_sessions` / `send_message`), list sessions, keep the ones whose
+cwd is **this** project, drop yourself, and prefer the most recent still-running one. Send
+**one** message:
+
+> I'm a successor session in `<cwd>`, continuing this build under the notrest harness.
+> My packet's newest trail line is: `<paste it>`. Six things, briefly:
+> **1** current build state · **2** in-flight or parked lanes · **3** standing rulings I
+> must not re-litigate · **4** the next step as you saw it · **5** watch-outs · **6** what
+> you'd verify before I touch anything.
+> Answer per the notrest mentor-response protocol (`skills/notrest/SKILL.md`).
+
+**No wire, no problem.** If those tools are absent, or no session shares this cwd, fall
+back to the files — `START-HERE.md`'s *Live line:* row, `HANDOFF.md`, and the trail you
+already read — and **say so in one honest line** ("no live mentor reachable; continuing
+from the trail"). **Never block on a wire that is not there.** The trail is always
+sufficient to proceed; the mentor is an accelerator, not a dependency.
+
+**3 · VERIFY AS LITTLE AS THE EVIDENCE ALLOWS.** The owner's law is *the less verification
+needed the better*, and more verification is not more rigour — it is latency the trail
+already paid for.
+
+| tier | when | what |
+|---|---|---|
+| **0** | **always, and usually the only tier** | `doctor.py check` + `eval.py check` (seconds, zero tokens) + `git status` against the packet's claims |
+| **1** | only when the newest **gate** line is not green, or you landed mid-ship | re-run **the specific fixture(s) the trail names** — not the suite |
+| **2** | only on a live contradiction between the mentor's answer and the trail | **THE TRAIL WINS.** Probe that one claim, nothing else |
+
+**Forbidden, explicitly:** spawning verification lanes when tier 0 is green and the packet
+coheres · re-deriving decisions the trail already records · re-asking the mentor what the
+packet already told you. Each of those trades a cheap fact for an expensive one.
+
+**4 · GO.** Say in one breath what build you are continuing and what you are about to do,
+then append the ledger line (append-only, as always):
+
+```
+- [YYYY-MM-DD HH:MMZ] [successor] continuing <build> via mentor <session title | files-only> | evidence: tier-0 doctor=<x> eval=<y>
+```
+
+Then work. The whole ritual should cost one script run, one message, two instrument runs.
+
+## When you receive a mentor request
+
+Any session running this harness may be asked. Answer **from your own context** — you are
+the one thing the trail cannot reconstruct:
+
+- The **six fields**, in order, **≤400 words total**. Prose, not a report.
+- **Honesty labels hold.** Anything you did not verify is `[unverified]`; anything you are
+  recalling rather than reading is `[recall]`. A confident wrong handoff is worse than a
+  hedged right one.
+- **Escort-lite afterwards:** stay available for follow-ups, and correct the successor
+  **only** when you see them contradict the trail or re-open a standing ruling. No standing
+  babysitting — they are a peer with the same laws, not an apprentice.
+- **Never send secrets, tokens or file contents you have not read this session.**
+
+This inverts the `sessionend` escort: it is **successor-initiated**, and it needs no
+`/sessionend` to have happened. A session that died mid-build can still be continued.
+
+## Honest limits of the continuation ritual
+
+- **The wire exists only where the session-management tools do.** Elsewhere this is a
+  file-based handoff and the skill says so out loud rather than implying a conversation
+  happened.
+- **The mentor's answer is asynchronous.** It arrives when that session next runs. Proceed
+  on trail + files meanwhile and fold the answer in when it lands — never idle waiting.
+- **The packet is `[cited]`; the mentor's recollection is `[recall]`.** When they disagree,
+  the trail wins, and you say which one you followed.
+- **First live proof is the next real session.** The packet and this protocol are fixtured;
+  a session actually mentoring another cannot be proven headlessly, and is not claimed here.
 
 ## `check` — the drift check
 

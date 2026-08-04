@@ -2209,6 +2209,14 @@ var FLAG_GAP = 74;
     if (pk.items.length === 1){ drawOne(pk.items[0], pi); return; }
     var head = pk.items[0], y = TOPY - 30 - (pi % 3) * 30;
     var g = el('g', {'data-cluster':pi}, 'flag cluster');
+    /* FATTENED HIT TARGET (2026-08-04, seat-proven): the pennant and its label are the
+       only painted pixels, so a real cursor slides between them and the cluster never
+       opens — a synthetic click landed while a physical one missed. This invisible rect
+       spans pole to label end and carries the same handler by being inside the group.
+       Static markup, drawn first so it sits behind the glyph; the render stays
+       byte-identical. */
+    g.appendChild(el('rect', {x:head.m.x - 4, y:y - 6, width:150, height:26,
+                              fill:'transparent', 'class':'hit'}));
     g.appendChild(el('path', {d:'M' + head.m.x + ',' + y + ' V' + (TOPY - 2)}, 'pole'));
     g.appendChild(el('path', {d:'M' + head.m.x + ',' + y + ' l26,7 l-26,7 z'},
                    'pennant ' + head.m.flag));

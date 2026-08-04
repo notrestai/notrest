@@ -1,5 +1,74 @@
 # Changelog — the notrest harness
 
+## 4.0.0 — 2026-08-04
+
+**The estate is self-perpetuating: sessions come and go, the build continues.**
+
+The loop closes here. A project is **established** (`/notrest`), **displayed** (the
+cockpit), **navigable** (renders that prove their own pan, zoom and click), and now
+**CONTINUABLE** — any new session in the folder knocks, inherits, verifies as little as the
+evidence allows, and builds. The four laws of the 3.19 → 3.22 run resolve into one
+sentence: *presence is not establishment* → *presence is not display* → *rendered is not
+readable* → *readable is not navigable* → **and none of it is worth anything if the next
+session has to start over.** That is why this is the major.
+
+**Continuity used to require the ceremony. Now the successor can just knock.**
+
+- **The owner's ask, verbatim:** *"if i open any session in the same folder and i type
+  /notrest i should be able to continue the build immidiately there, it would contact the
+  previous session as its mentor and will take all the instructions it needs and run a few
+  verification rounds and we are good to go — the less verification needed the better."*
+  Every piece already existed — START-HERE's live line, sessionend's handoff template,
+  oracle's resume flow, the mentor skill, the COORD trail — and none of them composed into
+  one fast verb. Continuity was **predecessor-initiated**: someone had to run `/sessionend`
+  and write a handoff. A session that died mid-build left its successor reading ledgers by
+  hand. This round inverts it.
+- **`establish.py continuation` — the packet, in one gulp.** Root and established state ·
+  the COORD tail (25) · the agent tail (10) · how many volumes are already sealed behind
+  them · the newest **ship / gate / correction** lines, classified with the river's own
+  regexes so the two agree · briefs banked · the spend ledger's own last line · git HEAD,
+  dirty count, last subject. Read-only, stdlib, **no clock** — every timestamp comes off a
+  file, so the same estate yields a **byte-identical** packet twice, `--json` included with
+  sorted keys. It **reads** `spend/ledger.md` rather than shelling to `spend.py`: a report
+  that can exit 4 is a gate, and a packet must never be one.
+- **`/notrest` now has two modes and the estate picks.** Exit 5/6 → establish. Exit 0 →
+  **continuation**: read the packet, ask the mentor, verify at tier 0, go. No re-establishing
+  an established project, no six ORACLE questions — `/oracle` stays the full intake, and says
+  so in its own resume step.
+- **The mentor request is ONE batched message**, six fields (state · lanes · standing
+  rulings · next step · watch-outs · what you'd verify), answered from the predecessor's own
+  context in ≤400 words with honesty labels, then **escort-lite**: available for follow-ups,
+  correcting only on a contradiction with the trail or a standing ruling. Successor-initiated,
+  and **no `/sessionend` required** — a session that died mid-build is still continuable.
+- **Verification tiers, because the owner's law is that less is better.** Tier 0 always and
+  usually only: `doctor` + `eval` + `git status` against the packet's claims. Tier 1 only
+  when the newest gate line is not green: **the specific fixture the trail names**, not the
+  suite. Tier 2 only on a live contradiction, where **the trail wins**. Explicitly forbidden:
+  spawning verification lanes when tier 0 is green, re-deriving decisions the trail records,
+  re-asking the mentor what the packet already said. More verification is not more rigour —
+  it is latency the trail already paid for.
+- **An honesty fix found by the fixture:** a git repo with **no commits yet** was being
+  reported as "not a git repo". It is a repo; it has a dirty count and no HEAD, and the
+  packet now says exactly that.
+- **Polish, folded into the same round.** The river's flag clusters gained an invisible
+  fattened hit rect spanning pole to label: the painted pennant and its label were the only
+  clickable pixels, so a real cursor slid between them and the cluster never opened — a
+  synthetic click landed while a physical one missed, which is the same lesson as the dead
+  pan one release ago. The two halves of the fenced-marker refusal now speak with one
+  voice. A tree-wide sweep found **no TODO/FIXME/XXX** introduced since 3.19.0 (the only
+  hits are `mktemp XXXXXX` templates).
+- **A front-matter break caught by our own instrument, not by a reader.** Wiring the
+  successor note into `sessionend` put it *inside* the YAML front matter, which `doctor`'s
+  FRONTMATTER check failed immediately — the exact defect class that check exists for (a
+  skill whose front matter will not load is invisible while the file sits on disk). Repaired
+  and re-homed in the body.
+- **What is NOT proven, stated plainly.** The fixture proves the packet and the protocol —
+  223 assertions including tail caps, sealed-volume counts, flag classification, `--json`
+  key stability, byte-identical re-reads, non-git and zero-line-ledger graceful paths. **The
+  session-to-session wire cannot be fixtured headlessly.** One session actually mentoring
+  another will be proven by the next real session, not by this release, and the skill says so
+  in its own Honest Limits section rather than implying a conversation already happened.
+
 ## 3.22.0 — 2026-08-04
 
 **READABLE IS NOT NAVIGABLE — the pan was dead, and every fixture was green.**

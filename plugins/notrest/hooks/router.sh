@@ -56,7 +56,8 @@ case "$NORM" in
   # has the estate at all. Deliberately carries no phrase containing the verb's own name:
   # "establish notrest" is a user who already named the route, and the guard below owns it.
   *" establish the harness"*|*" set up the plugin"*|*" follow the plugin"*|\
-  *" following the plugin"*|*" follow the harness"*|*" following the harness"*)
+  *" following the plugin"*|*" follow the harness"*|*" following the harness"*|\
+  *" continue the build"*|*" pick up the build"*|*" continue this build"*)
       SKILL=notrest;          SHAPE=establish ;;
   # SELFNAMED: the trigger phrase contains the verb's own name, so the
   # "prompt already named the verb" guard below would swallow every match.

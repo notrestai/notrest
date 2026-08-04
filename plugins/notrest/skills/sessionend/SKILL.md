@@ -201,6 +201,8 @@ Then confirm — and fix any miss:
 - In a chat: every file was presented for download with the re-upload reminder.
 
 ## Phase 5 — Open the live line (multi-session environments only)
+
+> **The successor can also knock first.** A fresh session in the same folder can open the line itself with `/notrest` — its continuation ritual asks the previous same-cwd session as a mentor — **with no `/sessionend` required**, so a session that died mid-build is still continuable.
 Files are lossy; the ending session's context is not. Where session-to-session tools exist
 (Claude Code desktop: `list_sessions` / `send_message` / `search_session_transcripts`), the handoff
 gets a second layer — full protocol and message templates in

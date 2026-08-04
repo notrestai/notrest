@@ -58,6 +58,8 @@ the last scan found. A ripe row that matches the stated Objective is worth one l
 user: this project keeps doing this, and `/compile <slug>` can move its stable parts into
 code. Say nothing when the file is absent or nothing is ripe.
 
+**Fast lane — continuing a build in this same folder.** If the project is already established and the ask is to *continue the build that is running here* (rather than start new work), that is `/notrest`'s continuation ritual, not a full intake: it reads the trail packet, asks the previous same-cwd session as its mentor, verifies at tier 0 and goes. Say so in one line and hand over. **oracle stays the full intake** for new objectives, and for "resume where we left off" across projects.
+
 **Cockpit (one line, only if the project asked for it).** If `graph/.cockpit-always` sits at
 the estate root, this project has opted its live window on. Run `python3
 "${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/cockpit.py" status --root .` — exit 0 means it is

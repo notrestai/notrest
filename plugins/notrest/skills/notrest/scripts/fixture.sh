@@ -523,6 +523,83 @@ for BADMARK in 'garbage{' '{\"port\":\"not-a-number\"}' '{\"port\":0}' '{}' ''; 
 done
 rm -f "$CKN/graph/.cockpit-always"
 
+echo "── v4.0.0: the continuation packet"
+
+# NOT established → the packet refuses and says what to run instead.
+CU0="$W/cont-none"; mkdir -p "$CU0"; : > "$CU0/README.md"
+est continuation --root "$CU0" > "$W/o" 2>&1; t "continuation on an unestablished root" "$?" "6"
+has "…and names the remedy" "Run \`/notrest establish\` first" "$W/o"
+
+# A seeded estate: ships, gates, corrections, a sealed volume, briefs, spend, agents.
+CU="$W/cont"; mkdir -p "$CU"; ( cd "$CU" && git init -q ) >/dev/null 2>&1
+est establish --root "$CU" >/dev/null 2>&1
+{ echo "- [2026-08-01 09:00Z] [seat] built it -> v1.2.0 shipped | evidence: commit abc1234"
+  echo "- [2026-08-02 10:00Z] [lane] gated the build -> doctor=5 eval=0 | evidence: exit codes"
+  echo "- [2026-08-03 11:00Z] [seat] bad patch -> rollback landed | evidence: git revert"
+  echo "- [2026-08-04 12:00Z] [seat] continuing -> in progress | evidence: none yet"; } >> "$CU/COORD.md"
+cp "$CU/COORD.md" "$CU/COORD-001.md"
+mkdir -p "$CU/briefs" "$CU/spend"; : > "$CU/briefs/agent-a.md"; : > "$CU/briefs/agent-b.md"
+printf '# ledger\n[2026-08-04 12:00Z] lane=subagent model=claude-opus-4 tokens=150 grade=observed\n' \
+  > "$CU/spend/ledger.md"
+printf '# COORD-AGENTS.md\n\n## LEDGER\n- [2026-08-04 12:01Z] agent=x model=claude-opus-4 | last: done\n' \
+  > "$CU/COORD-AGENTS.md"
+est continuation --root "$CU" > "$W/o" 2>&1; t "continuation on an established estate" "$?" "0"
+has "packet verdict is CONTINUABLE" "notrest: CONTINUABLE" "$W/o"
+has "packet counts sealed volumes" "COORD volumes sealed: 1" "$W/o"
+has "packet finds the newest SHIP" "v1.2.0 shipped" "$W/o"
+has "packet finds the newest GATE" "gated the build" "$W/o"
+has "packet finds the newest CORRECTION" "rollback landed" "$W/o"
+has "packet counts banked briefs" "briefs banked: 2" "$W/o"
+has "packet reads the spend ledger's own last line" "grade=observed" "$W/o"
+hasnt "…and never shells to spend.py for a verdict" "routing: CLEAN" "$W/o"
+has "packet carries the agent tail" "agent=x" "$W/o"
+has "an EMPTY git repo is not reported as 'not a git repo'" "no commits yet" "$W/o"
+( cd "$CU" && git add -A && git -c user.email=f@x -c user.name=f commit -qm "seed" ) >/dev/null 2>&1
+est continuation --root "$CU" > "$W/o" 2>&1
+has "packet reports git HEAD + last commit once there is one" "last commit: seed" "$W/o"
+
+# DETERMINISM: same estate, same packet — the successor's read is never a moving target.
+est continuation --root "$CU" > "$W/c1" 2>&1; est continuation --root "$CU" > "$W/c2" 2>&1
+t "packet is byte-identical twice" "$(ckt "$W/c1")" "$(ckt "$W/c2")"
+est continuation --root "$CU" --json > "$W/j1" 2>&1; est continuation --root "$CU" --json > "$W/j2" 2>&1
+t "--json is byte-identical twice" "$(ckt "$W/j1")" "$(ckt "$W/j2")"
+t "--json keys are sorted (stable order)" \
+  "$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(list(d)==sorted(d))" "$W/j1")" "True"
+t "--json carries every packet field" \
+  "$(python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+need=['root','established','coord_tail','coord_sealed_volumes','agents_tail','newest_ships',
+      'newest_gates','newest_corrections','briefs','spend_last_line','git_head',
+      'git_dirty_files','git_last_subject','protocol_version']
+print(all(k in d for k in need))" "$W/j1")" "True"
+
+# TAIL CAPS: a long ledger must not dump the whole trail into a successor's context.
+python3 - "$CU/COORD.md" <<'PY2'
+import sys
+with open(sys.argv[1], "a", encoding="utf-8") as f:
+    for i in range(60):
+        f.write("- [2026-08-05 00:%02dZ] [seat] filler %d -> landed | evidence: x\n" % (i % 60, i))
+PY2
+t "COORD tail is capped at 25" \
+  "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['coord_lines_shown'])" \
+     <(est continuation --root "$CU" --json 2>/dev/null))" "25"
+
+# GRACEFUL: non-git, and an estate whose ledger has no lines yet.
+CU2="$W/cont-nogit"; mkdir -p "$CU2"; est establish --root "$CU2" >/dev/null 2>&1
+est continuation --root "$CU2" > "$W/o" 2>&1; t "continuation outside git" "$?" "0"
+has "…says the ledger is the whole trail there" "not a git repo" "$W/o"
+CU3="$W/cont-bare"; mkdir -p "$CU3"; : > "$CU3/README.md"
+est establish --root "$CU3" >/dev/null 2>&1
+python3 - "$CU3/COORD.md" <<'PY3'
+import sys
+t = open(sys.argv[1], encoding="utf-8").read()
+open(sys.argv[1], "w", encoding="utf-8").write("\n".join(
+    l for l in t.splitlines() if not l.startswith("- ")) + "\n")
+PY3
+est continuation --root "$CU3" > "$W/o" 2>&1; t "continuation on a zero-line ledger" "$?" "0"
+has "…still reports a continuable estate" "CONTINUABLE" "$W/o"
+
 echo
 echo "fixture: $PASS pass, $FAIL fail"
 [ "$FAIL" -eq 0 ] || exit 1

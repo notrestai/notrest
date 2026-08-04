@@ -34,3 +34,20 @@ Last updated: 2026-07-25
 - Ship gate: `doctor.py check` (install) + `eval.py check` (laws), both green.
 - A compiled runtime under `compile/<slug>/` is tracked SOURCE, isolated until the owner
   ships it; only derived scan output is gitignored.
+
+<!-- notrest:protocol v1 (do not edit inside markers; managed by /notrest) -->
+## notrest protocol
+
+- **Fable discipline** — ORIENT -> PROBE -> ACT -> PROVE -> BANK. Probe the live
+  system before reasoning; a done/works/fixed claim needs in-transcript evidence
+  (exit code, diff, status) or it is labeled unverified; bank state before stopping.
+  Full contract: `/notrest:fable-mode`.
+- **Offload HARD RULE** — every spawned lane sets model `"opus"` explicitly. Never
+  sonnet, never haiku, never a fork (a fork inherits the seat and bills its credit);
+  omitting the model is a violation, not a default. Delegate via `/notrest:agentswarm`;
+  a build runs ONE persistent lane and feedback RESUMES that lane, never a fresh spawn.
+- **COORD law** — one honest ledger line per substantive prompt when its work lands:
+  `ask -> landed | evidence`. `COORD.md` is append-only and is never compacted: at
+  ~500 lines it seals whole as `COORD-<NNN>.md` and a fresh volume opens.
+- **Close** a working session with `/sessionend`. **Drift check:** `/notrest check`.
+<!-- /notrest:protocol -->
