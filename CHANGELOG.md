@@ -1,5 +1,56 @@
 # Changelog — the notrest harness
 
+## 3.22.0 — 2026-08-04
+
+**READABLE IS NOT NAVIGABLE — the pan was dead, and every fixture was green.**
+
+- **The owner's verdict, verbatim, is the trigger:** *"the graphs are not pannable and
+  panning and zooming and clicking does not work right like you can not navigate river or
+  explore it as it is the most interesting and the journey tab is shit literaly not needed
+  also with the lanes not needed."* The lineage runs: *presence is not establishment* →
+  *presence is not display* → *rendered is not readable* → **readable is not navigable**.
+- **ROOT CAUSE, found by hit-testing the live page rather than reading it.** `#empty` — the
+  river's empty-state overlay, `position:absolute; inset:0` — carries the `hidden`
+  attribute, but its own rule sets `display:flex`, and **an ID selector outranks the UA
+  stylesheet's `[hidden]{display:none}`**. So an overlay that was never supposed to be
+  visible sat on top of the entire stage forever with `pointer-events:auto`.
+  `document.elementFromPoint(stage centre)` returned `DIV#empty`, never the `<svg>` — every
+  `mousedown`, wheel and click landed on the overlay, and the pan handlers, which were
+  correct all along, received **not one real event**. The fix is one line:
+  `#empty[hidden]{display:none}`. Proven live before and after: centre hit went
+  `DIV#empty` → `svg#sv`, and a hit-tested drag moved the scene transform.
+- **Why no fixture ever saw it.** Every assertion this repo had asked whether the handlers
+  were **in the file** — and they were. Determinism, counts, HTTP 200, handler strings: all
+  green, all blind. **Nothing had ever hit-tested the stage.** That is the defect class, not
+  the overlay.
+- **`?selftest=1` — handler presence is not interaction working.** Both interactive renders
+  now prove themselves: hit-test the stage, drive a synthetic pan, a wheel zoom and a click,
+  then write the verdict into **`document.title`** (`SELFTEST PASS 5/5` / `SELFTEST FAIL
+  <step>`) plus a `#selftest` node with per-step results. DOM-and-state only — no pixel
+  reads, no `requestAnimationFrame` dependency — so it holds in a hidden or background tab,
+  where a canvas cannot repaint at all. Both report **PASS 5/5** live. The load-bearing step
+  is `background-hit-reaches-<surface>`: the one assertion that would have caught this on
+  the day it shipped.
+- **A second, quieter bug fixed on the way:** `fit()` framed against a zero-size stage (a
+  pane or iframe that lays out late), pinning the scale FLOOR at 0.02 — a 2% hairline that
+  only recovered if a later resize arrived while `userMoved` was still false. It now defers
+  to the rAF/ResizeObserver refits instead of framing against a box that does not exist yet.
+- **The bar slims to three views, by the owner's design:** `river` · `file graph` · `coord`,
+  plus `rebuild`. The `journey` and `lanes` tabs are gone from the cockpit. **The journey
+  render is not deleted** — `/pic/journey.html` and `/graph journey` still work, the cockpit
+  simply no longer surfaces it — and commission transparency lives where it already lived:
+  the river's commission sheets, `COORD-AGENTS.md`, `briefs/`.
+- Full-page legends now fold below 900px too, not only when embedded — at pane width the
+  legend was eating half the viewport even full-page. Same client-side law; the render is
+  byte-identical, and `?embed=1` and `?selftest=1` compose.
+- **The render gate grew its last clause:** confirm the glyphs render, the counts match, the
+  first screen is legible, **and that it is navigable where it claims to be — proven, never
+  inferred.**
+- Fixtures: cockpit **109 → 117** (three view buttons exactly, journey/lanes markup absent,
+  the journey route still 200, the selftest hook and the overlay fix asserted in the served
+  HTML). Determinism re-proven: river, journey and file graph each still render
+  byte-identically twice.
+
 ## 3.21.0 — 2026-08-04
 
 **"How is this a graph readable?" — RENDERED IS NOT READABLE.**

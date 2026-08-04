@@ -282,12 +282,19 @@ echo "── phase P: the page shape (owner's five-view redesign) ────�
 # back one chip at a time.
 body "$U/" > "$TMP/page.html"
 
-for V in river journey graph coord lanes; do
+for V in river graph coord; do
   chk "bar carries the $V view button" 1 \
     "$(grep -c "data-view=\"$V\"" "$TMP/page.html")"
 done
+# OWNER'S RULING (2026-08-04): "the journey tab is shit literaly not needed also with the
+# lanes not needed". Both leave the COCKPIT; the journey RENDER and its route stay.
+for V in journey lanes; do
+  chk "the $V tab is gone from the bar" 0 \
+    "$(grep -c "data-view=\"$V\"" "$TMP/page.html")"
+done
+chk "the lanes view container is gone" 0 "$(grep -c 'id="v-lanes"' "$TMP/page.html")"
 chk "bar carries rebuild" 1 "$(grep -c 'id="picreload"' "$TMP/page.html")"
-chk "the bar has EXACTLY five view buttons" 5 \
+chk "the bar has EXACTLY three view buttons" 3 \
   "$(grep -o 'data-view="[a-z]*"' "$TMP/page.html" | wc -l | tr -d ' ')"
 
 # the chrome the owner asked to remove must be GONE, markup and styles alike
@@ -297,7 +304,6 @@ for DEAD in 'COCKPIT</h1>' 'id="c-ver"' 'id="c-pulse"' 'id="c-spend"' 'id="c-wat
 done
 
 chk "coord view container present" 1 "$(grep -c 'id="v-coord"' "$TMP/page.html")"
-chk "lanes view container present" 1 "$(grep -c 'id="v-lanes"' "$TMP/page.html")"
 chk "the staleness micro-line survives the redesign" 1 \
   "$(grep -c 'id="stamp"' "$TMP/page.html")"
 grep -q 'X-Cockpit-Generated' "$TMP/page.html" \
@@ -335,6 +341,26 @@ grep -q 'staging, not filtering' "$TMP/pic-graph.html" \
   && ok "the note says staging, never hiding" || bad "the label note is not honest about staging"
 grep -q 'EMBED' "$TMP/pic-graph.html" \
   && ok "file graph carries the ?embed=1 client hook" || bad "file graph has no embed hook"
+
+# the journey render is still REACHABLE by URL even though no tab points at it
+chk "the journey route still serves 200" 200 "$(code "$U/pic/journey.html")"
+
+# PROVABLE INTERACTION: handler presence is not interaction working. Both interactive
+# renders ship a self-test the SEAT can read in the pane; the fixture proves it is there.
+for PIC in river graph; do
+  body "$U/pic/$PIC.html?force=1" > "$TMP/st-$PIC.html"
+  grep -q 'selftest=1' "$TMP/st-$PIC.html" \
+    && ok "$PIC carries the ?selftest=1 hook" || bad "$PIC has no selftest hook"
+  grep -q 'SELFTEST PASS' "$TMP/st-$PIC.html" \
+    && ok "$PIC writes its verdict where a machine can read it" \
+    || bad "$PIC has no machine-readable selftest verdict"
+  grep -q 'background-hit-reaches' "$TMP/st-$PIC.html" \
+    && ok "$PIC hit-tests its own stage (the step that would have caught the dead pan)" \
+    || bad "$PIC does not hit-test its stage"
+done
+grep -q 'empty\[hidden\]{display:none}' "$TMP/st-river.html" \
+  && ok "the river's stage-swallowing overlay stays hidden" \
+  || bad "the #empty overlay can cover the stage again"
 
 body "$U/pic/river.html" > "$TMP/pic-plain.html"
 if cmp -s "$TMP/pic-embed.html" "$TMP/pic-plain.html"; then

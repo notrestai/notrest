@@ -758,7 +758,7 @@ var DATA = "__GRAPH_DATA__";
    from the render: the HTML this file emits is byte-identical with or without it,
    which is what keeps the determinism law and the legibility work from colliding. */
 var EMBED = /(?:^|[?&])embed=1(?:&|$)/.test(location.search);
-if (EMBED){ var _lg0 = document.getElementById('legend');
+if (EMBED || window.innerWidth < 900){ var _lg0 = document.getElementById('legend');
   if (_lg0) _lg0.classList.add('embed-fold'); }
 
 var merged = DATA.mode === "merged";
@@ -1107,6 +1107,70 @@ if (window.ResizeObserver) new ResizeObserver(onViewportChange).observe(stage);
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
 
 readColors(); legend(); sizeCanvas(); fitView(); frame();
+
+/* ------------------------------------------------------- ?selftest=1 — PROVABLE
+   HANDLER PRESENCE IS NOT INTERACTION WORKING (2026-08-04). Every fixture this repo
+   had asserted that the pan handlers were IN the file; the pan was dead anyway,
+   because an overlay ate the events before they reached the surface. So the render
+   proves itself: with ?selftest=1 it hit-tests its own stage, drives a synthetic
+   pan / zoom / click, and writes the verdict where a machine can read it —
+   document.title plus #selftest. Deliberately DOM-and-state only (no pixel reads,
+   no rAF dependency), so it is just as valid in a hidden pane tab. Reads the query
+   string at runtime; the rendered bytes are identical with or without it. */
+function __selftest(steps){
+  var out = [], pass = 0;
+  for (var i = 0; i < steps.length; i++){
+    var st = steps[i], ok = false, why = '';
+    try { ok = !!st.run(); } catch (e){ ok = false; why = String(e && e.message || e); }
+    if (ok) pass++;
+    out.push({name: st.name, ok: ok, why: why});
+  }
+  var all = pass === steps.length;
+  document.title = all ? ('SELFTEST PASS ' + pass + '/' + steps.length)
+                       : ('SELFTEST FAIL ' + (out.filter(function(o){ return !o.ok; })[0] || {}).name);
+  var box = document.createElement('div');
+  box.id = 'selftest';
+  box.setAttribute('data-pass', all ? '1' : '0');
+  box.setAttribute('data-score', pass + '/' + steps.length);
+  box.style.cssText = 'position:fixed;left:.5rem;top:.5rem;z-index:99;font:11px ui-monospace,monospace;' +
+    'background:var(--surface-1,#fff);border:1px solid var(--border,#ccc);border-radius:8px;padding:.4rem .6rem';
+  box.innerHTML = out.map(function(o){
+    return (o.ok ? 'PASS  ' : 'FAIL  ') + o.name + (o.why ? ' — ' + o.why : '');
+  }).join('<br>');
+  document.body.appendChild(box);
+}
+var SELFTEST = /(?:^|[?&])selftest=1(?:&|$)/.test(location.search);
+
+if (SELFTEST) window.setTimeout(function(){
+  var r = stage.getBoundingClientRect();
+  var cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+  var hit = document.elementFromPoint(cx, cy);
+  /* find a point with NO node under it, so the drag is a background pan and not a
+     node drag — picking the wrong one is how a green pan test proves nothing */
+  var bx = 12, by = 12, guard = 0;
+  while (pick(bx, by) !== null && guard++ < 40){ bx += 17; by += 11; }
+  __selftest([
+    {name:'stage-has-size', run:function(){ return r.width > 2 && r.height > 2; }},
+    {name:'background-hit-reaches-canvas', run:function(){ return hit === cv; }},
+    {name:'pan', run:function(){
+      var x0 = view.x, y0 = view.y, R = cv.getBoundingClientRect();
+      cv.dispatchEvent(new MouseEvent('mousedown',
+        {clientX:R.left+bx, clientY:R.top+by, bubbles:true}));
+      window.dispatchEvent(new MouseEvent('mousemove',
+        {clientX:R.left+bx+140, clientY:R.top+by+90, bubbles:true}));
+      window.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+      return view.x !== x0 || view.y !== y0; }},
+    {name:'zoom', run:function(){
+      var k0 = view.k;
+      cv.dispatchEvent(new WheelEvent('wheel', {clientX:cx, clientY:cy, deltaY:-120,
+                                                bubbles:true, cancelable:true}));
+      return view.k !== k0; }},
+    {name:'click-selects-a-node', run:function(){
+      if (!nodes.length) return true;
+      select(0, true);
+      return selected === 0; }}
+  ]);
+}, 0);
 })();
 </script>
 </body>
@@ -1908,6 +1972,13 @@ svg.far .commcount{display:none}
 .sw.dash{background:none!important;height:0;border-radius:0;border-top:3px dashed var(--rock)}
 .sw.sheet{background:var(--surface-0);border:1.4px solid var(--commission);border-radius:2px;
   width:10px;height:13px}
+/* THE DEAD-PAN FIX (2026-08-04). #empty is an ID selector, so `display:flex` below
+   OUTRANKED the UA sheet's [hidden]{display:none}: this inset:0 overlay sat on top of
+   the whole stage forever with pointer-events:auto, and every mousedown / wheel / click
+   landed on IT instead of the svg. The pan handlers were correct and never received a
+   single real event — which is why every fixture stayed green while the river could not
+   be panned at all. Hiding means hidden. */
+#empty[hidden]{display:none}
 #empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   color:var(--text-muted);font-size:13px;text-align:center;padding:2rem}
 </style>
@@ -1952,7 +2023,7 @@ var D = "__RIVER_DATA__";
    from the render: the HTML this file emits is byte-identical with or without it,
    which is what keeps the determinism law and the legibility work from colliding. */
 var EMBED = /(?:^|[?&])embed=1(?:&|$)/.test(location.search);
-if (EMBED){ var _lg0 = document.getElementById('legend');
+if (EMBED || window.innerWidth < 900){ var _lg0 = document.getElementById('legend');
   if (_lg0) _lg0.removeAttribute('open'); }
 
 var NS = 'http://www.w3.org/2000/svg';
@@ -2296,6 +2367,11 @@ function apply(){
    course when you want the shape rather than the records. */
 function fit(){
   var r = stage.getBoundingClientRect();
+  /* A zero-size stage (a pane or iframe that lays out late) frames the scene against
+     nothing and pins the scale FLOOR — a 2% hairline that only recovers if a later
+     resize arrives while userMoved is still false. Defer to the rAF/ResizeObserver
+     refits below instead of framing against a box that does not exist yet. */
+  if (r.width < 2 || r.height < 2) return;
   var w = Math.max(1, E.x1 - E.x0), h = Math.max(1, E.y1 - E.y0);
   view.k = Math.max(0.02, Math.min(1.15, r.height / h));
   view.x = (w * view.k <= r.width) ? (r.width - w * view.k) / 2 - E.x0 * view.k
@@ -2408,6 +2484,70 @@ if (!nodes.length){
     'lines under this root. Run a session, or point --root at the repo that has them.';
 }
 fit();
+
+/* ------------------------------------------------------- ?selftest=1 — PROVABLE
+   HANDLER PRESENCE IS NOT INTERACTION WORKING (2026-08-04). Every fixture this repo
+   had asserted that the pan handlers were IN the file; the pan was dead anyway,
+   because an overlay ate the events before they reached the surface. So the render
+   proves itself: with ?selftest=1 it hit-tests its own stage, drives a synthetic
+   pan / zoom / click, and writes the verdict where a machine can read it —
+   document.title plus #selftest. Deliberately DOM-and-state only (no pixel reads,
+   no rAF dependency), so it is just as valid in a hidden pane tab. Reads the query
+   string at runtime; the rendered bytes are identical with or without it. */
+function __selftest(steps){
+  var out = [], pass = 0;
+  for (var i = 0; i < steps.length; i++){
+    var st = steps[i], ok = false, why = '';
+    try { ok = !!st.run(); } catch (e){ ok = false; why = String(e && e.message || e); }
+    if (ok) pass++;
+    out.push({name: st.name, ok: ok, why: why});
+  }
+  var all = pass === steps.length;
+  document.title = all ? ('SELFTEST PASS ' + pass + '/' + steps.length)
+                       : ('SELFTEST FAIL ' + (out.filter(function(o){ return !o.ok; })[0] || {}).name);
+  var box = document.createElement('div');
+  box.id = 'selftest';
+  box.setAttribute('data-pass', all ? '1' : '0');
+  box.setAttribute('data-score', pass + '/' + steps.length);
+  box.style.cssText = 'position:fixed;left:.5rem;top:.5rem;z-index:99;font:11px ui-monospace,monospace;' +
+    'background:var(--surface-1,#fff);border:1px solid var(--border,#ccc);border-radius:8px;padding:.4rem .6rem';
+  box.innerHTML = out.map(function(o){
+    return (o.ok ? 'PASS  ' : 'FAIL  ') + o.name + (o.why ? ' — ' + o.why : '');
+  }).join('<br>');
+  document.body.appendChild(box);
+}
+var SELFTEST = /(?:^|[?&])selftest=1(?:&|$)/.test(location.search);
+
+if (SELFTEST) window.setTimeout(function(){
+  var r = stage.getBoundingClientRect();
+  var cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+  var hit = document.elementFromPoint(cx, cy);
+  var t = function(){ return scene.getAttribute('transform') || ''; };
+  var kOf = function(){ var m = /scale\(([\d.]+)\)/.exec(t()); return m ? +m[1] : 0; };
+  __selftest([
+    {name:'stage-has-size', run:function(){ return r.width > 2 && r.height > 2; }},
+    {name:'background-hit-reaches-svg', run:function(){
+      return !!(hit && (hit === svg || svg.contains(hit))); }},
+    {name:'pan', run:function(){
+      var b = t();
+      hit.dispatchEvent(new MouseEvent('mousedown', {clientX:cx, clientY:cy, bubbles:true}));
+      window.dispatchEvent(new MouseEvent('mousemove', {clientX:cx-120, clientY:cy-30, bubbles:true}));
+      window.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+      return t() !== b; }},
+    {name:'zoom', run:function(){
+      var k0 = kOf();
+      svg.dispatchEvent(new WheelEvent('wheel', {clientX:cx, clientY:cy, deltaY:-120,
+                                                 bubbles:true, cancelable:true}));
+      return kOf() !== k0; }},
+    {name:'click-pins-a-stone', run:function(){
+      var st = scene.querySelector('[data-id]');
+      if (!st) return true;                     /* an empty estate has no stone to pin */
+      var b = st.getBoundingClientRect();
+      st.dispatchEvent(new MouseEvent('click', {clientX:Math.round(b.left+b.width/2),
+        clientY:Math.round(b.top+b.height/2), bubbles:true}));
+      return card.style.display === 'block'; }}
+  ]);
+}, 0);
 })();
 </script>
 </body>
@@ -2921,7 +3061,7 @@ var D = "__JOURNEY_DATA__";
    from the render: the HTML this file emits is byte-identical with or without it,
    which is what keeps the determinism law and the legibility work from colliding. */
 var EMBED = /(?:^|[?&])embed=1(?:&|$)/.test(location.search);
-if (EMBED){ var _lg0 = document.getElementById('legend');
+if (EMBED || window.innerWidth < 900){ var _lg0 = document.getElementById('legend');
   if (_lg0) _lg0.removeAttribute('open'); }
 
 var NS = 'http://www.w3.org/2000/svg';
@@ -3169,6 +3309,11 @@ function apply(){
    downward. Fitting the height would make every pill a hairline. */
 function fit(){
   var r = stage.getBoundingClientRect();
+  /* A zero-size stage (a pane or iframe that lays out late) frames the scene against
+     nothing and pins the scale FLOOR — a 2% hairline that only recovers if a later
+     resize arrives while userMoved is still false. Defer to the rAF/ResizeObserver
+     refits below instead of framing against a box that does not exist yet. */
+  if (r.width < 2 || r.height < 2) return;
   var w = Math.max(1, E.x1 - E.x0), h = Math.max(1, E.y1 - E.y0);
   view.k = Math.max(0.05, Math.min(1, (r.width - 36) / w));
   view.x = 18 - E.x0 * view.k;

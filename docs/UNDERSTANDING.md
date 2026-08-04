@@ -83,7 +83,7 @@ model tokens.
   where something got refuted**, a flag for every ship.
 - **the journey** — every skill, what phrase triggers it, and what it hands off to.
 - **the graph** — the file map of the project.
-- **the cockpit** — five views, one at a time, each owning the screen: river, journey, file graph, coord, lanes. Opt a project in once (`serve --always`) and every session start surfaces it: probe, start if down, open it. Every view opens STAGED — the important thing first, the rest one click away — because a correct render nobody can read is a failed render.
+- **the cockpit** — three views, one at a time, each owning the screen: river, file graph, coord. Opt a project in once (`serve --always`) and every session start surfaces it: probe, start if down, open it. Every view opens STAGED — the important thing first, the rest one click away — because a correct render nobody can read is a failed render.
 
 *Why:* they are drawn **by scripts, not by the model** — a law we wrote deliberately. A
 picture of a whole working day costs zero tokens.
@@ -180,7 +180,7 @@ run in seconds.
 
 ## 6. Where it stands
 
-**Done and running:** the engine (v3.21.0, 31 skills), all instruments green, the cockpit,
+**Done and running:** the engine (v3.22.0, 31 skills), all instruments green, the cockpit,
 the estate, the library.
 
 **Built and gated, not live:** rig.rest v0.1 — ~1,536 fixture assertions across six

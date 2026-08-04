@@ -343,14 +343,18 @@ header**, never the browser's clock, so the page reports the server's read time 
 with a skewed clock cannot make the page lie about freshness.
 
 **What the page shows — five views, one at a time (the owner's redesign, 2026-08-04).**
-The bar holds exactly six controls: `river` · `journey` · `file graph` · `coord` · `lanes`,
-and `rebuild`. Whatever is selected owns the entire viewport under that bar.
+The bar holds exactly four controls: `river` · `file graph` · `coord`, and `rebuild`.
+Whatever is selected owns the entire viewport under that bar. **The `journey` and `lanes`
+tabs were removed by the owner** (*"the journey tab is shit literaly not needed also with
+the lanes not needed"*): the journey **render still exists** and stays reachable at
+`/pic/journey.html` and through `/graph journey` — the cockpit simply no longer surfaces
+it — and commission transparency lives where it already lived, on the river's commission
+sheets, in `COORD-AGENTS.md` and in `briefs/`.
 
 | view | what it is |
 |---|---|
-| river · journey · file graph | the picture, full height, in the stage iframe (loaded `?embed=1`, legend folded); a small **open full page ↗** sits in the picture's own corner |
+| river · file graph | the picture, full height, in the stage iframe (loaded `?embed=1`, legend folded); a small **open full page ↗** sits in the picture's own corner |
 | coord | the **COORD tail** as the whole view — newest first, ship/gate/correction flags, its own scroll |
-| lanes | **lanes & commissions** as the whole view — one row per agent-ledger receipt, ruled-sheet glyph, click opens the banked commission in a readable pane |
 
 `rebuild` acts on the active *picture* and is hidden on the two feed views, where there is
 nothing to rebuild. Theme follows `prefers-color-scheme`; polling is always on at 5s.
@@ -588,6 +592,33 @@ explicit `/graph` invocations only.
 - **A dead end is a shape, not a judgement.** It says nothing later linked that route —
   which is what an abandoned experiment and an unfinished-but-live one both look like.
 
+## Provable interaction
+
+**Handler presence is not interaction working.** The river shipped with correct pan, zoom
+and click handlers bound to its `<svg>`, and the pan was **dead**: `#empty` — the
+empty-state overlay, `position:absolute; inset:0` — carried the `hidden` attribute but its
+own rule set `display:flex`, and an ID selector outranks the UA sheet's `[hidden]{display:
+none}`. The overlay sat on top of the whole stage forever with `pointer-events:auto`, so
+every `mousedown`, wheel and click landed on **it** and the svg never received one real
+event. Every fixture stayed green throughout, because every fixture asked whether the
+handlers were *in the file*. **Nothing had ever hit-tested the stage.**
+
+So each interactive render now proves itself:
+
+```bash
+open '…/river.html?selftest=1'      # tab title becomes: SELFTEST PASS 5/5
+```
+
+`?selftest=1` hit-tests its own stage, drives a synthetic pan, a wheel zoom and a click,
+and writes the verdict into **`document.title`** (`SELFTEST PASS n/n` / `SELFTEST FAIL
+<step>`) plus a `#selftest` node carrying per-step results. It is DOM-and-state only — no
+pixel reads, no `requestAnimationFrame` dependency — so it is just as valid in a hidden or
+background tab, where a canvas cannot repaint at all. Query string at runtime: the rendered
+bytes are identical with or without it, and it composes with `?embed=1`.
+
+**The step that matters is `background-hit-reaches-<surface>`** — the one assertion that
+would have caught the defect above on the day it shipped.
+
 ## Readable by default
 
 **A correct render nobody can read is a failed render.** Every view here draws the whole
@@ -617,8 +648,10 @@ determinism law and the legibility work never touch each other.
 ## Render gate
 
 **Open the HTML before saying it works.** A run that writes a file is not a page that
-draws. Confirm the glyphs actually render, the header counts match the summary line, **and
-the first screen is legible at the width you are viewing** — then report. **A correct render
+draws. Confirm the glyphs actually render, the header counts match the summary line, the
+first screen is **legible** at the width you are viewing, **and that it is NAVIGABLE where
+it claims to be — pan, zoom and click PROVEN in the surface being viewed (`?selftest=1`
+plus a real drag), never inferred from handler presence.** **A correct render
 nobody can read fails this gate**: that is not a style note, it is the defect that produced
 the readability work above, reported by the owner as *"how is this a graph readable?"* about
 a page whose every number was right. Two traps that have both bitten:

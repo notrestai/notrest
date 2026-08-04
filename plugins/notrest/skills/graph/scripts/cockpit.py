@@ -682,15 +682,6 @@ textarea,input[type=text]{width:100%;font:inherit;font-size:12px;padding:.3rem .
 textarea:focus,input:focus{outline:none;border-color:var(--border-strong)}
 .roomline{font-size:11.5px;padding:.15rem 0;border-top:1px dotted var(--border);
   white-space:pre-wrap;word-break:break-word}
-#pane{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:20;
-  align-items:center;justify-content:center;padding:2rem}
-#pane.show{display:flex}
-#paneBox{background:var(--surface-1);border:1px solid var(--border-strong);border-radius:12px;
-  max-width:min(860px,94vw);max-height:84vh;overflow:auto;padding:.9rem 1.1rem;
-  box-shadow:0 12px 48px rgba(0,0,0,.3)}
-#paneBox h3{margin:.1rem 0 .1rem;font-size:14px}
-#paneBox pre{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;
-  border-left:2px solid var(--commission);padding-left:.7rem;margin:.6rem 0 0}
 .note{color:var(--text-muted);font-size:10.5px;line-height:1.45}
 .empty{color:var(--text-muted);font-size:11.5px;padding:.2rem 0}
 </style>
@@ -698,10 +689,8 @@ textarea:focus,input:focus{outline:none;border-color:var(--border-strong)}
 <body>
 <header>
   <button data-view="river" class="on" type="button">river</button>
-  <button data-view="journey" type="button">journey</button>
   <button data-view="graph" type="button">file graph</button>
   <button data-view="coord" type="button">coord</button>
-  <button data-view="lanes" type="button">lanes</button>
   <span class="grow"></span>
   <button id="picreload" type="button">rebuild</button>
 </header>
@@ -711,15 +700,9 @@ textarea:focus,input:focus{outline:none;border-color:var(--border-strong)}
     <a id="picfull" class="fullpage" href="/pic/river.html" target="_blank" rel="noopener">open full page &#8599;</a>
   </div>
   <div id="v-coord" class="view" hidden><div id="coord" class="feed"></div></div>
-  <div id="v-lanes" class="view" hidden><div id="lanes" class="feed"></div></div>
 </main>
 <div id="stamp" title="server read time, from the X-Cockpit-Generated response header">—</div>
-<div id="pane"><div id="paneBox">
-  <h3 id="paneTitle">commission</h3>
-  <div class="note mono" id="panePath"></div>
-  <pre id="paneText"></pre>
-  <div class="postrow"><button id="paneClose" type="button">close</button></div>
-</div></div>
+
 <script>
 (function(){
 var root = document.documentElement, live = true, timer = null;
@@ -760,56 +743,17 @@ function pollCoord(){
     $('coord').innerHTML = out || '<div class="empty">no ledger lines yet</div>';
   });
 }
-function pollLanes(){
-  get('/data/agents.json', function(d){
-    if (!d.available) { $('lanes').innerHTML = '<div class="empty">no agent ledger</div>'; return; }
-    $('lanes').innerHTML = d.lanes.slice().reverse().map(function(l){
-      var id = (l.agent || '').replace(/^agent-/, '');
-      return '<div class="lane' + (l.commission ? ' comm' : '') + '">' +
-        '<div class="sheet" ' + (l.commission ? 'data-brief="' + esc(id) + '" title="read the commission"' :
-          'title="' + esc(l.brief ? 'pointer present but unreadable: ' + l.brief
-                                  : 'no brief pointer on this receipt (pre-v3.13 lane)') + '"') + '></div>' +
-        '<div><div class="who mono">' + esc(clip(l.agent, 20)) + ' <span class="t">' + esc(l.model) + '</span></div>' +
-        '<div class="t">' + esc(l.ts) + '</div>' +
-        '<div class="landed">' + esc(clip(l.last || '(no last line)', 120)) + '</div></div></div>';
-    }).join('') || '<div class="empty">no lanes recorded</div>';
-    Array.prototype.forEach.call(document.querySelectorAll('.sheet[data-brief]'), function(el){
-      el.onclick = function(){ openBrief(el.getAttribute('data-brief')); };
-    });
-  });
-}
-/* ------------------------------------------------------------ the commission */
-function openBrief(id){
-  get('/data/briefs/' + encodeURIComponent(id) + '.json', function(d, status){
-    $('paneTitle').textContent = 'commission — agent ' + id;
-    if (!d.available){
-      $('panePath').textContent = d.brief || '';
-      $('paneText').textContent = 'not readable: ' + (d.why || 'unknown') +
-        '\n\nThe river and the cockpit both refuse to invent one. If the pointer is dead the ' +
-        'brief was never banked, or briefs/ was cleaned up.';
-    } else {
-      $('panePath').textContent = d.brief + '  ·  ' + d.bytes + ' bytes';
-      $('paneText').textContent = d.text;
-    }
-    $('pane').classList.add('show');
-  });
-}
-$('paneClose').onclick = function(){ $('pane').classList.remove('show'); };
-$('pane').onclick = function(e){ if (e.target === $('pane')) $('pane').classList.remove('show'); };
-document.addEventListener('keydown', function(e){ if (e.key === 'Escape') $('pane').classList.remove('show'); });
-
 /* ----------------------------------------------------------------- the views
    OWNER'S REDESIGN (2026-08-04): five views, one at a time, each owning the whole
    viewport under a six-control bar. The chrome that used to ride the top — title,
    version/pulse/spend/watch/lane chips, the live toggle, the theme button — is gone
    on purpose: it reported the harness to the seat, and the ledgers already hold all
    of it. The window shows the WORK, not the paperwork. */
-var pic = 'river', VIEWS = {river:1, journey:1, graph:1};
+var pic = 'river', VIEWS = {river:1, graph:1};
 function show(v){
   var isPic = !!VIEWS[v];
   $('stage').hidden = !isPic;
   $('v-coord').hidden = (v !== 'coord');
-  $('v-lanes').hidden = (v !== 'lanes');
   /* rebuild acts on a PICTURE. On the feeds there is nothing to rebuild, so the
      control is hidden rather than left there doing nothing. */
   $('picreload').hidden = !isPic;
@@ -835,7 +779,7 @@ $('picreload').onclick = function(){
    Polling stays ALWAYS ON at 5s — the live toggle was chrome, and a monitor you have
    to switch on is a monitor that is off when it matters. Theme follows the OS via
    prefers-color-scheme; there is no button because there is no decision to make. */
-function tick(){ pollCoord(); pollLanes(); }
+function tick(){ pollCoord(); }
 show('river');
 tick();
 setInterval(tick, 5000);
