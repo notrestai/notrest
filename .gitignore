@@ -18,3 +18,7 @@ compile/*/.fixture-scratch/
 # retired cases themselves live tracked at plugins/notrest/evals-legacy-external-runner/.
 # The live gate is /eval (skills/eval/scripts/eval.py), which writes nothing here.
 /evals/results/
+
+# the pulse layer: machine-written instrument readings, refreshed in the background.
+# Derived and disposable — the ledgers (COORD, COORD-AGENTS, spend) remain the record.
+/pulse/

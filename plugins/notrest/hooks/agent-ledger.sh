@@ -89,6 +89,44 @@ try:
     if not agent_id:
         agent_id = "?"
 
+    # ── TRANSCRIPT RESOLUTION + THE META SIDECAR (2026-08-05).
+    # ROOT CAUSE of 66 degraded receipts in 129: every field — model, tokens, snippet,
+    # size — was read from ONE source, the payload's transcript_path, so when that file
+    # was not on disk at stop time the whole receipt collapsed to `model=? tokens=unknown`
+    # and the offload audit lost its only evidence. Two repairs, both cheap:
+    #   (a) if the payload path does not resolve, look for the transcript where the
+    #       harness conventionally writes it — <session-dir>/subagents/agent-<id>.jsonl —
+    #       derived from the id we already have.
+    #   (b) the `.meta.json` SIDECAR is written at SPAWN (observed: meta 23:07, jsonl
+    #       23:08) and carries {"model": ...}. When the transcript is missing or still
+    #       being flushed, the sidecar still names the model — which is the one field the
+    #       routing policy is actually audited on. Sidecar is a FALLBACK, never an
+    #       override: a model scraped from the real transcript always wins.
+    def _resolve(tp, aid):
+        if tp:
+            cand = tp if os.path.isabs(tp) else os.path.join(os.getcwd(), tp)
+            if os.path.isfile(cand):
+                return cand
+        if aid and aid != "?":
+            base = os.path.dirname(tp) if tp else ""
+            for d in ([base] if base else []):
+                alt = os.path.join(d, "agent-%s.jsonl" % aid)
+                if os.path.isfile(alt):
+                    return alt
+        return tp if tp else ""
+
+    tpath = _resolve(tpath, agent_id)
+
+    def _meta_model(tp):
+        if not tp:
+            return ""
+        try:
+            mp = tp[:-6] + ".meta.json" if tp.endswith(".jsonl") else tp + ".meta.json"
+            with open(mp, "r", encoding="utf-8", errors="replace") as mf:
+                return str(json.load(mf).get("model") or "").strip()
+        except Exception:
+            return ""
+
     # ── scrape the transcript: model + byte size + the first ~160 chars of the
     # LAST assistant text (newlines flattened). Model comes from the assistant
     # message objects we already walk (msg.model, else obj.model on assistant
@@ -100,6 +138,10 @@ try:
     # zero usage objects means no number is written at all).
     model, snippet, size = "?", "?", "?"
     tok_total, tok_seen = 0, False
+    # SIZE FIELDS FOR THE SWARM BAND (2026-08-05): a lane's tool-call count and its
+    # wall-clock are the two numbers the decomposition gauge runs on, and both are free
+    # here — the transcript is already open. Never estimated: absent stays "?".
+    calls, first_ts, last_ts = 0, "", ""
     brief_text = None
     if tpath:
         p = tpath if os.path.isabs(tpath) else os.path.join(os.getcwd(), tpath)
@@ -145,6 +187,13 @@ try:
                     continue
                 if not isinstance(obj, dict):
                     continue
+                for _tk in ("timestamp", "ts", "time"):
+                    _tv = obj.get(_tk)
+                    if isinstance(_tv, str) and _tv:
+                        if not first_ts:
+                            first_ts = _tv
+                        last_ts = _tv
+                        break
                 role = obj.get("role") or obj.get("type")
                 msg = obj.get("message")
                 if isinstance(msg, dict):
@@ -185,6 +234,11 @@ try:
                     m_here = obj.get("model")
                 if m_here and m_here.strip() and m_here.strip() != "<synthetic>":
                     model = m_here.strip()
+                _c = msg.get("content") if isinstance(msg, dict) else obj.get("content")
+                if isinstance(_c, list):
+                    for _b in _c:
+                        if isinstance(_b, dict) and _b.get("type") == "tool_use":
+                            calls += 1
                 txt = flatten(content)
                 if txt and txt.strip():
                     last = txt
@@ -192,6 +246,24 @@ try:
                 flat = re.sub(r"\s+", " ", last).strip()
                 if flat:
                     snippet = flat[:160]
+
+    if model == "?":
+        _mm = _meta_model(tpath)
+        if _mm:
+            model = _mm
+
+    def _secs(a, b):
+        """Wall-clock between the transcript's first and last stamp. ISO-8601 only, and
+        an unparseable pair yields "?" rather than a number nobody can trust."""
+        try:
+            from datetime import datetime as _dt
+            f = lambda v: _dt.fromisoformat(v.replace("Z", "+00:00"))
+            return str(int(round((f(b) - f(a)).total_seconds())))
+        except Exception:
+            return "?"
+
+    secs = _secs(first_ts, last_ts) if (first_ts and last_ts) else "?"
+    calls_s = str(calls) if tok_seen or calls else "?"
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
     # flatten the payload-derived fields so a hostile/malformed value carrying
@@ -242,6 +314,7 @@ try:
                 brief_rel = ""
 
         entry = (f"- [{ts}] agent={agent_id} model={model} bytes={size} "
+                 f"calls={calls_s} secs={secs} "
                  f"| last: {snippet} | transcript: {tdisp}"
                  + (f" | brief: {brief_rel}" if brief_rel else "") + "\n")
 
@@ -338,8 +411,12 @@ try:
                 purpose = re.sub(r"\s+", " ", purpose).replace('"', "'").strip()
                 stokens = str(tok_total) if tok_seen else "unknown"
                 sgrade = "observed" if tok_seen else "estimate"
+                # calls/secs go AFTER purpose: spend.py's ENTRY_RE stops at grade=, and
+                # the seat-tax fixture pins `grade=<x> purpose="` as adjacent bytes. New
+                # fields append; they never reshape a line other readers already parse.
                 sline = (f"[{ts}] lane=subagent model={model} tokens={stokens} "
                          f"grade={sgrade} purpose=\"auto-receipt: {purpose}\""
+                         f" calls={calls_s} secs={secs}"
                          f"{marker}\n")
                 fd = os.open(sledger, os.O_RDWR | os.O_APPEND, 0o644)
                 with os.fdopen(fd, "a+", encoding="utf-8") as sf:
@@ -359,5 +436,11 @@ except Exception:
     pass
 sys.exit(0)
 PY
+
+# ── PULSE LAYER (2026-08-05): refresh the machine-written readings in the background.
+# Detached exactly like the session-start git-pull — subshell + & — so this hook returns
+# in milliseconds however long the instruments take. estate-pulse.sh debounces itself at
+# 60s, so a swarm landing five lanes produces ONE refresh, and it never writes COORD.
+( bash "$(cd "$(dirname "$0")" && pwd)/estate-pulse.sh" "$GIT_ROOT" lane-stop >/dev/null 2>&1 & ) 2>/dev/null
 
 exit 0

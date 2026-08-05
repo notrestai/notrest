@@ -117,6 +117,31 @@ except Exception:
     echo "[notrest] Cockpit is opted always-on here (port $CK_PORT) — probe with cockpit.py status; if down, start it, then OPEN it in the built-in browser pane so the owner sees the estate live (graph SKILL.md, cockpit section)."
   fi
 fi
+# ── pulse layer: one line of machine-written readings, if the estate has them. READ
+# ONLY — a SessionStart hook must never do work, so this never refreshes anything; the
+# refresh happens in the background off SubagentStop and SessionEnd.
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/pulse/pulse.json" ]; then
+  NR_PULSE="$(python3 -c '
+import json, sys, time, os
+try:
+    p = sys.argv[1]
+    d = json.load(open(p))
+    ins = d.get("instruments") or {}
+    age = int(time.time() - os.path.getmtime(p))
+    a = ("%ds" % age) if age < 90 else ("%dm" % (age // 60) if age < 5400 else "%dh" % (age // 3600))
+    parts = []
+    for k in ("doctor", "eval", "swarm", "compile"):
+        if k in ins:
+            parts.append("%s=%s" % (k, ins[k].get("exit")))
+    if parts:
+        sys.stdout.write(" · ".join(parts) + " · refreshed " + a + " ago by " +
+                         str(d.get("trigger", "?")))
+except Exception:
+    pass' "$REPO_ROOT/pulse/pulse.json" 2>/dev/null)"
+  if [ -n "$NR_PULSE" ]; then
+    echo "[notrest] Pulse (machine-written, background-refreshed): $NR_PULSE — full output in pulse/*.txt. Derived and disposable; the ledgers remain the record."
+  fi
+fi
 # ── compile: surface a ripe candidate the estate has already recorded three or
 # more times. This READS the last scan only — scanning belongs to /sessionend, and
 # a SessionStart hook must never do work. Silent when absent, unreadable, or when

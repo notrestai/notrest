@@ -180,7 +180,7 @@ run in seconds.
 
 ## 6. Where it stands
 
-**Done and running:** the engine (v4.0.0, 31 skills), all instruments green, the cockpit,
+**Done and running:** the engine (v4.1.0, 31 skills), all instruments green, the cockpit,
 the estate, the library.
 
 **Built and gated, not live:** rig.rest v0.1 — ~1,536 fixture assertions across six

@@ -1,5 +1,122 @@
 # Changelog — the notrest harness
 
+## 4.1.0 — 2026-08-05
+
+**"For the swarm we need a right eval and metric so we can break tasks more and more." Now the reading is an instrument — and the instruments start writing themselves.**
+
+Two halves, one release. The swarm gets a **gauge**, and the estate's instruments stop
+being on-demand: the COORD principle — *the machine writes, the session pays nothing* — is
+extended from **ledgers to readings** — and the layer keeps itself alive, watches every
+swarm, and detaches its daemons properly, which took a real casualty to learn.
+
+- **The owner's order is the spec.** The speed law that governs this swarm was born from
+  receipts read **by hand** — someone noticed narrow lanes finishing in ~20 calls and ~3.5
+  minutes while monoliths ground through 72-77 calls and 22-24 minutes. That reading was
+  never repeatable and never gated anything. `agentswarm/scripts/swarm.py report` makes it
+  an instrument: per-lane rows joined from `spend/ledger.md` + `COORD-AGENTS.md` + `briefs/`,
+  banded, aggregated, exit-coded. Zero model tokens, stdlib only.
+- **THE BAND IS MEASURED, NOT INVENTED.** GREEN ≤30 calls **and** ≤10 min · MONOLITH ≥45
+  calls **or** ≥15 min · WIDE in between (a note, not a flag). The thresholds sit in the gap
+  this estate's own receipts left. **Every flag prints the number that tripped it** — a
+  threshold reported without its measurement is an opinion.
+- **The band is TWO-SIDED, which is the part that makes it a metric and not a leaderboard.**
+  A gauge that only rewards smaller lanes drives you off the opposite cliff, so the report
+  prints **rework** — gate and correction lines in the same window — beside the size numbers.
+  Lanes shrinking while rework climbs is over-decomposition. Neither number is the metric;
+  the relationship is.
+- **ROOT CAUSE: half the receipts were blind.** Probing first, as commissioned: **66 of 129**
+  subagent receipts read `model=? tokens=unknown`. The three named agents left **no transcript
+  on disk at all** — not a race, the files never existed. The real defect was structural:
+  every field — model, tokens, snippet, size — was scraped from **one** source, the payload's
+  `transcript_path`, so one missing file collapsed the whole receipt and the offload audit
+  lost its only evidence. Two repairs: the hook now falls back to the transcript's
+  **conventional location by agent id**, and reads the **`.meta.json` sidecar** — written at
+  spawn (observed: meta 23:07, transcript 23:08) and carrying `{"model": …}` — as a fallback
+  for the one field the routing policy is actually audited on. Sidecar never overrides a real
+  scrape; it only fills a hole.
+- **Receipts now carry their own size.** `calls=<tool-call count> secs=<wall-clock>` are
+  derived at stop time from the transcript that is already open — free, and never estimated:
+  absent stays `?`. They append **after** `purpose=`, because `spend.py`'s parser is anchored
+  through `grade=` and the seat-tax fixture pins `grade=…purpose="` as adjacent bytes. New
+  fields append; they never reshape a line other readers already parse. For receipts written
+  before this release, `swarm.py` derives the same two numbers from the transcript on the fly.
+- **First live reading, on this repo, unflattering and therefore useful:** 129 lanes, **12
+  monoliths**, median 45 calls, max 325, and 66 receipts the band cannot see. The instrument's
+  first act was to indict the estate that built it — including the lane that wrote this
+  release, which is itself a monolith by its own gauge.
+- **THE PULSE LAYER — the instruments write themselves.** Owner: *"we need to write them
+  automatically like what we do with coord.md — the files need to get created immediately at
+  /notrest and then get written over at the end of each swarm, very fast in the background."*
+  `hooks/estate-pulse.sh` runs eval, compile scan, swarm report and doctor against the estate
+  and writes `pulse/{eval,compile,swarm,doctor}.txt` + `pulse/pulse.json`. It is **never
+  registered as its own event** — other hooks call it, **detached** (subshell + `&`, the
+  session-start git-pull pattern), so a caller returns in milliseconds. **Triggers:** every
+  lane receipt (SubagentStop), session end — which finally closes the compile-scan staleness
+  gap, since most sessions end without `/sessionend` — and `/notrest` establish **and**
+  continuation, seeding the layer the moment a project has one. **Readers:** session-start
+  echoes one line with the verdicts and the refresh age; the cockpit's pulse panel now
+  prefers `pulse/pulse.json` and **names the source it read**.
+- **DEBOUNCED AT 60s, AND IT NEVER WRITES COORD.** A swarm landing five lanes in two minutes
+  produces **one** refresh, not five — a non-blocking `flock` means a second caller yields
+  rather than queues. And no pulse ever touches the ledger: a `[pulse]` line per lane-stop
+  would spam COORD into uselessness, so banking a verdict stays a deliberate act.
+- **DOCTOR COST RULING — measured before deciding, then nothing changed.** The brief allowed
+  skipping or caching doctor's CLI-spawning TOKEN BUDGET check for background runs. Measured
+  on this machine first: the `claude` call is **~1s** and a full doctor run is **~1s**, while
+  the **compile scan is ~8s** and is the layer's actual cost. So doctor runs **complete and
+  unmodified**, and `pulse/doctor.txt` says so in its header. A background doctor that meant
+  something different from a hand-run doctor would be a layer that lies quietly — worse than
+  no layer, and not worth saving a second nobody is waiting on.
+- **Honest limits, stated in the skill and here.** The layer is **eventually-fresh**
+  (seconds after a stop, debounce-bounded to a minute), not realtime — the age is printed
+  with every verdict. The pulse files are **derived and disposable**; `/pulse/` is gitignored
+  and **the ledgers remain the record**.
+- **THE PULSE KEEPS ITSELF ALIVE.** Owner: *"my experience with the pulse is that it stops
+  between check ins and does need to manually restart."* Three answers. **The heartbeat
+  marker:** `pulse.json` carries `generated` (when) and `trigger` (what fired it —
+  lane-stop · session-end · establish · prompt-stale · manual), and every reader shows both,
+  so a pulse that stopped is visible as an old stamp instead of as silence. **Self-restart:**
+  `coord-nudge.sh` fires on every prompt, stats the pulse, and kicks a detached refresh when
+  it is absent or older than 30 minutes — event-driven when events flow, prompt-driven when
+  they do not, dead only when the machine is. The 60s debounce is still the floor, so a
+  burst of prompts produces one refresh.
+- **THE SWARM WATCHER — "a lane for checking on them", at zero standing token cost.**
+  `swarm.py watch` is a detached **poller, not a lane**: every ~30s it derives each visible
+  transcript's live call count and idle time, and names **STALL** (frozen ≥10 min, never
+  receipted) and **MONOLITH-IN-PROGRESS** (live calls past 45 while still running). It
+  self-terminates when every known lane has receipted. `coord-nudge.sh` surfaces its alerts
+  on the next prompt **only when one exists**, so a stalled lane finds the seat instead of
+  being discovered by hand reading mtimes. A **24h discovery window** was added after the
+  first live run classified eleven-day-old transcripts as running and fired "41 alerts" —
+  unreceipted history is not a running lane, and it is now counted in the header, never
+  alerted.
+- **BACKGROUNDS RUN CORRECTLY — the reparenting law, paid for in blood.** A refresher left
+  as a **child** of its spawner held that agent in mid-turn state: the harness notifies a
+  finished agent only when it has no live background children, so **a working lane looked
+  dead, was probed, and was killed mid-fix.** The lane in question was this one. Fixed by
+  closing the class, not the instance: all five spawning surfaces audited (four hooks, the
+  establish seeding, and the oldest pattern in the tree — session-start's git pull — not
+  grandfathered), the idiom chosen **by measurement** (`( cmd & )` → ppid 1 · plain `cmd &`
+  → ppid = spawner, the bug · python double-fork → ppid 1), and both daemons now
+  **self-daemonize** so they reparent even when a caller is careless. **The proof is the
+  PPID**: fixtures assert `ppid == 1` and an empty spawner tree, because a detach that looks
+  backgrounded but stays parented is precisely what caused this.
+- **And the seat's half of it, written down so the next one does not repeat it:** never
+  declare a lane dead on silence. A silent lane may be working, may have its notification
+  held hostage by a child, or may have **queued** your message rather than resumed on it —
+  probe transcript and file mtimes first, and **never TaskStop on silence alone**.
+  `swarm.py report` now carries a **`background:`** inventory (pid, ppid, age, cwd, with
+  `ANCIENT>24h` / `TEMP/FIXTURE-CWD` / `PARENTED` flags) so "is anything actually running?"
+  is one report away instead of pgrep archaeology.
+- Fixtures: **NEW** `pulse-layer-fixture.sh` (45 asserts: shape, five-fires-one-refresh, the
+  caller returning in <900ms, a detached refresh really landing, `/notrest` seeding, the
+  reader firing with the file and silent without, COORD proven byte-untouched — and a **trap
+  law**: it reaps every background refresher it spawns, because a fixture leaving strays on a
+  deleted mktemp dir is a defect). **NEW** `swarm-fixture.sh` (30 asserts over estates whose right answer is known by
+  construction — both kinds of monolith, a degraded receipt, and an old receipt whose
+  calls/secs must be *derived*; both exit codes, the rework pairing, `--json` key stability,
+  byte-identical re-runs). `seat-tax` 79 → 81, asserting the two new receipt fields.
+
 ## 4.0.0 — 2026-08-04
 
 **The estate is self-perpetuating: sessions come and go, the build continues.**

@@ -313,3 +313,8 @@ Two small seat tools ship beside the checker (both `bash -n` clean, typed exits)
 - `scripts/seat-tax-fixture.sh` — the contract test for both, plus the hook's auto-receipt.
 - `scripts/coord-volume-fixture.sh` — the contract test for the COORD volume law (seal at 500,
   never compact) enforced by the SessionEnd hook.
+- `scripts/pulse-layer-fixture.sh` — the contract test for the machine-written **pulse layer**
+  (`hooks/estate-pulse.sh`): files and JSON shape, five rapid fires producing one refresh, the
+  caller returning in under a second, a detached refresh really landing, `/notrest` seeding it,
+  the session-start echo firing with the file and silent without, and COORD proven
+  byte-untouched. It reaps every background refresher it spawns before deleting its sandbox.

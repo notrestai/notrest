@@ -183,8 +183,31 @@ def data_spend(root):
 
 
 def data_pulse(root):
-    """The newest `[pulse]` line already in COORD.md — pulse.sh writes it; the
-    cockpit never runs a pulse, it reads the one the estate recorded."""
+    """The estate's newest reading. PREFERS the machine-written pulse layer
+    (pulse/pulse.json, refreshed in the background off every swarm stop and session end)
+    and falls back to the newest `[pulse]` COORD line. Either way the cockpit NEVER runs a
+    pulse — it reads what the estate recorded — and the panel names WHICH SOURCE it read,
+    because a freshness number whose provenance is unstated is a freshness number nobody
+    can check."""
+    jf = root / "pulse" / "pulse.json"
+    try:
+        if jf.is_file():
+            blob = json.loads(jf.read_text(encoding="utf-8"))
+            ins = blob.get("instruments") or {}
+            body = " · ".join("%s=%s" % (k, (ins[k] or {}).get("exit"))
+                              for k in ("doctor", "eval", "swarm", "compile") if k in ins)
+            live = blob.get("swarm_live") or {}
+            return {"available": True, "source": "pulse/pulse.json",
+                    "source_note": "machine-written pulse layer, background-refreshed",
+                    "trigger": blob.get("trigger", "?"),
+                    "swarm_alerts": live.get("alerts") or [],
+                    "swarm_live_age": live.get("age_secs"),
+                    "ts": blob.get("generated"), "age_secs": int(time.time() - jf.stat().st_mtime),
+                    "verdict": "OK" if all((ins[k] or {}).get("exit") in (0, 5)
+                                           for k in ins) else "CHECK",
+                    "line": body, "instruments": ins}
+    except (OSError, ValueError, TypeError):
+        pass
     newest = None
     for fn in G.coord_volumes(root):
         text = G._slurp(root / fn)

@@ -21,6 +21,175 @@ split-brain rotation (no successor sessions). A round trip that took minutes and
 confirm-clicks becomes: one message spawns N concurrent lanes, results return in
 seconds to minutes, zero clicks.
 
+## The band is measured, not vibed
+
+The swarm had computed decomposition (`graph.py domains`) and a speed law, and no way to
+tell whether either was working. It has a gauge now:
+
+```bash
+python3 <agentswarm-skill>/scripts/swarm.py report --root . [--window 7d] [--json]
+```
+
+**Run it at build close.** It joins the receipts the estate already writes — `spend/ledger.md`,
+`COORD-AGENTS.md`, `briefs/` — into one row per lane (agent · model · tokens · **calls** ·
+**secs** · brief-banked), derives calls/secs from the transcript for older receipts that
+predate the field, and bands every lane. Zero model tokens; the window is anchored on the
+newest receipt rather than the wall clock, so the reading is reproducible.
+
+| band | rule | meaning |
+|---|---|---|
+| **GREEN** | ≤ 30 calls **and** ≤ 10 min | a lane the size the speed law describes |
+| **WIDE** | anything between | a note, not a flag |
+| **MONOLITH** | ≥ 45 calls **or** ≥ 15 min | a decomposition failure |
+
+**The numbers are this estate's own, not invented:** narrow lanes here clustered at ~20
+calls / ~3.5 min while monoliths ran 72-77 calls / 22-24 min, and the thresholds sit in the
+gap. Every flag prints **the number that tripped it** — a threshold reported without its
+measurement is an opinion.
+
+**A MONOLITH flag is a correction owed to the NEXT contract, never a shrug.** The owner's
+order is *"break tasks more and more"*: when a lane comes back flagged, the next commission
+for that work is split further. A flag you note and do not act on has cost you the
+measurement and bought nothing.
+
+**THE BAND IS TWO-SIDED.** A gauge that only rewards smaller lanes drives you off the other
+cliff, so `report` prints **rework** — gate and correction lines in the same window — beside
+the size numbers. **Lanes shrinking while rework climbs is over-decomposition**: the work
+was cut below the size where a lane can carry its own context, and the repair rounds are
+paying for it. Read the pair, never the size alone. Neither number is the metric; the
+relationship is.
+
+**At build close, bank the verdict as ONE COORD line** — the packet a successor reads then
+carries the swarm's last reading for free, with no join to recompute:
+`- [YYYY-MM-DD HH:MMZ] [swarm] report: <lanes> lanes · <monoliths> MONOLITH · median <n> calls · rework <n> | evidence: swarm.py exit <x>`
+
+**Exit 0** all in band · **5** monoliths and/or degraded receipts present · **6** no usable
+data. Degraded receipts are reported and counted separately, because a lane the band cannot
+see is not a lane that passed.
+
+**Lane commissions are contracts, not runbooks.** A commission says what to deliver and how
+it will be judged; it does not enumerate keystrokes. When the *operator* needs exact ordered
+commands with verify-and-rollback per step, that is `/actionplan` — a different artifact for
+a different reader, and neither one is a substitute for the other.
+
+### The swarm is watched, not trusted
+
+**Dispatching two or more concurrent lanes — or any build expected to run past ten
+minutes — starts the watcher:**
+
+```bash
+( python3 <agentswarm-skill>/scripts/swarm.py watch --root . >/dev/null 2>&1 & )
+```
+
+A **detached poller, not a lane**: zero model tokens, no context, no seat attention until
+it has something to say. Every ~30s it discovers the lane transcripts it can see, derives
+each one's **live call count** and **how long since it last grew**, and writes
+`pulse/swarm-live.txt` (plus `swarm_live` in `pulse.json`). It names two things:
+
+- **STALL** — a transcript frozen ≥10 min with no receipt. The lane is wedged, not thinking.
+- **MONOLITH-IN-PROGRESS** — live calls past 45 while still running. You know the next
+  contract for that work has to split further *before* the lane even lands.
+
+It **self-terminates** once every known lane has receipted and nothing has grown for four
+polls; a watcher that outlives its swarm is a background process nobody asked for.
+`--once` does a single deterministic sweep.
+
+**The alerts reach you without being asked for.** `coord-nudge.sh` surfaces one line on the
+next prompt **only when an alert exists** — so a stalled lane finds the seat instead of
+being discovered by hand reading file mtimes, which is exactly the manual probe this
+replaces. **Act on it: probe, resume, or stop the lane.** An additional Opus judgment lane
+is **optional** and only when the watcher's facts genuinely need interpreting — script
+first, model second.
+
+### Backgrounds run correctly — the reparenting law
+
+**A background process is either reparented to init or dead before the turn ends. There is
+no third state.** Live-proven on 2026-08-05, on the lane that built this: a refresher left
+as a *child* of its spawner held that agent in mid-turn state, and the Claude harness
+notifies a finished agent **only when it has no live background children** — so a working
+lane looked dead from outside, was probed, and was killed. A daemon parented to its spawner
+can cost you the agent that started it.
+
+**The blessed idiom, chosen by test and not by lore** (macOS bash 3.2, no `setsid` binary):
+
+```bash
+( cmd >/dev/null 2>&1 & ) 2>/dev/null     # ppid=1  ✔  the intermediate shell exits
+cmd >/dev/null 2>&1 &                      # ppid=spawner  ✘  THE BUG
+```
+
+Measured, all three: `( cmd & )` → **ppid 1**; plain `cmd &` → **ppid = the spawner**;
+python `fork/setsid/fork` → **ppid 1**. Shell spawners use the double-subshell; python
+spawners use `start_new_session=True` or the double-fork. `estate-pulse.sh` and
+`swarm.py watch` additionally **self-daemonize**, so they reparent even when a careless
+caller backgrounds them naively.
+
+**THE PROOF IS THE PPID, never the appearance of backgrounding.** Fixtures assert the
+surviving process's `ppid == 1` and that the spawner's own tree has no survivors. A detach
+that "looks backgrounded" but stays parented is exactly what held a lane hostage; the
+assert is the reparenting and everything else is vibes.
+
+**Fixtures own their children deliberately** — a fixture that starts a server under test
+*should* be its parent, and must reap it in a trap. That is the one legitimate exception,
+and it is why the trap law exists: the wedged child in a deleted sandbox is the same
+species that caused the incident.
+
+**Is anything actually running?** Ask the instrument, not `pgrep`: `swarm.py report` and
+`pulse/swarm-live.txt` carry a **`background:`** section — every live notrest process with
+its pid, ppid, age and cwd, flagging `ANCIENT>24h`, `TEMP/FIXTURE-CWD` (a wedged sandbox
+child) and `PARENTED(ppid=…)` (a detach that failed).
+
+### Never declare a lane dead on silence
+
+**Probe before concluding death.** A silent lane has at least three innocent explanations:
+it is working and has not written yet; its notification is **held hostage by a background
+child**; or your message **queued** rather than resumed it. Check the evidence first —
+transcript and file mtimes, `swarm.py watch`, the `background:` inventory — and only then
+judge. **Never `TaskStop` on silence alone.** That mistake was made on 2026-08-05, on a lane
+that was mid-fix at the moment it was killed.
+
+**The queued-vs-resumed tell:** a resumed lane changes something — a new transcript write, a
+new file mtime. A queued message changes nothing until the lane next wakes. If nothing moved
+after a send, assume **queued**, not ignored, and certainly not dead.
+
+### The readings write themselves
+
+You rarely need to run any of this by hand. `hooks/estate-pulse.sh` refreshes the cheap
+instruments — eval, compile scan, **swarm report**, doctor — in the background at the
+estate's own moments: **after every lane receipt** (SubagentStop), **at session end**, and
+**the moment a project is established or continued** by `/notrest`. Output lands in
+`pulse/`: one `.txt` per instrument plus `pulse/pulse.json`, which is what session-start
+and the cockpit read. It is the COORD principle applied to readings — the machine writes,
+the session pays nothing.
+
+**Honest limits, because a background layer that oversells itself is worse than none:**
+
+- **Eventually-fresh, not realtime.** A refresh starts seconds after a lane stops and is
+  **debounced at 60s**, so a swarm landing five lanes produces **one** refresh, not five.
+  A reading can therefore be up to a minute behind the estate. The age is printed with
+  every verdict; read it.
+- **Nothing is skipped or cached.** doctor runs complete in background pulses, TOKEN BUDGET
+  and its `claude` CLI call included — measured at ~1s on the machine this was built for,
+  against ~8s for the compile scan, which is the layer's real cost. A background doctor that
+  meant something different from a hand-run doctor would be a quiet lie.
+- **The pulse files are derived and disposable.** `/pulse/` is gitignored here and should be
+  in your project too. **The ledgers remain the record** — COORD, COORD-AGENTS and the spend
+  ledger are the trail; pulse is a reading of it, regenerable at any time.
+- **The pulse never writes COORD.** A `[pulse]` line per lane-stop would spam the ledger
+  into uselessness. Banking a verdict to COORD stays a deliberate act — the build-close
+  `[swarm]` line above, and `pulse.sh`'s own `[pulse]` line.
+
+Fixture: `bash <doctor-skill>/scripts/pulse-layer-fixture.sh` — 25 assertions over the
+layer: files and JSON shape, five rapid fires producing one refresh, the caller returning in
+under a second, a detached refresh really landing, seeding at `/notrest`, the session-start
+echo firing with the file and staying silent without it, and COORD proven byte-untouched
+throughout. It reaps every background refresher it spawns before deleting its sandbox — a
+fixture that leaves strays chewing on a deleted mktemp dir is a defect.
+
+Fixture: `bash <agentswarm-skill>/scripts/swarm-fixture.sh` — 30 assertions over synthetic
+estates whose right answer is known by construction (a green lane, both kinds of monolith, a
+degraded receipt, and an old receipt whose calls/secs must be *derived* from its transcript),
+plus both exit codes, the rework pairing, `--json` key stability and byte-identical re-runs.
+
 ## The model rule (owner-set 2026-07-15, absolute — regardless of what the seat is)
 
 **Every offloaded job runs on Opus.** Set `model: "opus"` explicitly — the alias, which
@@ -165,6 +334,15 @@ The seat never hand-builds a feature; it specs, gates, and ships:
    — and no link scanner can see it. The tool **PROPOSES** the partition; the seat
    **REVIEWS** it before dispatch. A partition accepted unreviewed is a guess wearing a
    uniform.
+
+
+> **Amendments reach a running lane at its NEXT RESUME, never mid-flight.** A message sent
+> while a lane is working lands in its queue and is read when it next wakes — so the seat
+> amends **between rounds**, or re-points the lane on resume. And a lane told to "execute
+> the spec you were sent" when no such message is in its context **says so plainly and
+> implements from what it can actually see**, rather than reconstructing a spec it never
+> read. Twice in this arc that correction was the difference between a faithful build and a
+> confident fabrication.
 
 ## Synthesis at fan-in — digest, never verdict
 

@@ -547,6 +547,9 @@ def cmd_continuation(args):
         print("\nAGENT TAIL (last %d)" % len(p["agents_tail"]))
         for ln in p["agents_tail"]:
             print("  %s" % ln)
+    if seed_pulse(root):
+        print("\n  pulse: refreshing in the background → pulse/pulse.json + pulse/*.txt "
+              "(read them, do not wait on them)")
     print("\nnotrest: CONTINUABLE — %s (exit 0)" % root)
     return EXIT_OK
 
@@ -681,6 +684,25 @@ def write_claude(root, kp, failures):
     return wrote
 
 
+def seed_pulse(root):
+    """Fire the background pulse refresher, DETACHED. The owner's order is that the
+    readings exist from the moment a project is established — "created immediately at
+    /notrest" — so establishment and continuation both kick it and neither waits. The
+    hook debounces itself; a failure here is silent by design and never blocks the verb."""
+    hook = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "..", "..", "hooks", "estate-pulse.sh")
+    hook = os.path.realpath(hook)
+    if not os.path.isfile(hook):
+        return False
+    try:
+        subprocess.Popen(["bash", hook, root, "establish"], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                         start_new_session=True)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def cmd_establish(args):
     root, err = resolve_root(args.root)
     if err:
@@ -738,6 +760,10 @@ def cmd_establish(args):
     emit(cs, "COORD", cd)
     emit(ks, "CLAUDE-BLOCK", kd)
     code = grade([cs, ks])
+    if seed_pulse(root):
+        emit(INFO, "PULSE", "instrument readings seeding in the background → pulse/*.txt "
+                            "+ pulse/pulse.json (derived, disposable, refreshed on every "
+                            "swarm stop and session end)")
     if failures:
         tail = " · wrote: nothing (writes failed: %s)" % ", ".join(sorted(set(failures)))
     else:

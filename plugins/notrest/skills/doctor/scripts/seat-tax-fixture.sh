@@ -85,6 +85,17 @@ if echo "$LINE1" | grep -qE '^\[[^]]+\] lane=[^ ]+ model=[^ ]+ tokens=[^ ]+ grad
 else
   no "auto-receipt: matches spend.py's report regex shape"
 fi
+# v4.1.0 — the swarm band runs on these two derived fields, so the receipt must carry
+# them for a transcript that has tool calls and timestamps, and degrade to ? when it
+# cannot. Free at stop time: the transcript is already open.
+case "$LINE1" in
+  *"calls="*) ok "auto-receipt: carries a tool-call count for the swarm band" ;;
+  *) no "auto-receipt: carries a tool-call count for the swarm band" ;;
+esac
+case "$LINE1" in
+  *"secs="*) ok "auto-receipt: carries a wall-clock for the swarm band" ;;
+  *) no "auto-receipt: carries a wall-clock for the swarm band" ;;
+esac
 [ -s "$A/COORD-AGENTS.md" ] && ok "COORD-AGENTS.md still written" || no "COORD-AGENTS.md still written"
 
 # ── 2. IDEMPOTENCE: a second hook run for the SAME agent adds nothing ─────────

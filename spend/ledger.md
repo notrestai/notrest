@@ -126,3 +126,5 @@
 [2026-08-04 21:01Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ac2514be97e4c0e38
 [2026-08-04 21:15Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a22b39971dde30b0c
 [2026-08-04 21:20Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ad9c3f0dc6c901805
+[2026-08-04 21:27Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a233b3e62f0af5292
+[2026-08-04 21:34Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=af5dbc2842dbb1266

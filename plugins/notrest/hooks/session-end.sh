@@ -220,4 +220,10 @@ except Exception:
 sys.exit(0)
 PY
 
+# ── PULSE LAYER (2026-08-05): refresh the machine-written readings in the background.
+# Detached exactly like the session-start git-pull — subshell + & — so this hook returns
+# in milliseconds however long the instruments take. estate-pulse.sh debounces itself at
+# 60s, so a swarm landing five lanes produces ONE refresh, and it never writes COORD.
+( bash "$(cd "$(dirname "$0")" && pwd)/estate-pulse.sh" "$GIT_ROOT" session-end >/dev/null 2>&1 & ) 2>/dev/null
+
 exit 0
