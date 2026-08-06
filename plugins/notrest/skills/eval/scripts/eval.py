@@ -789,15 +789,13 @@ def check_kernel(root, plug, skills):
     law = "the kernel surfaces are named where they are claimed, and carry the refuter law"
     out = []
     cm = os.path.join(root, "CLAUDE.md")
-    txt = read(cm)
-    # Absent inputs SKIP, never FAIL — eval's own doctrine. A synthetic harness or a
-    # plugin cache dir legitimately has no CLAUDE.md, and a check that reddens there
-    # would fire on every other check's fixture case instead of only its own.
-    # The convention belongs to a tree that ships the verb enforcing it. No refuter (or
-    # no CLAUDE.md) → no kernel law to hold anyone to, so SKIP. A synthetic fixture
-    # harness lands here, which is what keeps this check reddening only its own case.
-    if txt is None or "refuter" not in skills:
+    # EXISTENCE IS os.path.isfile, NOT the read() sentinel: eval's read() returns "" on
+    # failure, never None, so an `is None` test silently judged a MISSING CLAUDE.md as an
+    # empty one and FAILed where it owed a SKIP. Caught by this check's own fixture in
+    # v4.2.1 — the exact reason unfixtured checks are debt, not savings.
+    if not os.path.isfile(cm) or "refuter" not in skills:
         return [R(ID, "SKIP", law, "no refuter skill / no CLAUDE.md — no kernel law here")]
+    txt = read(cm)
     if KERNEL_MARK not in txt:
         out.append(R(ID, "FAIL", law, "%s  (no %r block)" % (rel_p(root, cm), KERNEL_MARK),
                      "name the kernel surfaces in CLAUDE.md"))
@@ -828,11 +826,35 @@ def check_release_surface(root, _plug, _skills):
         return [R(ID, "SKIP", law, "no %s — nothing to hold the release to" % GOLDEN_FILE)]
     want = [l.strip() for l in txt.splitlines() if l.strip() and not l.startswith("#")]
     missing = [w for w in want if not os.path.exists(os.path.join(root, w))]
+    out = []
     if missing:
-        return [R(ID, "FAIL", law,
-                  "%s  (golden surface names %d file(s) that do not exist: %s)"
-                  % (GOLDEN_FILE, len(missing), ", ".join(missing[:4])),
-                  "fix the path, or regenerate: ls the surfaces and update %s" % GOLDEN_FILE)]
+        out.append(R(ID, "FAIL", law,
+                     "%s  (golden surface names %d file(s) that do not exist: %s)"
+                     % (GOLDEN_FILE, len(missing), ", ".join(missing[:4])),
+                     "fix the path, or regenerate: ls the surfaces and update %s" % GOLDEN_FILE))
+    # THE OTHER HALF: a release that touches a surface nobody agreed on. Uncommitted
+    # release-shaped edits are compared against the golden list; a tree with no git (a
+    # fixture sandbox, a plugin cache dir) simply skips this half rather than guessing.
+    rc, changed = 0, ""
+    try:
+        pr = subprocess.run(["git", "diff", "--name-only", "HEAD"], cwd=root,
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)
+        rc, changed = pr.returncode, pr.stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.SubprocessError):
+        rc = 1
+    if rc == 0:
+        RELEASE_SHAPED = ("CHANGELOG.md", "README.md", ".claude-plugin/", "docs/")
+        extra = [f for f in (l.strip() for l in changed.splitlines())
+                 if f and f not in want and any(f.startswith(m) or f == m
+                                                for m in RELEASE_SHAPED)]
+        if extra:
+            out.append(R(ID, "FAIL", law,
+                         "%s  (release touched %d surface(s) not in the golden list: %s)"
+                         % (GOLDEN_FILE, len(extra), ", ".join(sorted(extra)[:4])),
+                         "add it to %s in this same commit, and say why in the CHANGELOG"
+                         % GOLDEN_FILE))
+    if out:
+        return out
     return [R(ID, "PASS", law, "%d release surface(s) all present" % len(want))]
 
 

@@ -1,5 +1,32 @@
 # Changelog — the notrest harness
 
+## 4.2.1 — 2026-08-06
+
+**Fixture debt, paid — and the checks were wrong in a way only the fixtures could show.**
+
+- **The three checks adopted in 4.2.0 are now fixtured**, inside `eval-fixture.sh`'s own
+  helper scope this time: 28 → **39 assertions**. NETWORK-EGRESS — an unlisted `urllib`
+  import FAILs, an allowlisted path with no loopback binding FAILs, a compiled runtime
+  importing the network FAILs, a clean tree passes. KERNEL-REVIEW — named in both homes
+  passes, named in only one FAILs, named in neither FAILs, no CLAUDE.md SKIPs.
+  RELEASE-SURFACE — all present passes, a missing surface FAILs, and a release touching a
+  surface **not** on the golden list now FAILs too (that half did not exist in 4.2.0: the
+  check verified presence but never absence, so its own name over-promised).
+- **The fixture immediately found a real bug in KERNEL-REVIEW.** Its "absent input SKIPs"
+  branch tested `txt is None` — but eval's `read()` returns `""` on failure, **never
+  None**. So a **missing** CLAUDE.md was judged as an empty one and FAILed where it owed a
+  SKIP. Existence is now `os.path.isfile`. Shipped broken in 4.2.0, invisible for exactly
+  as long as the check went unfixtured.
+- **THE BALLOON-CLAUSE POSTMORTEM.** The 4.2.0 attempt at these cases was written
+  **outside the harness's helper scope** — calling `chk`/`st`/`runjson`, three helpers this
+  fixture has never had (its real one is `inject <label> <check-id> <mutation>`). With the
+  sandbox variable unset, the cases tried to write to **`/evals` and `/CHANGELOG.md`**:
+  absolute paths, outside every sandbox. **They failed only because the filesystem was
+  read-only — luck, not a test.** Parking them was right; the lesson is that *never guess
+  the contract* applies to a fixture's own helpers as much as to a script's flags. The
+  sandbox law now carries its own assertion: the fixture asserts nothing was written
+  outside its `mktemp` dir.
+
 ## 4.2.0 — 2026-08-06
 
 **We analysed their OS and kept the laws: theirs enforced in code what ours audited after the fact. Now ours does both.**

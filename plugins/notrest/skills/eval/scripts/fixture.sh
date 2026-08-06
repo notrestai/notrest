@@ -222,6 +222,78 @@ fi
 # ------------------------------------- ROUTE-CONFORMANCE: WARN-grade, never a gate
 # A recorded route claims work went somewhere. These assert the claim is judged against
 # the trail — and that the check stays a WARN so a mid-flight ledger never blocks a ship.
+# ------------------------------------- v4.2.1 · the three adopted checks
+# Written INSIDE this harness's own helper scope this time, using its own idiom:
+# inject <label> <expected-check-id> <mutation>, every path under $W/$P (the sandbox
+# copy), never an absolute path. The previous attempt was written outside this scope
+# and tried to write to /evals and /CHANGELOG.md — it failed only because the
+# filesystem was read-only, which is luck, not a test.
+
+# NETWORK-EGRESS · an unlisted network caller. Appended to a script the SKILL.md ALREADY
+# names, so SCRIPT-OWNS-SCANNING stays green and exactly one check flips.
+inject "unlisted network import" NETWORK-EGRESS \
+  'printf "import urllib.request\n" >> "$P/skills/graph/scripts/graph.py"'
+
+# NETWORK-EGRESS · allowlisted as loopback, but nothing binds it to 127.0.0.1. The
+# SKILL.md gains the reference in the same mutation, so only this check reddens.
+inject "allowlisted path that is not loopback-bound" NETWORK-EGRESS \
+  'printf "import socket\n" > "$P/skills/graph/scripts/cockpit.py";
+   printf "Script: \`scripts/cockpit.py\` — the live window.\n" >> "$P/skills/graph/SKILL.md"'
+
+# NETWORK-EGRESS · a compiled runtime must import no network at all, as its own law says.
+inject "compiled runtime reaching the network" NETWORK-EGRESS \
+  'mkdir -p "$W/compile/demo" && printf "import socket\n" > "$W/compile/demo/run.py"'
+
+# KERNEL-REVIEW · a tree that ships refuter + CLAUDE.md but never names the kernel.
+inject "kernel surfaces unnamed" KERNEL-REVIEW \
+  'mkdir -p "$P/skills/refuter";
+   printf -- "---\nname: refuter\ndescription: \"Attack one target. Use on /refuter.\"\n---\n# refuter\n" > "$P/skills/refuter/SKILL.md";
+   printf "# project\n" > "$W/CLAUDE.md"'
+
+# KERNEL-REVIEW · named in CLAUDE.md but NOT in refuter — one home is not both.
+inject "kernel named in only one of its two homes" KERNEL-REVIEW \
+  'mkdir -p "$P/skills/refuter";
+   printf -- "---\nname: refuter\ndescription: \"Attack one target. Use on /refuter.\"\n---\n# refuter\n" > "$P/skills/refuter/SKILL.md";
+   printf "# project\n\n## KERNEL SURFACES\nhooks/, establish.py, ledger writers.\n" > "$W/CLAUDE.md"'
+
+# RELEASE-SURFACE · the golden list names a file that does not exist.
+inject "golden surface names a missing file" RELEASE-SURFACE \
+  'mkdir -p "$W/evals" && printf "docs/does-not-exist.html\n" > "$W/evals/golden-release-surface.txt"'
+
+# ---- the PASSING sides, asserted directly (inject only expresses failures) ----
+passcase() {  # passcase <label> <mutation>
+  label="$1"; shift
+  W="$TMP/w"; rm -rf "$W"; cp -R "$BASE" "$W"
+  P="$W/plugins/notrest"
+  ( eval "$@" )
+  python3 "$EVAL" check --root "$W" > "$TMP/out" 2>&1
+  rc=$?
+  if [ "$rc" -eq 0 ]; then ok "$label -> still exits 0"
+  else bad "$label -> exit $rc"; grep -E '^FAIL ' "$TMP/out"; fi
+}
+
+passcase "a clean tree reaches no network" 'true'
+passcase "kernel named in BOTH homes passes" \
+  'mkdir -p "$P/skills/refuter";
+   printf -- "---\nname: refuter\ndescription: \"Attack one target. Use on /refuter.\"\n---\n# refuter\n## KERNEL SURFACES\nhooks/, establish.py, ledger writers.\n" > "$P/skills/refuter/SKILL.md";
+   printf "# project\n\n## KERNEL SURFACES\nhooks/, establish.py, ledger writers.\n" > "$W/CLAUDE.md"'
+# The base harness ships a CLAUDE.md, so this case REMOVES it to reach the SKIP path —
+# a check whose inputs are absent must skip, not redden (eval's own doctrine).
+passcase "no CLAUDE.md at all SKIPs the kernel check" \
+  'mkdir -p "$P/skills/refuter";
+   printf -- "---\nname: refuter\ndescription: \"Attack one target. Use on /refuter.\"\n---\n# refuter\n" > "$P/skills/refuter/SKILL.md";
+   rm -f "$W/CLAUDE.md"'
+passcase "a golden list whose surfaces all exist" \
+  'mkdir -p "$W/evals" && printf "CHANGELOG.md\n" > "$W/evals/golden-release-surface.txt";
+   printf "x\n" > "$W/CHANGELOG.md"'
+
+# THE SANDBOX LAW, now asserted: this fixture writes only inside its own mktemp dir.
+if [ -e /evals ] || [ -e /golden-release-surface.txt ]; then
+  bad "sandbox law: this fixture wrote outside its mktemp dir"
+else
+  ok "sandbox law: nothing was written outside the mktemp sandbox"
+fi
+
 mkcoord() { cat > "$TMP/coord.in"; }
 
 # conform <label> <want-exit> <want-conformance-warns> [extra-setup-shell]
