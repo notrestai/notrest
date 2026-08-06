@@ -23,7 +23,10 @@ for f in "$END_HOOK" "$START_HOOK"; do
 done
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT INT TERM
+# TRAP LAW: session-end.sh now fires the pulse refresher, which is DETACHED and may still
+# be writing into the sandbox when the trap runs ("Directory not empty"). Reap our own
+# daemons first — a fixture owns every process it causes, even the reparented ones.
+trap 'pkill -f "estate-pulse.sh $TMP" 2>/dev/null; sleep 0.4; rm -rf "$TMP"' EXIT INT TERM
 
 md5of() { md5 -q "$1" 2>/dev/null || md5sum "$1" 2>/dev/null | cut -d' ' -f1; }
 ledger_n() { grep -c '^- ' "$1" 2>/dev/null || echo 0; }

@@ -137,3 +137,4 @@
 [2026-08-06 00:32Z] lane=subagent model=claude-opus-5 tokens=3828970 grade=observed purpose="auto-receipt: Read-only comparison complete; 23 tool calls. Both trees unt" agent=a702307af19f53a81
 [2026-08-06 00:32Z] lane=subagent model=claude-opus-5 tokens=2953297 grade=observed purpose="auto-receipt: **CLONE** = `/private/tmp/claude-501/-Users-ethanabot-Deskto" agent=a91696d5bf9445b4c
 [2026-08-06 00:32Z] lane=subagent model=claude-opus-5 tokens=3495302 grade=observed purpose="auto-receipt: One last check: does a deployed instance call back to any Cl" agent=ada63408a0aebc05f
+[2026-08-06 00:34Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=af6af5cfcdf0a0cb5
