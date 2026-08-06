@@ -132,6 +132,49 @@ t "--window narrows the lane set" "$(J "$W/jw" window_days)" "1"
 python3 "$SW" report --root "$E" --window bogus >/dev/null 2>&1
 t "a malformed --window is a usage error, not a guess" "$?" "2"
 
+echo "── discovery: the session TASKS DIR is a first-class transcript location"
+# LIVE FINDING 2026-08-05: the first real swarm read `watching 0` and self-terminated,
+# because its lanes transcribed to /private/tmp/claude-501/<slug>/<session>/tasks/<id>.output
+# rather than the classic store. The "invisible elsewhere" limit covered the MAIN case.
+TR_ROOT="$W/tasksproj"; mkdir -p "$TR_ROOT/spend"
+printf '# ledger\n' > "$TR_ROOT/spend/ledger.md"
+SLUG="-$(python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]).lstrip('/').replace('/','-'))" "$TR_ROOT")"
+TD="/private/tmp/claude-501/$SLUG/fixture-session/tasks"
+mkdir -p "$TD"
+cleanup_tasks(){ rm -rf "/private/tmp/claude-501/$SLUG"; }
+trap 'cleanup_tasks; rm -rf "$W"' EXIT
+
+# a lane that is RUNNING: fresh mtime, 3 calls, no receipt → watched, no alert
+{ echo '{"timestamp":"2026-08-05T21:00:00Z","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}'
+  echo '{"timestamp":"2026-08-05T21:01:00Z","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Read","input":{}}]}}'
+} > "$TD/tasklane1.output"
+python3 "$SW" watch --root "$TR_ROOT" --once > /dev/null 2>&1
+LIVE="$TR_ROOT/pulse/swarm-live.txt"
+has "a tasks-dir transcript is DISCOVERED" "tasklane1" "$LIVE"
+has "…and the header names the tasks location" "session tasks dir" "$LIVE"
+t "…counted against the tasks source, not the classic one" \
+  "$(grep -o '1 from the session tasks dir' "$LIVE" | head -1)" "1 from the session tasks dir"
+t "a fresh tasks-dir lane raises no alert" "$(grep -c '^ALERT' "$LIVE" 2>/dev/null || true)" "0"
+
+# the SAME lane frozen past the stall threshold → STALL, exactly like the classic store
+python3 -c "
+import os,sys,time
+p=sys.argv[1]; old=time.time()-(11*60)
+os.utime(p,(old,old))" "$TD/tasklane1.output"
+python3 "$SW" watch --root "$TR_ROOT" --once > /dev/null 2>&1
+has "a frozen tasks-dir lane raises STALL" "ALERT STALL tasklane1" "$LIVE"
+
+# a receipted tasks-dir lane is done, not stalled
+printf '[2026-08-05 21:05Z] lane=subagent model=claude-opus-4 tokens=10 grade=observed purpose="auto-receipt: x" calls=2 secs=60 agent=tasklane1\n' \
+  >> "$TR_ROOT/spend/ledger.md"
+python3 "$SW" watch --root "$TR_ROOT" --once > /dev/null 2>&1
+t "a receipted tasks-dir lane stops alerting" "$(grep -c '^ALERT' "$LIVE" 2>/dev/null || true)" "0"
+
+# BOTH locations empty → watching 0 and a clean exit is still correct
+EMPTY="$W/emptyproj"; mkdir -p "$EMPTY"
+python3 "$SW" watch --root "$EMPTY" --once > /dev/null 2>&1
+t "both locations empty → exit 0, nothing invented" "$?" "0"
+
 echo
 echo "swarm-fixture: $PASS pass, $FAIL fail"
 [ "$FAIL" -eq 0 ] || exit 1

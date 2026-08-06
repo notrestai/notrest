@@ -113,6 +113,20 @@ try:
                 alt = os.path.join(d, "agent-%s.jsonl" % aid)
                 if os.path.isfile(alt):
                     return alt
+            # THE SESSION TASKS DIR (2026-08-05). A lane spawned by the Agent tool may
+            # transcribe only to /private/tmp/claude-501/<slug>/<session>/tasks/<id>.output
+            # — the same discovery gap that made the watcher read `watching 0`. One
+            # discovery, two consumers: the watcher sweeps it, and so does this scrape.
+            try:
+                slug = "-" + os.path.realpath(os.environ.get("GIT_ROOT", "")).lstrip(
+                    "/").replace("/", "-")
+                tb = os.path.join("/private/tmp/claude-501", slug)
+                for sess in (os.listdir(tb) if os.path.isdir(tb) else []):
+                    cand = os.path.join(tb, sess, "tasks", "%s.output" % aid)
+                    if os.path.isfile(cand):
+                        return cand
+            except OSError:
+                pass
         return tp if tp else ""
 
     tpath = _resolve(tpath, agent_id)

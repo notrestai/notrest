@@ -338,58 +338,90 @@ POLL_SECS = 30
 QUIET_ROUNDS = 4              # nothing grew for this many polls → self-terminate
 
 
-def transcript_dir(root):
-    """Where this project's lane transcripts live. Best-effort by construction: the
-    harness owns that path, we do not, so a lane transcribing elsewhere is INVISIBLE to
-    the watcher and the output says how many it can actually see."""
-    slug = "-" + os.path.realpath(root).lstrip("/").replace("/", "-")
-    base = os.path.expanduser(os.path.join("~/.claude/projects", slug))
-    if not os.path.isdir(base):
-        return None
-    best, newest = None, -1
-    for d, _sub, _f in os.walk(base):
-        if os.path.basename(d) != "subagents":
-            continue
+def project_slug(root):
+    return "-" + os.path.realpath(root).lstrip("/").replace("/", "-")
+
+
+def transcript_sources(root):
+    """[(label, path, agent_id)] across EVERY location a lane may transcribe to.
+
+    LIVE FINDING 2026-08-05: the first real swarm under the new laws read `watching 0`
+    and self-terminated seconds after dispatch. Its lanes were transcribing to the
+    SESSION TASKS DIR — `/private/tmp/claude-501/<slug>/<session>/tasks/<agent-id>.output`
+    — not to `~/.claude/projects/<slug>/**/subagents/`. The disclosed limit ("a lane
+    transcribing elsewhere is invisible") turned out to cover the PRIMARY case: lanes
+    spawned by the Agent tool in this harness's own sessions. Both locations are now
+    swept, and the header says what each contributed.
+
+    Deduped by AGENT ID, because in some sessions the tasks entry is a SYMLINK back into
+    the classic location — the same lane, reachable two ways, must count once."""
+    slug = project_slug(root)
+    seen, out = {}, []
+
+    classic = os.path.expanduser(os.path.join("~/.claude/projects", slug))
+    if os.path.isdir(classic):
+        for d, _sub, files in os.walk(classic):
+            if os.path.basename(d) != "subagents":
+                continue
+            for fn in files:
+                if fn.startswith("agent-") and fn.endswith(".jsonl"):
+                    aid = fn[len("agent-"):-len(".jsonl")]
+                    if aid not in seen:
+                        seen[aid] = 1
+                        out.append(("classic", os.path.join(d, fn), aid))
+
+    tasks_base = os.path.join("/private/tmp/claude-501", slug)
+    if os.path.isdir(tasks_base):
         try:
-            m = os.path.getmtime(d)
+            sessions = os.listdir(tasks_base)
         except OSError:
-            continue
-        if m > newest:
-            best, newest = d, m
-    return best
+            sessions = []
+        for sess in sessions:
+            td = os.path.join(tasks_base, sess, "tasks")
+            if not os.path.isdir(td):
+                continue
+            try:
+                files = os.listdir(td)
+            except OSError:
+                continue
+            for fn in files:
+                if not fn.endswith(".output"):
+                    continue
+                aid = fn[:-len(".output")]
+                if aid in seen:
+                    continue          # same lane, already found via the classic path
+                seen[aid] = 1
+                out.append(("tasks", os.path.join(td, fn), aid))
+    return out
 
 
 def live_lanes(root, receipted, started=None):
     """(rows, watched, history). Rows are transcripts inside the discovery window; history
     counts older, never-receipted ones, which are reported and never alerted."""
-    d = transcript_dir(root)
-    if not d:
-        return [], 0, 0
+    sources = transcript_sources(root)
+    if not sources:
+        return [], 0, 0, {"classic": 0, "tasks": 0}
     rows, now, history = [], time.time(), 0
+    by_loc = {"classic": 0, "tasks": 0}
     floor = now - WATCH_WINDOW
     if started:
         floor = min(floor, started)
-    try:
-        names = [f for f in os.listdir(d) if f.startswith("agent-") and f.endswith(".jsonl")]
-    except OSError:
-        return [], 0, 0
-    for fn in names:
-        path = os.path.join(d, fn)
+    for label, path, agent in sources:
         try:
             mtime = os.path.getmtime(path)
         except OSError:
             continue
-        agent = fn[len("agent-"):-len(".jsonl")]
         if mtime < floor:
             if agent not in receipted:
                 history += 1
             continue
         calls, _secs = derive_from_transcript(path)
-        rows.append({"agent": agent, "calls": calls or 0,
+        by_loc[label] = by_loc.get(label, 0) + 1
+        rows.append({"agent": agent, "calls": calls or 0, "loc": label,
                      "idle_secs": int(now - mtime),
                      "receipted": agent in receipted, "path": path})
     rows.sort(key=lambda r: r["idle_secs"])
-    return rows, len(rows), history
+    return rows, len(rows), history, by_loc
 
 
 def sweep(root, started=None):
@@ -400,11 +432,13 @@ def sweep(root, started=None):
         a = AGENT_RE.search(line)
         if a:
             receipted.add(a.group(1))
-    rows, watched, history = live_lanes(root, receipted, started)
+    rows, watched, history, by_loc = live_lanes(root, receipted, started)
     lines, alerts, active = [], [], 0
     lines.append("# notrest swarm watch — machine-written, derived, disposable")
-    lines.append("# watching %d transcript(s) this poller can SEE; a lane transcribing "
-                 "elsewhere is invisible to it" % watched)
+    lines.append("# watching %d transcript(s) this poller can SEE — %d from the classic "
+                 "store (~/.claude/projects/<slug>/**/subagents), %d from the session tasks "
+                 "dir (/private/tmp/claude-501/<slug>/*/tasks); deduped by agent id"
+                 % (watched, by_loc.get("classic", 0), by_loc.get("tasks", 0)))
     lines.append("# unreceipted-history: %d (older than %dh and never receipted — shown "
                  "here, never alerted: old work is not a running lane)"
                  % (history, WATCH_WINDOW // 3600))

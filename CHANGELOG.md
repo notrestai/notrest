@@ -1,5 +1,38 @@
 # Changelog — the notrest harness
 
+## 4.1.1 — 2026-08-05
+
+**The first real swarm under the new laws found the watcher's "honest limit" was the main case.**
+
+- **`watching 0`, seconds after dispatch.** Four Opus lanes were running; the watcher saw
+  none of them and self-terminated. v4.1.0 disclosed the limit — *"a lane transcribing
+  elsewhere is invisible to it"* — and that disclosure turned out to cover the **primary
+  case**: lanes spawned by the Agent tool transcribe to the **session tasks dir**,
+  `/private/tmp/claude-501/<slug>/<session>/tasks/<agent-id>.output`, not to
+  `~/.claude/projects/<slug>/**/subagents/`. An honest limit is still a hole when it is
+  where the work actually lives.
+- **One discovery, two consumers.** `transcript_sources()` now sweeps **both** locations —
+  the output filename *is* the agent id — and the sweep header says what each contributed
+  (`5 from the classic store, 1 from the session tasks dir`). The **receipt scrape learns
+  the same location**, so a lane that transcribes only to the tasks dir gets a real model
+  and token count instead of a degraded receipt.
+- **Deduped by agent id, because the two locations overlap.** In some sessions the tasks
+  entry is a **symlink back into the classic store** — the same lane reachable two ways, and
+  it must count once. Verified on the live estate.
+- **RECEIPT ANOMALY — probed, and deliberately NOT fixed.** Degraded receipts went 66 → 69
+  during the same window. The three new ones (21:08 / 21:10 / 21:12) **postdate** the v4.1.0
+  hardening, so the obvious theory was that the fallback missed. It did not: **those three
+  transcripts do not exist anywhere** — not in the classic store, not in the tasks dir, no
+  meta sidecar, nothing under any project slug. This is the pre-existing *lane left nothing
+  on disk* class, not a resolution bug and not a regression, and no resolution improvement
+  can read a file that was never written. Reported rather than papered over.
+- **A bug the fixture caught immediately:** widening `live_lanes()` to report per-location
+  counts left one early return at the old arity, so a project with **no transcripts at all**
+  crashed instead of reporting zero. The both-locations-empty case is now asserted.
+- Fixtures: swarm **30 → 37** — a tasks-dir transcript discovered, watched, counted against
+  the right source, raising **STALL** when frozen exactly like the classic store, going quiet
+  once receipted, and both-locations-empty still exiting 0 with nothing invented.
+
 ## 4.1.0 — 2026-08-05
 
 **"For the swarm we need a right eval and metric so we can break tasks more and more." Now the reading is an instrument — and the instruments start writing themselves.**

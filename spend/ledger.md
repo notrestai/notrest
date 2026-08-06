@@ -128,3 +128,12 @@
 [2026-08-04 21:20Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ad9c3f0dc6c901805
 [2026-08-04 21:27Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a233b3e62f0af5292
 [2026-08-04 21:34Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=af5dbc2842dbb1266
+[2026-08-05 21:08Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ac480603783fdf180
+[2026-08-05 21:10Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a6d5c48e4c0c28272
+[2026-08-05 21:12Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=adcdc748008041939
+[2026-08-06 00:30Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=aa9ad2c7adc4f65fe
+[2026-08-06 00:31Z] lane=subagent model=claude-opus-5 tokens=3096061 grade=observed purpose="auto-receipt: I'll map this repo efficiently. Starting with structure." agent=a1fd289d44604a9db
+[2026-08-06 00:31Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a692015e77665e65d
+[2026-08-06 00:32Z] lane=subagent model=claude-opus-5 tokens=3828970 grade=observed purpose="auto-receipt: Read-only comparison complete; 23 tool calls. Both trees unt" agent=a702307af19f53a81
+[2026-08-06 00:32Z] lane=subagent model=claude-opus-5 tokens=2953297 grade=observed purpose="auto-receipt: **CLONE** = `/private/tmp/claude-501/-Users-ethanabot-Deskto" agent=a91696d5bf9445b4c
+[2026-08-06 00:32Z] lane=subagent model=claude-opus-5 tokens=3495302 grade=observed purpose="auto-receipt: One last check: does a deployed instance call back to any Cl" agent=ada63408a0aebc05f
