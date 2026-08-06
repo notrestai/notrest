@@ -14,6 +14,14 @@ archaeology, gapless capture cutover, kill-9-proven supervision; tell.rest 2026-
 release shipped THROUGH a flapping tool-safety outage — chunk-staging, window discipline,
 zero lost work).
 
+## Never guess a contract
+
+**Read the interface before you call it.** A script's flags, an API's shape, a payload's
+keys — read the `--help`, the docstring, or a real recorded example, and say which you
+read. Guessing yields code that looks right and calls a flag that does not exist. This is
+*probe before believing*, applied to interfaces: the probe is one `grep` or one `--help`,
+and skipping it is how a confident build ships broken.
+
 ## The loop (every task runs through it)
 
 **ORIENT → PROBE → ACT → PROVE → BANK**

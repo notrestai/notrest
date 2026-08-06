@@ -1,5 +1,56 @@
 # Changelog — the notrest harness
 
+## 4.2.0 — 2026-08-06
+
+**We analysed their OS and kept the laws: theirs enforced in code what ours audited after the fact. Now ours does both.**
+
+Adopted from **cloudflare-os** (Apache 2.0), via the four-lane analysis round and finding
+F-34. We took none of the product and several of the habits.
+
+- **THE OFFLOAD LAW IS NOW CODE.** Their spawner pins the child's model in code; ours was
+  prose plus a post-hoc audit (`spend.py report` exits 4) — which means a mis-routed lane
+  was caught *after* it burned the wrong credit. `hooks/spawn-gate.sh` is a PreToolUse arm
+  on `Agent|Task`: **model absent → BLOCK · sonnet/haiku → BLOCK · `subagent_type:"fork"`
+  → BLOCK**, each refusal quoting the law and naming the fix.
+  `NOTREST_GATE_OVERRIDE=1` permits with a loud receipt, and any malformed payload passes
+  through silently — a broken hook must never break a session. **Payload verified before
+  the hook was written**, against 87 real spawns in this repo's own transcripts: tool_name
+  is `Agent` here and `Task` elsewhere, `tool_input` = description · model · prompt ·
+  subagent_type. **Registering it needs a session restart** — hooks.json is read at start.
+- **The pulse got cheaper, honestly.** Their run-local input stamping, adapted: the 8s
+  `compile scan` hashes its own inputs (COORD volumes + COORD-AGENTS + findings mtimes and
+  sizes) and, when nothing moved, **skips and says so** — naming the stamp it matched and
+  disclosing that the verdict is the prior scan's, not re-measured. The pulse never lies
+  about what ran.
+- **No-egress became provable.** Their sandbox pins `globalOutbound:null`; ours was prose
+  spread across 67 scripts. `eval`'s new **NETWORK-EGRESS** check scans every shipped hook
+  and script: loopback users are allowlisted **and re-asserted to bind 127.0.0.1**,
+  genuinely-external ones are named with their reason (`watch.py` fetches sources — that
+  *is* the skill; `fable-launcher.sh` probes the API), test-data emitters are named
+  separately, and **compiled runtimes must import no network at all**, as their own law
+  already claimed.
+- **The kernel got a name.** Their AGENTS.md higher-bar convention: `CLAUDE.md` and
+  `refuter` now list the **KERNEL SURFACES** — `hooks/**`, `establish.py`, the estate-ledger
+  writers — and codify that a kernel change ships only through a refuter round. We did this
+  by habit; now `eval`'s KERNEL-REVIEW check asserts the list exists where it is claimed.
+- **DESIGN-STOP** (their write-gatekeeper shape) and **never-guess-the-contract** (their
+  types-as-agent-docs) land as law in `agentswarm`, the latter also in `fable-mode`: a lane
+  designs the contract and *stops* on high-blast-radius work, and never guesses a script's
+  flags or a payload's shape — it reads the usage or a recorded example and says which.
+- **The release surface is golden.** `evals/golden-release-surface.txt` pins the seven files
+  a ship touches; `eval`'s RELEASE-SURFACE check reddens on a missing one. Regenerate
+  deliberately — add the path in the same commit that starts touching it.
+- **A defect class disclosed, not buried:** the daemonized watcher was dying at birth on
+  every start (a NameError in the loop) while every fixture passed, because every fixture
+  ran `--once` and none ran the daemon loop. **Same vacuous-pass species as ever, now on the
+  process dimension.** The fixture gains a loop-path survival assert — start it daemonized,
+  prove it alive past two poll intervals at `ppid 1`, prove it self-terminates once the lane
+  receipts — behind a `NOTREST_WATCH_POLL` seam so the loop is testable in seconds.
+- **And one of my own, found by the new check:** the `background:` inventory added in 4.1.0
+  made `swarm.py report` non-deterministic exactly when a daemon was alive — i.e. during a
+  swarm. The live process probe is now marked and excluded from the byte-identical reading,
+  which the fixture asserts on the estate half.
+
 ## 4.1.1 — 2026-08-05
 
 **The first real swarm under the new laws found the watcher's "honest limit" was the main case.**

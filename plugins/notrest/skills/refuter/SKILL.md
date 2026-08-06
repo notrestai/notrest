@@ -13,6 +13,20 @@ This skill fixes the shape. One narrow target. A written brief. A numbered attac
 
 The bar is empirical. The best run this harness has had returned three CONFIRMED criticals, each with a command and its output — a JSON key reorder that de-pinned a version-pinned tombstone and committed at exit 0; a validator failure string-matched into "CLI absent, proceed" that reached push and install; and proof that a "5/5 byte-identical PARITY PASS" was overclaimed, because two of the five surfaces were algebraic round-trips and the largest text clause was never compared at all. Nothing below that bar is worth the tokens.
 
+## KERNEL SURFACES — always refuted, never assumed
+
+Some changes are estate-wide by construction, and they ship only through a refuter round:
+
+- `plugins/notrest/hooks/**` — hooks run in every session and fail silently by design.
+- `skills/notrest/scripts/establish.py` — writes COORD.md and the CLAUDE.md protocol
+  block into other people's projects.
+- Estate-ledger consumers and writers — `agent-ledger.sh`, `session-end.sh`, the spend
+  ledger writers, the COORD volume roll.
+
+For these, blast-radius tiering does not apply: **a full refuter round is the floor**, not
+a judgment call. `eval`'s KERNEL-REVIEW check asserts this list is named here and in
+CLAUDE.md, so the law cannot rot into prose nobody applies.
+
 ## When to run
 
 **Router shape:** `adversarial-review`

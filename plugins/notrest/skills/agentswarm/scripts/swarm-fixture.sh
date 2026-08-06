@@ -108,9 +108,16 @@ t "longest lane wall-clock" "$(J "$W/j1" secs_max)" "1200"
 
 # DETERMINISM — a gauge whose reading drifts between runs cannot gate anything.
 python3 "$SW" report --root "$E" > "$W/r2" 2>&1
-t "text report byte-identical twice" "$(ckt "$W/r")" "$(ckt "$W/r2")"
+estate_only(){ sed '/^  background:/,$d' "$1"; }
+estate_only "$W/r" > "$W/r.est"; estate_only "$W/r2" > "$W/r2.est"
+t "the ESTATE reading is byte-identical twice" "$(ckt "$W/r.est")" "$(ckt "$W/r2.est")"
+has "…and the live process probe is marked as excluded" "LIVE — not part of the" "$W/r"
 python3 "$SW" report --root "$E" --json > "$W/j2" 2>&1
-t "--json byte-identical twice" "$(ckt "$W/j1")" "$(ckt "$W/j2")"
+jest(){ python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1])); d.pop('background', None)
+print(json.dumps(d, indent=1, sort_keys=True))" "$1"; }
+t "--json estate reading byte-identical twice" "$(jest "$W/j1" | cksum)" "$(jest "$W/j2" | cksum)"
 t "--json keys sorted (stable order)" \
   "$(python3 -c "
 import json,sys
@@ -174,6 +181,37 @@ t "a receipted tasks-dir lane stops alerting" "$(grep -c '^ALERT' "$LIVE" 2>/dev
 EMPTY="$W/emptyproj"; mkdir -p "$EMPTY"
 python3 "$SW" watch --root "$EMPTY" --once > /dev/null 2>&1
 t "both locations empty → exit 0, nothing invented" "$?" "0"
+
+echo "── THE DAEMON LOOP ITSELF (the path --once never enters)"
+# The loop shipped BROKEN at birth — a NameError on the first iteration — and every
+# fixture passed, because every fixture ran --once. A vacuous pass on the PROCESS
+# dimension: the code path that only runs in daemon mode had no test that ran daemon
+# mode. This assert is the one that would have caught it.
+LP="$W/loopproj"; mkdir -p "$LP/spend"; printf '# ledger\n' > "$LP/spend/ledger.md"
+LSLUG="-$(python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]).lstrip('/').replace('/','-'))" "$LP")"
+LTD="/private/tmp/claude-501/$LSLUG/loop-session/tasks"; mkdir -p "$LTD"
+trap 'pkill -f "swarm.py watch --root $LP" 2>/dev/null; rm -rf "/private/tmp/claude-501/$LSLUG" "/private/tmp/claude-501/$SLUG" "$W"' EXIT
+printf '{"timestamp":"2026-08-06T00:00:00Z","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}\n' \
+  > "$LTD/looplane.output"
+NOTREST_WATCH_POLL=0.5 NOTREST_WATCH_QUIET=3 python3 "$SW" watch --root "$LP" >/dev/null 2>&1
+sleep 2                                    # >= 2 poll intervals
+LPID="$(pgrep -f "swarm.py watch --root $LP" | head -1)"
+if [ -n "$LPID" ]; then
+  ok "the daemon LOOP survives past its first iterations (no birth crash)"
+  t "…and it is reparented to init" "$(ps -o ppid= -p "$LPID" 2>/dev/null | tr -d ' ')" "1"
+else
+  no "the daemonized watcher DIED at birth — the loop path is broken"
+fi
+has "the loop wrote a live sweep while running" "looplane" "$LP/pulse/swarm-live.txt"
+# now receipt the lane: the loop must notice and self-terminate
+printf '[2026-08-06 00:01Z] lane=subagent model=claude-opus-4 tokens=10 grade=observed purpose="auto-receipt: x" calls=1 secs=5 agent=looplane\n' \
+  >> "$LP/spend/ledger.md"
+GONE=""
+for _ in $(seq 1 40); do
+  pgrep -f "swarm.py watch --root $LP" >/dev/null 2>&1 || { GONE=1; break; }
+  sleep 0.5
+done
+t "…and self-terminates once every lane has receipted" "${GONE:-no}" "1"
 
 echo
 echo "swarm-fixture: $PASS pass, $FAIL fail"

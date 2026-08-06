@@ -319,6 +319,7 @@ else
 fi
 
 # ------------------------------------------------------------------- verdict
+
 echo "----"
 echo "fixture: $PASSES passed, $FAILS failed"
 [ "$FAILS" -eq 0 ] || exit 1

@@ -1,0 +1,13 @@
+# GOLDEN RELEASE SURFACE — the exact files a notrest release touches.
+# Adopted from cloudflare-os's golden-file manifest test (Apache 2.0): a ship that
+# touches an unexpected surface, or misses an expected one, goes red instead of shipping
+# a half-updated release.
+# REGENERATE deliberately, never reflexively: add the path here in the same commit that
+# starts touching it, and say why in the CHANGELOG.
+.claude-plugin/marketplace.json
+plugins/notrest/.claude-plugin/plugin.json
+CHANGELOG.md
+README.md
+docs/oracle-skill-flow.html
+docs/UNDERSTANDING.md
+docs/CAPABILITIES.md

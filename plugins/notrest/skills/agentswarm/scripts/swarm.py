@@ -308,8 +308,13 @@ def cmd_report(args):
                    else "IN BAND")
         code = (EXIT_FLAGGED if (rep["band_monolith"] or rep["receipts_degraded"])
                 else EXIT_OK)
+        # LIVE SECTION — deliberately OUTSIDE the byte-identical guarantee. Everything
+        # above reads the estate and is reproducible; this reads the PROCESS TABLE, whose
+        # ages tick and whose rows come and go. Marked so a reader (and a fixture) knows
+        # which half is the reproducible reading and which is a live probe.
         bg = background_inventory()
-        print("\n  background: %d notrest process(es) live" % len(bg))
+        print("\n  background: %d notrest process(es) live  [LIVE — not part of the "
+              "byte-identical reading above]" % len(bg))
         for b in bg:
             print("    pid %-7s ppid %-6s age %-11s %s%s"
                   % (b["pid"], b["ppid"], b["age"], b["cwd"],
@@ -334,8 +339,11 @@ STALL_SECS = 10 * 60          # transcript frozen this long, never receipted →
 # moved within this window or postdates the watcher's own start; everything older is
 # counted in the header as unreceipted-history — visible, and never an alert.
 WATCH_WINDOW = 24 * 3600
-POLL_SECS = 30
-QUIET_ROUNDS = 4              # nothing grew for this many polls → self-terminate
+# Overridable ONLY so the fixture can exercise the DAEMON LOOP in seconds instead of
+# minutes. The loop path shipped broken once (NameError at birth) because every fixture
+# ran --once and no test ever entered the loop — a vacuous pass on the process dimension.
+POLL_SECS = float(os.environ.get("NOTREST_WATCH_POLL", "30"))
+QUIET_ROUNDS = int(os.environ.get("NOTREST_WATCH_QUIET", "4"))
 
 
 def project_slug(root):

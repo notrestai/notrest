@@ -181,6 +181,60 @@ else
   no "miss path under 100 ms/call" "measured ${PER} ms/call"
 fi
 
+
+echo "── the SPAWN GATE: the offload law, enforced in code ────────────────────"
+# Adopted from cloudflare-os (Apache 2.0): pin the child's model IN CODE instead of
+# asking the parent to remember. Payload shape verified against 87 real spawns in this
+# repo's own transcripts before the gate was written — tool_name "Agent" here, "Task"
+# on other surfaces, tool_input {description, model, prompt, subagent_type}.
+SG="$(cd "$(dirname "$0")/../../../hooks" && pwd)/spawn-gate.sh"
+sp(){ printf '%s' "$2" | bash "$SG" >/dev/null 2>&1; echo $?; }
+AGENT='"hook_event_name":"PreToolUse","tool_name":"Agent"'
+
+chk "spawn gate: explicit opus PASSES" 0 \
+  "$(sp x "{$AGENT,\"tool_input\":{\"model\":\"opus\",\"subagent_type\":\"general-purpose\",\"description\":\"lane\"}}")"
+chk "spawn gate: model OMITTED is blocked (not a default)" 2 \
+  "$(sp x "{$AGENT,\"tool_input\":{\"subagent_type\":\"general-purpose\",\"description\":\"lane\"}}")"
+chk "spawn gate: sonnet is blocked" 2 \
+  "$(sp x "{$AGENT,\"tool_input\":{\"model\":\"sonnet\",\"description\":\"lane\"}}")"
+chk "spawn gate: haiku is blocked" 2 \
+  "$(sp x "{$AGENT,\"tool_input\":{\"model\":\"haiku\",\"description\":\"lane\"}}")"
+chk "spawn gate: fork is blocked even WITH opus" 2 \
+  "$(sp x "{$AGENT,\"tool_input\":{\"model\":\"opus\",\"subagent_type\":\"fork\",\"description\":\"lane\"}}")"
+chk "spawn gate: the Task spelling is gated too" 2 \
+  "$(sp x '{"tool_name":"Task","tool_input":{"model":"sonnet","description":"lane"}}')"
+chk "spawn gate: non-spawn tools are untouched" 0 \
+  "$(sp x '{"tool_name":"Bash","tool_input":{"command":"ls"}}')"
+chk "spawn gate: malformed payload passes through silently" 0 "$(sp x 'not json at all{')"
+chk "spawn gate: empty stdin passes through silently" 0 "$(printf '' | bash "$SG" >/dev/null 2>&1; echo $?)"
+
+# The escape hatch exists AND is loud — a bypassed gate that says nothing is worse than none.
+OUT="$(printf '%s' "{$AGENT,\"tool_input\":{\"model\":\"sonnet\",\"description\":\"lane\"}}" \
+      | NOTREST_GATE_OVERRIDE=1 bash "$SG" 2>&1)"
+RC=$?
+chk "spawn gate: override permits the spawn" 0 "$RC"
+case "$OUT" in
+  *OVERRIDDEN*) ok "spawn gate: the override announces itself" ;;
+  *) bad "spawn gate: the override was SILENT — that is worse than no gate" ;;
+esac
+# a blocked spawn must state the law and the fix, not just refuse
+OUT2="$(printf '%s' "{$AGENT,\"tool_input\":{\"model\":\"sonnet\",\"description\":\"lane\"}}" | bash "$SG" 2>&1)"
+case "$OUT2" in
+  *'model="opus"'*) ok "spawn gate: the refusal names the fix" ;;
+  *) bad "spawn gate: the refusal does not name the fix" ;;
+esac
+case "$OUT2" in
+  *permissionDecision*deny*) ok "spawn gate: emits a real PreToolUse deny decision" ;;
+  *) bad "spawn gate: no deny decision in the hook output" ;;
+esac
+# and it must be registered, or it never runs
+HJ="$(cd "$(dirname "$0")/../../../hooks" && pwd)/hooks.json"
+if grep -q 'spawn-gate.sh' "$HJ" && grep -q 'Agent|Task' "$HJ"; then
+  ok "spawn gate: registered under PreToolUse with the Agent|Task matcher"
+else
+  bad "spawn gate: not registered in hooks.json — it would never fire"
+fi
+
 echo "----"
 echo "pretool-fixture: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

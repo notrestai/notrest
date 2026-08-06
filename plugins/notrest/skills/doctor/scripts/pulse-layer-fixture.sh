@@ -192,6 +192,27 @@ SUB="$HOME/.claude/projects/-${LD#/}"; SUB="${SUB//\//-}"
 t "watch on a root with no transcript dir is silent, not noisy" \
   "$(python3 "$SWARM" watch --root "$LD" --once >/dev/null 2>&1; echo $?)" "0"
 
+echo "── compile input-stamp: skip what has not moved, and SAY so"
+CS="$W/stamped"; mkdir -p "$CS"; ( cd "$CS" && git init -q ) >/dev/null 2>&1; : > "$CS/README.md"
+python3 "$EST" establish --root "$CS" >/dev/null 2>&1
+for _ in $(seq 1 40); do [ -f "$CS/pulse/pulse.json" ] && break; sleep 0.25; done
+rm -rf "$CS/pulse"
+NR_PULSE_DAEMON=1 bash "$HOOKS/estate-pulse.sh" "$CS" manual
+V1="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['instruments']['compile']['verdict'])" "$CS/pulse/pulse.json")"
+case "$V1" in *SKIPPED*) no "the FIRST scan must be real, not skipped" ;; *) ok "the first compile scan really runs" ;; esac
+rm -f "$CS/pulse/pulse.json"
+NR_PULSE_DAEMON=1 bash "$HOOKS/estate-pulse.sh" "$CS" manual
+has "an unchanged estate SKIPS the 8s scan" "SKIPPED" "$CS/pulse/compile.txt"
+has "…naming the stamp it matched" "inputs unchanged since stamp" "$CS/pulse/compile.txt"
+has "…and disclosing the verdict is the PRIOR one" "not re-measured on this pulse" "$CS/pulse/compile.txt"
+t "…and pulse.json marks it skipped" \
+  "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['instruments']['compile']['skipped'])" "$CS/pulse/pulse.json")" "True"
+echo "- [2026-08-06 01:00Z] [x] touched -> landed | evidence: t" >> "$CS/COORD.md"
+rm -f "$CS/pulse/pulse.json"
+NR_PULSE_DAEMON=1 bash "$HOOKS/estate-pulse.sh" "$CS" manual
+t "a touched ledger forces a REAL scan again" \
+  "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['instruments']['compile']['skipped'])" "$CS/pulse/pulse.json")" "False"
+
 echo
 echo "pulse-layer-fixture: $PASS pass, $FAIL fail"
 [ "$FAIL" -eq 0 ] || exit 1

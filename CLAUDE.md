@@ -11,6 +11,23 @@ Last updated: 2026-07-25
   (SubagentStop hook), marked graphically in the river. The commission is never hidden;
   scope-drift is disclosed at delivery (fable-mode 12a).
 
+## KERNEL SURFACES — the higher bar
+
+Convention adopted from cloudflare-os's AGENTS.md (Apache 2.0): name the places where a
+mistake is an *estate-wide* mistake, so "be careful here" is a list rather than a feeling.
+
+- `plugins/notrest/hooks/**` — every hook: they run in every session, and a broken one
+  fails silently by design.
+- `plugins/notrest/skills/notrest/scripts/establish.py` — writes COORD.md and the
+  CLAUDE.md protocol block into other people's projects.
+- Anything that consumes or writes the **estate ledgers**: `agent-ledger.sh`,
+  `session-end.sh`, `spend/ledger.md` writers, the COORD volume roll.
+
+**LAW: a kernel change ships only through a refuter round.** We have done this by habit
+since the estate-writer rounds; here it stops being habit. The refuter attacks the change
+before it ships, and `eval`'s KERNEL-REVIEW check asserts this list is named where it is
+claimed — so the convention cannot quietly rot into prose nobody applies.
+
 ## Project
 - This repo IS the `notrest` marketplace: `plugins/notrest/` (31 skills); manifests
   `plugins/notrest/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` —

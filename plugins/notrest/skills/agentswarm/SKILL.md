@@ -151,6 +151,42 @@ that was mid-fix at the moment it was killed.
 new file mtime. A queued message changes nothing until the lane next wakes. If nothing moved
 after a send, assume **queued**, not ignored, and certainly not dead.
 
+### DESIGN-STOP — the lane designs, the seat rules, then the lane builds
+
+Adapted from cloudflare-os's write-gatekeeper shape (Apache 2.0). **Optional, and only for
+high-blast-radius commissions**: kernel surfaces, a new estate writer, anything the refuter
+would gate anyway. For the band's narrow lanes it is pure overhead — do not use it there.
+
+The lane produces the contract, **stops**, and does not write implementation until the seat
+rules:
+
+```
+DESIGN-STOP · <what this lane will build>
+  SURFACE      files/paths this will create or modify
+  CONTRACT     the exact API: subcommands, flags, exit codes, output shape
+  ESTATE       what it writes, and under which law (append-only? atomic? never-COORD?)
+  FAILURE      what it does when inputs are absent/malformed — and what it NEVER does
+  BLAST RADIUS who else reads these files, and what breaks if the shape changes
+  PROOF        the assertions that will make it falsifiable
+STOPPING HERE — no implementation until the seat rules on this contract.
+```
+
+**Why it earns its cost on kernel work:** a wrong contract discovered at review costs one
+message; discovered after the build it costs the build. The seat rules, and only then does
+the lane write.
+
+### Never guess the contract
+
+**A lane never guesses a script's flags or an API's shape.** Read the script's own
+`--help`/usage, its docstring, or the served doc — then say which you read. Guessing
+produces code that looks right and calls a flag that does not exist; the cost lands on
+whoever runs it next, not on the lane that guessed.
+
+This is not pedantry — it is the same law as *probe before believing*, applied to
+interfaces. In this repo it has bitten twice: a fixture asserted a flag the script never
+had, and a payload shape was assumed rather than read from a real transcript. Both were
+one `grep` away from correct.
+
 ### The readings write themselves
 
 You rarely need to run any of this by hand. `hooks/estate-pulse.sh` refreshes the cheap

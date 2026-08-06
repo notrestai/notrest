@@ -66,7 +66,7 @@ NR_SKILLS="$(cd "$(dirname "$0")/../skills" 2>/dev/null && pwd)"
 
 export NR_PULSE_ROOT NR_SKILLS NR_PULSE_TRIGGER
 python3 <<'PY' >/dev/null 2>&1 || true
-import fcntl, json, os, subprocess, sys, time
+import fcntl, hashlib, json, os, subprocess, sys, time
 
 DEBOUNCE = 60.0          # seconds; a swarm landing five lanes must produce ONE refresh
 
@@ -120,8 +120,58 @@ try:
     # flag, no cached substitute: a background layer whose doctor means something different
     # from the doctor a human runs is a layer that lies quietly, and that is worse than a
     # layer that takes an extra second in a detached subshell nobody is waiting on.
+    # ── INPUT-STAMP SKIP, adapted from cloudflare-os's run-local input stamping
+    # (Apache 2.0). `compile scan` is this layer's 8s heavyweight and its inputs move
+    # rarely: hash what it actually reads, and when nothing moved, reuse the previous
+    # verdict. DISCLOSURE LAW: the pulse never lies about what ran — a skipped scan says
+    # SKIPPED, names the stamp it matched, and carries the prior verdict forward as prior.
+    def compile_stamp():
+        parts = []
+        for rel in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+            if rel.startswith("COORD") and rel.endswith(".md"):
+                parts.append(rel)
+        parts += [os.path.join("archive", "findings.jsonl")]
+        sig = []
+        for rel in parts:
+            fp = os.path.join(root, rel)
+            try:
+                st = os.stat(fp)
+                sig.append("%s:%d:%d" % (rel, int(st.st_mtime), st.st_size))
+            except OSError:
+                sig.append("%s:-" % rel)
+        return hashlib.sha256("|".join(sig).encode("utf-8")).hexdigest()[:16]
+
+    stamp_file = os.path.join(pdir, ".compile-stamp")
+    cur_stamp = compile_stamp()
+    prev_stamp = ""
+    try:
+        prev_stamp = open(stamp_file, encoding="utf-8").read().strip()
+    except OSError:
+        prev_stamp = ""
+
     summary = {}
     for name, argv, tmo in jobs:
+        if name == "compile" and cur_stamp == prev_stamp and prev_stamp:
+            prior = ""
+            try:
+                prior = open(os.path.join(pdir, "compile.txt"),
+                             encoding="utf-8", errors="replace").read()
+            except OSError:
+                prior = ""
+            body = ("# SKIPPED — compile scan inputs unchanged since stamp %s\n"
+                    "# (COORD volumes + COORD-AGENTS + archive/findings.jsonl: same\n"
+                    "#  mtimes and sizes). The verdict below is the PRIOR scan's, carried\n"
+                    "#  forward unchanged — it was not re-measured on this pulse.\n\n"
+                    % cur_stamp) + prior
+            tmp = os.path.join(pdir, ".compile.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(body)
+            os.replace(tmp, os.path.join(pdir, "compile.txt"))
+            summary[name] = {"exit": None, "verdict": "SKIPPED — inputs unchanged since "
+                             "stamp %s (prior verdict carried forward)" % cur_stamp,
+                             "secs": 0.0, "skipped": True,
+                             "file": "pulse/%s.txt" % name}
+            continue
         out, code, secs = run(argv, tmo)
         head = ("# notrest pulse — %s\n# machine-written, derived, disposable: the ledgers\n"
                 "# remain the record. Regenerated in the background; do not hand-edit.\n"
@@ -134,7 +184,13 @@ try:
             f.write(head + out)
         os.replace(tmp, os.path.join(pdir, "%s.txt" % name))
         summary[name] = {"exit": code, "verdict": verdict(out), "secs": secs,
-                         "file": "pulse/%s.txt" % name}
+                         "skipped": False, "file": "pulse/%s.txt" % name}
+        if name == "compile":
+            try:
+                with open(stamp_file, "w", encoding="utf-8") as f:
+                    f.write(cur_stamp)
+            except OSError:
+                pass
 
     live = {}
     lv = os.path.join(pdir, "swarm-live.txt")

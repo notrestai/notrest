@@ -9,6 +9,7 @@ Exit: 0 all pass · 5 warnings only · 6 any FAIL · 2 usage error.
 """
 
 import argparse
+import glob
 import json
 import os
 import py_compile
@@ -532,6 +533,10 @@ ORACLE_VERB_RE = re.compile(r"`/([a-z][a-z0-9-]*)`")
 SHAPE_LINE_RE = re.compile(r"^\*\*Router shape:\*\*[ \t]*`?([a-z][a-z0-9-]*)`?", re.M)
 
 
+def rel_p(root, p):
+    return rel(root, p)
+
+
 def body_of(txt):
     """SKILL.md minus its front matter. A law has to be stated in the BODY — the
     description is a trigger, not a place a reader goes looking for the contract."""
@@ -672,7 +677,167 @@ def check_route_conformance(root, _plug, _skills):
     return out
 
 
-CHECKS = [check_offload, check_labels, check_scripts, check_references,
+# ---------------------------------------------------------------------------
+# Adopted from cloudflare-os (Apache 2.0), whose sandbox pins globalOutbound:null so
+# "no egress" is a fact about the runtime rather than a promise in prose. Ours is prose
+# across many scripts; this makes it PROVABLE for our surfaces.
+# ---------------------------------------------------------------------------
+NET_RE = re.compile(r"^\s*(?:import|from)\s+(urllib\.request|urllib|socket|http\.client|"
+                    r"requests|httpx|ftplib|telnetlib|smtplib)\b", re.M)
+NET_SHELL_RE = re.compile(r"\b(curl|wget|nc)\s", re.M)
+# Loopback evidence: a literal address, OR consumption of render-check's URL — that
+# server's 127.0.0.1 binding is itself allowlisted and re-asserted here, so a client of
+# it is loopback-bound transitively rather than on trust.
+LOOPBACK_RE = re.compile(r"127\.0\.0\.1|localhost|render-check|RC_URL")
+# Every allowlisted use must be LOOPBACK-BOUND, and that is asserted, not trusted.
+# LOOPBACK: allowed, and each one is ASSERTED to bind 127.0.0.1 — the allowlist is not
+# a promise, it is a claim the check re-proves on every run.
+NET_LOOPBACK = {
+    "skills/notrest/scripts/establish.py": "status probes 127.0.0.1/health",
+    "skills/graph/scripts/cockpit.py": "serves 127.0.0.1 only, by law",
+    "skills/doctor/scripts/render-check.sh": "binds 127.0.0.1 on a private port",
+    "skills/graph/scripts/cockpit-fixture.sh": "a client against the loopback server",
+    "skills/doctor/scripts/seat-tax-fixture.sh": "curls render-check's 127.0.0.1 URL",
+    "skills/notrest/scripts/fixture.sh": "asserts NOTHING is listening on a loopback port",
+    "skills/graph/scripts/river-fixture.sh": "render-check client, loopback only",
+    "skills/graph/scripts/journey-fixture.sh": "render-check client, loopback only",
+    "skills/chatroom/scripts/fixture.sh": "loopback only",
+}
+# EXTERNAL BY DESIGN: real egress, named with its reason. These are capabilities, not
+# leaks — but they are the complete list, so a NEW external caller cannot appear quietly.
+# TEST DATA: files that only EMIT network text (a fixture writing a synthetic leaky
+# script). Explicit, because "it's just a fixture" is exactly how a real caller would
+# hide — the file is named, and the reason is recorded.
+NET_TEST_DATA = {
+    "skills/eval/scripts/fixture.sh": "writes synthetic leaky scripts as test data",
+}
+NET_EXTERNAL = {
+    "skills/watch/scripts/watch.py": "re-verifies cited sources — fetching IS the skill",
+    "skills/fable-director/scripts/fable-launcher.sh": "probes api.anthropic.com for model availability",
+}
+
+
+def check_network(root, plug, _skills):
+    ID = "NETWORK-EGRESS"
+    law = ("shipped hooks and scripts make no network calls except an allowlist of "
+           "loopback-bound ones; compiled runtimes make none at all")
+    out, checked, allowed, external = [], 0, [], []
+    targets = sorted(glob.glob(os.path.join(plug, "hooks", "*.sh")) +
+                     glob.glob(os.path.join(plug, "skills", "*", "scripts", "*")))
+    for f in targets:
+        if os.path.isdir(f):
+            continue
+        rel = os.path.relpath(f, plug)
+        txt = read(f)
+        if not txt:
+            continue
+        checked += 1
+        key = rel.replace(os.sep, "/")
+        # Shell-word scanning applies to SHELL files only: `curl` inside a python string
+        # is a word in a vocabulary list, not a call — starthere_lint.py's command-head
+        # set matched the naive rule and would have been a permanent false FAIL.
+        hit = NET_RE.search(txt)
+        if not hit and f.endswith(".sh"):
+            hit = NET_SHELL_RE.search(txt)
+        if not hit:
+            continue
+        if key in NET_TEST_DATA:
+            continue
+        if key in NET_EXTERNAL:
+            external.append(key)
+            continue
+        if key in NET_LOOPBACK:
+            if LOOPBACK_RE.search(txt):
+                allowed.append(key)
+            else:
+                out.append(R(ID, "FAIL", law,
+                             "%s:%d  allowlisted as loopback but nothing binds it to "
+                             "127.0.0.1" % (rel_p(root, f), lineno(txt, hit.start())),
+                             "bind it to loopback, or move it to NET_EXTERNAL with a reason"))
+            continue
+        out.append(R(ID, "FAIL", law,
+                     "%s:%d  network use (%r) on no list"
+                     % (rel_p(root, f), lineno(txt, hit.start()), hit.group(0).strip()),
+                     "remove it, or list it in NET_LOOPBACK (and bind loopback) / "
+                     "NET_EXTERNAL (with the reason it must reach the network)"))
+    # compiled runtimes claim ZERO network; hold them to it
+    for f in sorted(glob.glob(os.path.join(root, "compile", "*", "**", "*.py"),
+                              recursive=True)):
+        txt = read(f)
+        if txt and NET_RE.search(txt):
+            m = NET_RE.search(txt)
+            out.append(R(ID, "FAIL", law,
+                         "%s:%d  a compiled runtime imports the network"
+                         % (rel_p(root, f), lineno(txt, m.start())),
+                         "compiled runtimes are offline by law — remove the import"))
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law,
+                        "%d script(s) scanned · %d loopback-bound: %s · %d external-by-design: %s"
+                        % (checked, len(allowed), ", ".join(sorted(allowed)) or "-",
+                           len(external), ", ".join(sorted(external)) or "-")))
+    return out
+
+
+# The KERNEL: surfaces where a mistake is an estate-wide mistake. Convention adopted from
+# cloudflare-os's AGENTS.md higher-bar idea — named explicitly so "be careful here" is a
+# list, not a feeling.
+KERNEL_MARK = "KERNEL SURFACES"
+
+
+def check_kernel(root, plug, skills):
+    ID = "KERNEL-REVIEW"
+    law = "the kernel surfaces are named where they are claimed, and carry the refuter law"
+    out = []
+    cm = os.path.join(root, "CLAUDE.md")
+    txt = read(cm)
+    # Absent inputs SKIP, never FAIL — eval's own doctrine. A synthetic harness or a
+    # plugin cache dir legitimately has no CLAUDE.md, and a check that reddens there
+    # would fire on every other check's fixture case instead of only its own.
+    # The convention belongs to a tree that ships the verb enforcing it. No refuter (or
+    # no CLAUDE.md) → no kernel law to hold anyone to, so SKIP. A synthetic fixture
+    # harness lands here, which is what keeps this check reddening only its own case.
+    if txt is None or "refuter" not in skills:
+        return [R(ID, "SKIP", law, "no refuter skill / no CLAUDE.md — no kernel law here")]
+    if KERNEL_MARK not in txt:
+        out.append(R(ID, "FAIL", law, "%s  (no %r block)" % (rel_p(root, cm), KERNEL_MARK),
+                     "name the kernel surfaces in CLAUDE.md"))
+    if KERNEL_MARK in txt:
+        rtxt = skills["refuter"][1]
+        if KERNEL_MARK not in rtxt:
+            out.append(R(ID, "FAIL", law,
+                         "%s  (refuter does not name the kernel surfaces it gates)"
+                         % rel_p(root, os.path.join(skills["refuter"][0], "SKILL.md")),
+                         "name the kernel list in refuter's SKILL.md"))
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law, "kernel surfaces named in CLAUDE.md and refuter"))
+    return out
+
+
+# GOLDEN RELEASE SURFACE — adopted from cloudflare-os's golden-file manifest test. A ship
+# touches exactly these files; one more or one fewer and the release is not the shape the
+# repo agreed on.
+GOLDEN_FILE = "evals/golden-release-surface.txt"
+
+
+def check_release_surface(root, _plug, _skills):
+    ID = "RELEASE-SURFACE"
+    law = "a release touches exactly the agreed surface set — no more, no fewer"
+    gf = os.path.join(root, GOLDEN_FILE)
+    txt = read(gf)
+    if txt is None:
+        return [R(ID, "SKIP", law, "no %s — nothing to hold the release to" % GOLDEN_FILE)]
+    want = [l.strip() for l in txt.splitlines() if l.strip() and not l.startswith("#")]
+    missing = [w for w in want if not os.path.exists(os.path.join(root, w))]
+    if missing:
+        return [R(ID, "FAIL", law,
+                  "%s  (golden surface names %d file(s) that do not exist: %s)"
+                  % (GOLDEN_FILE, len(missing), ", ".join(missing[:4])),
+                  "fix the path, or regenerate: ls the surfaces and update %s" % GOLDEN_FILE)]
+    return [R(ID, "PASS", law, "%d release surface(s) all present" % len(want))]
+
+
+CHECKS = [check_network, check_kernel, check_release_surface,
+          check_offload, check_labels, check_scripts, check_references,
           check_estate, check_selfcheck, check_triggers, check_safety,
           check_hooks, check_router, check_route_parity, check_route_conformance]
 
