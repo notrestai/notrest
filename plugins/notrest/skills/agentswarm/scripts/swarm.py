@@ -565,7 +565,7 @@ def cmd_watch(args):
                 sig[l[:40]] = l
         if sig == seen and not active:
             quiet += 1
-        elif not rows:
+        elif not active:
             # nothing inside the discovery window at all: there is no swarm to watch.
             quiet += 1
         else:

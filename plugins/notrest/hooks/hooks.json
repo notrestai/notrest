@@ -36,6 +36,15 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/spawn-gate.sh\""
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
