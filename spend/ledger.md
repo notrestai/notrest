@@ -143,3 +143,26 @@
 [2026-08-06 00:42Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a3897c0af5297fd11
 [2026-08-06 00:46Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=ab8914e966a888fb2
 [2026-08-06 00:59Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a8fb7a83027418de2
+[2026-08-06 01:05Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=adbd39b60c3402d1c
+[2026-08-06 02:29Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=acdc34278ab212b7a
+[2026-08-06 02:30Z] lane=subagent model=claude-opus-5 tokens=1982035 grade=observed purpose="auto-receipt: Now dig.rest's arrangement patterns and a sweep of the remai" agent=aaa924c4a18da1fab
+[2026-08-06 02:30Z] lane=subagent model=claude-opus-5 tokens=3034439 grade=observed purpose="auto-receipt: The README is boilerplate. Let me read the real docs." agent=ae86d6e143d930aa5
+[2026-08-06 02:31Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=af21e6d8484f0698f
+[2026-08-06 02:32Z] lane=subagent model=claude-opus-5 tokens=3876617 grade=observed purpose="auto-receipt: Recon complete — 24 calls, read-only throughout. Founding do" agent=a8e5f2eb99e6d0300
+[2026-08-06 02:32Z] lane=subagent model=claude-opus-5 tokens=3086599 grade=observed purpose="auto-receipt: Found it — rig.rest lives at `/Users/ethanabot/Desktop/rig.r" agent=a25bb6b135a283955
+[2026-08-06 02:33Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a0985293d8dab34d9
+[2026-08-06 02:34Z] lane=subagent model=claude-opus-5 tokens=2664050 grade=observed purpose="auto-receipt: **os-recon-landscape — digest** (labels: [cited] = page fetc" agent=a157a0bfce41cf3c3
+[2026-08-06 02:51Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a4d24f4095ff91c1d
+[2026-08-06 02:53Z] lane=subagent model=claude-opus-5 tokens=3318824 grade=observed purpose="auto-receipt: ## pioneer-aios digest — the AI OS / agent-shell wave, Aug 2" agent=a46a9aaf8af67c3e8
+[2026-08-06 02:54Z] lane=subagent model=claude-opus-5 tokens=2634841 grade=observed purpose="auto-receipt: Four high-value targets remain — the audit-trail standard, p" agent=a18861149573dff91
+[2026-08-06 02:54Z] lane=subagent model=claude-opus-5 tokens=2501230 grade=observed purpose="auto-receipt: I'll start by loading the web tools I need." agent=af2b35a45acff4234
+[2026-08-06 02:55Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a220a47322216594d
+[2026-08-06 02:55Z] lane=subagent model=claude-opus-5 tokens=2568893 grade=observed purpose="auto-receipt: ## PIONEER-GRAPH — web research digest **Reliability caveat" agent=a6ee535a201ba5f1e
+[2026-08-06 02:55Z] lane=subagent model=claude-opus-5 tokens=3571811 grade=observed purpose="auto-receipt: Two final checks — the registry's live status and the founda" agent=aa4a38b139f665be4
+[2026-08-06 02:55Z] lane=subagent model=claude-opus-5 tokens=3128871 grade=observed purpose="auto-receipt: I'll start by loading the web tools I need." agent=a48807360de1d68d3
+[2026-08-06 02:55Z] lane=subagent model=claude-opus-5 tokens=3185340 grade=observed purpose="auto-receipt: ## PIONEER-GRAVES — cause of death per stone **1. Sandstorm" agent=a02f7c41fd8a533c2
+[2026-08-06 02:55Z] lane=subagent model=claude-opus-5 tokens=3323659 grade=observed purpose="auto-receipt: Two final fetches — the agent-OS landscape and the personal-" agent=a445156a18e00d967
+[2026-08-06 02:57Z] lane=subagent model=claude-opus-5 tokens=3361899 grade=observed purpose="auto-receipt: I'll start by loading the web research tools." agent=abd0168cd3033567a
+[2026-08-06 02:58Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=aad66d6f9380999cb
+[2026-08-06 03:07Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a114a3c45eeb10fbc
+[2026-08-06 03:12Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a53c6e0bf3d0dd230

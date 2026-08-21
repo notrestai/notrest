@@ -1,9 +1,16 @@
 ---
 name: beam
-description: "Checkpoint in-flight agent lanes and move the remaining work to the cloud — \"beam up\" banks each lane and respawns it as a remote Opus lane; \"beam down\" folds the work home. Use on \"/beam\", \"beam up\", \"beam down\", \"beam status\", or \"I have to leave — keep the lanes running\". Checkpoint→respawn: nothing teleports."
+description: "Checkpoint in-flight agent lanes and, where remote isolation exists, respawn the remaining work in the cloud; beam down folds results home. On Codex v4.3, checkpoint/status are supported but Claude remote-Agent respawn is unavailable and must be labeled. Use on /beam, beam up/down/status, or 'I have to leave'."
 ---
 
 # beam — the lanes keep working after you close the lid
+
+**Codex capability boundary.** The v4.3 Codex adapter can create and validate the file/git
+checkpoint, but it does not expose Claude's remote `Agent(isolation: "remote")` surface.
+On Codex, stop after banking the checkpoint and report remote respawn as unavailable; do
+not imply work continues. If a future Codex remote task surface is explicitly provided and
+the user authorizes it, the worker model is `gpt-5.6-sol`. The Claude adapter continues to
+use explicit `model: "opus"` and never `subagent_type: "fork"`.
 
 Mid-session, four background lanes are working. The owner has to leave. Today that means
 one of two bad things: the lanes die with the session, or the owner sits in front of a

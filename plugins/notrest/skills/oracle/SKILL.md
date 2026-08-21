@@ -1,10 +1,26 @@
 ---
 name: oracle
-disable-model-invocation: false
-description: "Session intake + resume — the suite's front door. On \"hey oracle\", /oracle, \"start an oracle session\", or \"resume / pick up where we left off\": load the CLAUDE.md foundation, offer resume from START-HERE.md (opening the live line to a predecessor when one exists), ask the six ORACLE questions (Objective, Role, Architecture, Content, Leverage, Evaluation — each skippable), route to the suite skill that fits, then proceed — scaffolding CLAUDE.md if none exists. Not for ordinary questions."
+description: "Session intake + resume — the suite's front door. On \"hey oracle\", /oracle, \"start an oracle session\", or \"resume / pick up where we left off\": load the runtime foundation (AGENTS.md on Codex, CLAUDE.md on Claude), offer resume from START-HERE.md, ask the six ORACLE questions, route to the suite skill that fits, then proceed — scaffolding the foundation if none exists. Not for ordinary questions."
 ---
 
 # ORACLE — Session Intake
+
+## Runtime adapter (read before intake)
+
+On Codex, `FOUNDATION` means `AGENTS.md` and the template is
+`references/agents-foundation-template.md`. On Claude, `FOUNDATION` means `CLAUDE.md` and
+the template is `references/claude-foundation-template.md`. Every unqualified
+`CLAUDE.md` instruction below means `FOUNDATION` when running on Codex; do not create a
+second foundation merely because the older prose names Claude.
+
+For the live line, Codex uses task/thread tools (`list_threads`, `read_thread`,
+`send_message_to_thread`) when exposed. Claude uses its session tools. Never create a new
+task/session unless the user asked; if no wire is available, resume from the files and say
+so. Codex does not run the Claude SessionStart hook, so explicitly probe `COORD.md`, Doctor,
+and Eval rather than claiming the hook prepared them.
+
+Resolve `<plugin-root>` from this selected `SKILL.md` and substitute its absolute path
+before running commands; never execute the placeholder literally.
 
 When invoked, walk the user through six quick questions that load good context before the real work, then proceed using their answers. The six spell **ORACLE**: **O**bjective, **R**ole, **A**rchitecture, **C**ontent, **L**everage, **E**valuation.
 
@@ -13,7 +29,9 @@ Run **only** when the user says **hey oracle**, **/oracle**, or clearly asks to 
 
 ## Foundation & resume (do this first, before the questions)
 When invoked, glance at the working directory for files a prior session may have left:
-- **`CLAUDE.md`** — the foundation (how you work, tooling, conventions, infrastructure). If it exists, it's already your loaded context (Claude Code auto-reads it at the repo root; elsewhere, read it). Treat it as the baseline and **do not recreate or overwrite it** — upkeep happens at session end via `sessionend`.
+- **`FOUNDATION`** — `AGENTS.md` on Codex, `CLAUDE.md` on Claude: how you work, tooling,
+  conventions, and infrastructure. Treat it as the baseline and **do not recreate or
+  overwrite it** — upkeep happens at session end via `sessionend`.
 - **`START-HERE.md`** — a prior session's resume instructions. If it exists, tell the user a previous session left off here and offer to **resume from it** (read it, continue in its order) or start fresh.
 - **`COORD.md`** — the session coordination ledger (the SessionStart hook auto-creates it
   at any git-repo root; scaffold it yourself here if it's missing and the environment has
@@ -42,8 +60,7 @@ Protocol + message templates: the **sessionend** skill's `references/live-handof
 **Prior-dossier index (if present).** If the repo carries an `oracle-index.md` — or has ORACLE output folders (`research/`, `decision/`, `critique/`, …) without one — use the **archivist** skill during intake: refresh the index, then one `find` on the stated Objective's topic before routing. A hit means this project may already hold the answer — offer reuse/extend/fresh instead of silently re-spending a search budget.
 
 **File graph (cheap, script-only).** Alongside the archivist consult, refresh the project's
-file graph — `python3 <graph-skill>/scripts/graph.py scan --root .` (the **graph** skill;
-`${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/graph.py` when installed as a plugin). The
+file graph — `python3 <plugin-root>/skills/graph/scripts/graph.py scan --root .` (the **graph** skill). The
 scanner reads the files, not you, so it costs no context: one summary line back, and
 `graph/graph.html` is current if anyone wants to look at how this project connects. On a
 project's **first** scan, offer *once* to register it for the cross-project PM view
@@ -62,7 +79,7 @@ code. Say nothing when the file is absent or nothing is ripe.
 
 **Cockpit (one line, only if the project asked for it).** If `graph/.cockpit-always` sits at
 the estate root, this project has opted its live window on. Run `python3
-"${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/cockpit.py" status --root .` — exit 0 means it is
+"<plugin-root>/skills/graph/scripts/cockpit.py" status --root .` — exit 0 means it is
 already up (hand the URL to the built-in browser pane if it is not on screen), exit 5 means
 start it (`serve --root . --port <p> --always --no-open &`) and then open it, exit 6 means the
 project never opted in and you say nothing. Surfacing the owner's window is the seat's job,
@@ -70,7 +87,7 @@ not something the owner should have to remember; it is never started in a projec
 not opted in.
 
 **Estate pulse (script-only, and usually free).** Between the foundation load and question 1,
-take the estate's temperature: `bash "${CLAUDE_PLUGIN_ROOT}/skills/doctor/scripts/pulse.sh"
+take the estate's temperature: `bash "<plugin-root>/skills/doctor/scripts/pulse.sh"
 --if-stale 6 --root .` — existence-guarded like every sibling call; if the script is absent, say
 so in one line and carry on, because **intake never dies on a missing sibling**. The `--if-stale`
 window is what keeps this cheap: a pulse banked within six hours answers `pulse: fresh (…)` and
@@ -84,7 +101,9 @@ reports the estate as of that stamp, up to six hours old, so offer the live re-c
 (`watch-due=`, `compile=`) is never a red; that's the estate doing its job, and it does not
 interrupt an intake.
 
-If there's **no `CLAUDE.md`**, you'll **always** scaffold one after the intake (see When done) — no matter how much was answered or skipped. The intake answers are foundation material: **Architecture** → how you work, **Leverage** → tooling, **Content** → the project/situation.
+If there is **no runtime `FOUNDATION`**, always scaffold it after the intake (see When
+done) — no matter how much was answered or skipped. The intake answers are foundation
+material: **Architecture** → how you work, **Leverage** → tooling, **Content** → the project/situation.
 
 ## How to run it
 - **Ask one question at a time.** Send the question, then stop and wait for the answer. Never show all six at once.
@@ -165,11 +184,18 @@ one: the user finds out either way, and the first way is cheaper.
   line still gets appended when the work lands, `/spend` still receipts any lanes it spawns, and
   `recap` / `graph` still see the output. **Domain packs are workbenches; the estate is the
   workshop.** If nothing installed fits the domain, route to the suite skill as above.
-- **Foundation file — always create on a new session:** if no `CLAUDE.md` exists, **always scaffold one** from the bundled **`references/claude-foundation-template.md`** — no matter how many slots were answered or skipped (even an all-skipped/test intake still gets the file). Seed it with whatever answers you have (Architecture → protocol, Leverage → tooling — the auto-inventory's live vs needs-connecting list included, Content → the project section) and keep the template's placeholders for anything unanswered, so the structure is ready for `sessionend` to fill from real work. Keep it a *base*, not comprehensive. Write it where it persists: repo root in Claude Code (so it's auto-read), the working dir in Cowork, or the outputs area in a chat (present it for download). If `CLAUDE.md` already exists, leave it untouched — you loaded it; updates happen at session end.
+- **Foundation file — always create on a new session:** if no runtime `FOUNDATION`
+  exists, scaffold it from the adapter's bundled template —
+  `references/agents-foundation-template.md` on Codex or
+  `references/claude-foundation-template.md` on Claude. Seed it with the answers you have
+  and keep placeholders for anything unanswered. Keep it a base, not a status document.
+  Write it at the project root. If `FOUNDATION` already exists, leave it untouched — you
+  loaded it; updates happen at session end.
 - Then do the work, applying the answers. Internally follow the loading rule: **use their Content first and keep their actual ask last; put the most important facts at the start or end, never buried in the middle.**
 - For any skipped slot, pick a sensible default and note in one line what you assumed. For a skipped **Evaluation**, default to the suite's reliability standard: label non-obvious claims, flag anything unverified plainly, and end substantial answers with the one thing most likely to be wrong.
 
 ## Note
 This is a setup ritual for a real working session. For a quick one-off, the user can answer just **Objective** (and maybe **Content**) and skip the rest.
 
-Bookend: `oracle` brings up the foundation (`CLAUDE.md`) and resumes from `START-HERE.md` at session start; **`sessionend`** updates them at session end. Together they make sessions continuous.
+Bookend: `oracle` brings up the runtime foundation and resumes from `START-HERE.md` at
+task/session start; **`sessionend`** updates them at close. Together they make work continuous.

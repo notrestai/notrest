@@ -19,6 +19,9 @@
 # fail is decoration.
 # Usage: bash <notrest-skill>/scripts/fixture.sh   (exit 0 = all pass, 1 = a failure)
 set -u
+# The historical corpus exercises the Claude adapter unless a case explicitly selects
+# Codex. A fixture inherits its caller's host variables, which must not change its arm.
+unset CODEX_THREAD_ID CODEX_SANDBOX
 HERE="$(cd "$(dirname "$0")" && pwd)"
 EST="$HERE/establish.py"
 HOOKS_SRC="$(cd "$HERE/../../../hooks" && pwd)"
@@ -58,6 +61,7 @@ has "COORD scaffold ledger line" "[notrest] COORD.md scaffolded by /notrest esta
 t "exactly ONE protocol block" "$(nblk "$P1/CLAUDE.md")" "1"
 t "block is closed" "$(grep -c '<!-- /notrest:protocol -->' "$P1/CLAUDE.md")" "1"
 has "block carries the offload rule" "opus" "$P1/CLAUDE.md"
+has "block carries the Codex model map too" "gpt-5.6-sol" "$P1/CLAUDE.md"
 t "plain establish NEVER runs git init" "$([ -d "$P1/.git" ] && echo initted || echo none)" "none"
 
 C1="$(ckt "$P1/COORD.md")"; K1="$(ckt "$P1/CLAUDE.md")"
@@ -78,6 +82,36 @@ head -3 "$P2/CLAUDE.md" > "$W/head3"; printf '# Their project\n\nTheir own rules
 t "existing content survives byte-for-byte" "$(ckt "$W/head3")" "$(ckt "$W/orig3")"
 t "one block appended, not two" "$(nblk "$P2/CLAUDE.md")" "1"
 
+echo "── establish.py: the Codex adapter"
+
+PC="$W/proj-codex"; mkdir -p "$PC"; : > "$PC/README.md"
+est establish --surface codex --root "$PC" > "$W/o" 2>&1
+t "Codex establish → exit" "$?" "0"
+t "Codex foundation is AGENTS.md" "$([ -f "$PC/AGENTS.md" ] && echo y || echo n)" "y"
+t "Codex establish does not invent CLAUDE.md" "$([ -f "$PC/CLAUDE.md" ] && echo y || echo n)" "n"
+has "Codex block is protocol v2" "notrest:protocol v2" "$PC/AGENTS.md"
+has "Codex block pins the Codex worker" "gpt-5.6-sol" "$PC/AGENTS.md"
+has "Codex block discloses the hook boundary" "Never claim a hook ran on Codex" "$PC/AGENTS.md"
+PCK="$(ckt "$PC/AGENTS.md")"
+est establish --surface codex --root "$PC" >/dev/null 2>&1
+t "Codex establish is byte-idempotent" "$(ckt "$PC/AGENTS.md")" "$PCK"
+est check --surface codex --root "$PC" > "$W/o" 2>&1
+t "Codex check → established" "$?" "0"
+has "Codex check names its surface" "AGENTS-BLOCK" "$W/o"
+
+PA="$W/proj-auto-codex"; mkdir -p "$PA"; : > "$PA/README.md"
+CODEX_THREAD_ID=fixture-thread est establish --root "$PA" > "$W/o" 2>&1
+t "Codex runtime variable selects Codex automatically" "$?" "0"
+t "auto Codex wrote AGENTS.md" "$([ -f "$PA/AGENTS.md" ] && echo y || echo n)" "y"
+t "auto Codex left CLAUDE.md absent" "$([ -f "$PA/CLAUDE.md" ] && echo y || echo n)" "n"
+
+PB="$W/proj-both"; mkdir -p "$PB"; : > "$PB/README.md"
+est establish --surface both --root "$PB" >/dev/null 2>&1
+t "both adapter writes AGENTS.md" "$([ -f "$PB/AGENTS.md" ] && echo y || echo n)" "y"
+t "both adapter writes CLAUDE.md" "$([ -f "$PB/CLAUDE.md" ] && echo y || echo n)" "y"
+est check --surface both --root "$PB" > "$W/o" 2>&1
+t "both adapter grades both foundations" "$?" "0"
+
 echo "── F-12(a): the hostile CLAUDE.md corpus"
 
 P7="$W/proj7"; mkdir -p "$P7"; : > "$P7/README.md"
@@ -86,7 +120,8 @@ cp "$P7/CLAUDE.md" "$W/orig7"; OS7=$(wc -c < "$W/orig7" | tr -d ' ')
 est establish --root "$P7" > "$W/o" 2>&1; t "CRLF+latin-1 CLAUDE.md → establish" "$?" "0"
 head -c "$OS7" "$P7/CLAUDE.md" > "$W/pre7"
 t "original bytes survive EXACTLY (CRLF + latin-1)" "$(ckt "$W/pre7")" "$(ckt "$W/orig7")"
-t "CRLF count preserved" "$(tr -cd '\r' < "$P7/CLAUDE.md" | wc -c | tr -d ' ')" "3"
+t "CRLF count preserved" \
+  "$(python3 -c "import sys;print(open(sys.argv[1],'rb').read().count(b'\\r'))" "$P7/CLAUDE.md")" "3"
 t "no U+FFFD replacement char written" \
   "$(grep -c $'\xef\xbf\xbd' "$P7/CLAUDE.md" 2>/dev/null || true)" "0"
 t "the block still landed" "$(nblk "$P7/CLAUDE.md")" "1"
@@ -104,7 +139,7 @@ K8="$(ckt "$P8/CLAUDE.md")"
 # unbounded pile of blocks (N-1), so the honest move is to write nothing and say why.
 est check --root "$P8" > "$W/o" 2>&1; t "fenced EXAMPLE is not the block → check" "$?" "5"
 has "check names the fence/mask disagreement" "inside a fenced/masked region" "$W/o"
-hasnt "check never claims the example IS the block" "block present at v1" "$W/o"
+hasnt "check never claims the example IS the block" "block present at v2" "$W/o"
 est establish --root "$P8" > "$W/o" 2>&1; t "fenced example → establish appends NOTHING" "$?" "5"
 t "the fenced example survives byte-for-byte" "$(ckt "$P8/CLAUDE.md")" "$K8"
 t "no second block was appended beside it" "$(grep -c 'notrest:protocol v1' "$P8/CLAUDE.md")" "1"
@@ -144,7 +179,7 @@ P3="$W/proj3"; mkdir -p "$P3"; : > "$P3/README.md"
 est check --root "$P3" > "$W/o" 2>&1; t "older block → check is PARTIAL" "$?" "5"
 est establish --root "$P3" > "$W/o" 2>&1; t "older block → establish" "$?" "0"
 t "still exactly ONE block after upgrade" "$(nblk "$P3/CLAUDE.md")" "1"
-has "block upgraded to v1" "notrest:protocol v1" "$P3/CLAUDE.md"
+has "block upgraded to v2" "notrest:protocol v2" "$P3/CLAUDE.md"
 hasnt "stale body gone" "stale body" "$P3/CLAUDE.md"
 has "text above the block survives" "TOP LINE" "$P3/CLAUDE.md"
 has "text below the block survives" "BOTTOM LINE" "$P3/CLAUDE.md"
@@ -206,7 +241,7 @@ t "…and wrote nothing in the subdir" \
 echo "── non-git honesty, --git-init, symlinks"
 
 est establish --root "$P1" > "$W/o" 2>&1
-has "non-git WARN: self-update" "WARN  GIT-DEGRADED  — self-update is dead" "$W/o"
+has "non-git WARN: self-update" "WARN  GIT-DEGRADED  — automatic self-update is unavailable" "$W/o"
 has "non-git WARN: ship gates" "ship gates are weaker" "$W/o"
 has "non-git WARN: trail not diffable" "the trail is not diffable" "$W/o"
 has "non-git names --git-init as opt-in" "opt-in only, never automatic" "$W/o"
@@ -288,7 +323,7 @@ old = open(p, encoding="utf-8").read()
 open(p, "w", encoding="utf-8").write("# Notes\n\n```sh\necho never closed\n\n" + old)
 PY2
 est check --root "$P16" > "$W/o" 2>&1; t "unclosed fence → check still finds the block" "$?" "0"
-has "…and reports it at v1" "notrest:protocol block present at v1" "$W/o"
+has "…and reports it at v2" "notrest:protocol block present at v2" "$W/o"
 est establish --root "$P16" >/dev/null 2>&1
 est establish --root "$P16" >/dev/null 2>&1
 est establish --root "$P16" >/dev/null 2>&1
@@ -324,6 +359,45 @@ HOME="$FH" est establish --root "$FH/Downloads" >/dev/null 2>&1
 t "--root \$HOME/Downloads → refused" "$?" "2"
 HOME="$FH" est establish --root "$FH/Desktop/realproject" >/dev/null 2>&1
 t "a project INSIDE Desktop still establishes" "$?" "0"
+
+# N-5b (refuter F1, 2026-08-21): a dot config dir directly under $HOME is refused even
+# when it carries a marker — ~/.codex/AGENTS.md is Codex's machine-wide instruction file,
+# and pre-fix the new AGENTS.md marker made it an establishable root.
+mkdir -p "$FH/.codex"; printf '# codex global\n' > "$FH/.codex/AGENTS.md"
+HOME="$FH" est establish --root "$FH/.codex" > "$W/o" 2>&1
+t "--root \$HOME/.codex → refused despite its AGENTS.md marker" "$?" "2"
+has "the config-dir refusal explains itself" "dot-directory directly under your HOME" "$W/o"
+t "…and nothing was written into ~/.codex" "$(cd "$FH/.codex" && ls | sort | tr '\n' ' ')" "AGENTS.md "
+mkdir -p "$FH/.claude"; printf '# global\n' > "$FH/.claude/CLAUDE.md"
+HOME="$FH" est establish --root "$FH/.claude" >/dev/null 2>&1
+t "--root \$HOME/.claude → refused despite its CLAUDE.md marker" "$?" "2"
+t "…and nothing was written into ~/.claude" "$(cd "$FH/.claude" && ls | sort | tr '\n' ' ')" "CLAUDE.md "
+
+# N-5c (review-the-fix, 2026-08-21): the refusal must hold on the LEXICAL path too — a dot
+# dir under $HOME that is a symlink out of HOME (the dotfiles-manager shape) is still
+# ~/.codex to every tool that loads it, wherever its realpath lands.
+mkdir -p "$FH/outside-dots/codexdir"; printf '# managed\n' > "$FH/outside-dots/codexdir/AGENTS.md"
+ln -sfn "$FH/outside-dots/codexdir" "$FH/.codexlink"
+HOME="$FH" est establish --root "$FH/.codexlink" > "$W/o" 2>&1
+t "a dot dir symlinked OUT of HOME is still refused" "$?" "2"
+t "…and the symlink target was left alone" "$(cd "$FH/outside-dots/codexdir" && ls | sort | tr '\n' ' ')" "AGENTS.md "
+# …and the refusal survives ANCESTOR ALIASING (a symlinked $HOME / the macOS /var →
+# /private/var shape): parent realpath'd, leaf judged as named.
+mkdir -p "$FH/rh" "$FH/outside2/cdir"; printf '# managed\n' > "$FH/outside2/cdir/AGENTS.md"
+ln -sfn "$FH/rh" "$FH/rhlink"
+ln -sfn "$FH/outside2/cdir" "$FH/rh/.codexlink"
+HOME="$FH/rhlink" est establish --root "$FH/rhlink/.codexlink" > "$W/o" 2>&1
+t "…even when \$HOME itself is reached through a symlink alias" "$?" "2"
+t "…and that aliased-route target was left alone" "$(cd "$FH/outside2/cdir" && ls | sort | tr '\n' ' ')" "AGENTS.md "
+# HOME set-but-empty (launchd/CI shells) must not disable the home refusals. Only the
+# REAL home demonstrates this (a fake HOME is invisible once the env var is blank), so the
+# probe is resolve_root() only — pure resolution, no writes, against the pwd-derived home.
+t "HOME='' still refuses the real \$HOME (pwd fallback)" "$(env HOME= python3 -c "
+import sys, os, pwd
+sys.path.insert(0, os.path.dirname('$EST'))
+import establish
+root, err = establish.resolve_root(pwd.getpwuid(os.getuid()).pw_dir)
+print('refused' if err else 'established')" 2>&1)" "refused"
 
 # N-2: a CLAUDE.md-ONLY subproject is the ordinary Claude Code shape and must never be
 # adopted by an established parent. Parent carries a ripe compile candidate to prove no
@@ -491,6 +565,18 @@ t "cockpit nudge: hook still exits 0 with no marker" "$?" "0"
 hasnt "no marker → session-start says nothing about a cockpit" "Cockpit is opted always-on" "$W/o"
 
 mkdir -p "$CKN/graph"; printf '{"port":8123}\n' > "$CKN/graph/.cockpit-always"
+# Port 8123 is a shared machine resource (an unrelated dev server held it on 2026-08-21
+# and turned this arm red) — so the no-server assertion below is a DELTA, not an absolute:
+# capture the port's state before the hook runs, and assert the hook left it unchanged.
+PRE_LISTEN="$(python3 -c "
+import socket
+s = socket.socket(); s.settimeout(0.4)
+try:
+    s.connect(('127.0.0.1', 8123)); print('listening')
+except Exception:
+    print('none')
+finally:
+    s.close()")"
 ( cd "$CKN" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
 t "cockpit nudge: hook exits 0 with a marker" "$?" "0"
 has "marker at a NON-GIT COORD root → the nudge fires" \
@@ -505,7 +591,9 @@ has "marker at a GIT root → the nudge fires too" \
   "Cockpit is opted always-on here (port 8124)" "$W/o"
 
 # A SessionStart hook must not do work: one echo, no probe, no spawn, no opener.
-t "the nudge started NO server on the opted port" \
+# Asserted as post==pre so an unrelated process already holding the port cannot red this
+# arm — the hook's obligation is to CHANGE nothing, not to guarantee a quiet machine.
+t "the nudge started NO server on the opted port (post==pre)" \
   "$(python3 -c "
 import socket
 s = socket.socket(); s.settimeout(0.4)
@@ -514,7 +602,7 @@ try:
 except Exception:
     print('none')
 finally:
-    s.close()")" "none"
+    s.close()")" "$PRE_LISTEN"
 
 for BADMARK in 'garbage{' '{\"port\":\"not-a-number\"}' '{\"port\":0}' '{}' ''; do
   printf '%s' "$BADMARK" > "$CKN/graph/.cockpit-always"

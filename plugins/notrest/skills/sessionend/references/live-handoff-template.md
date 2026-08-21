@@ -7,8 +7,11 @@ received the orientation message, resolved an unknown the docs couldn't cover, a
 history question, and got it answered with full context.
 
 ## When this applies
-Only in environments with session-to-session tools (Claude Code desktop with session management:
-`list_sessions`, `send_message`, `list_events`, `search_session_transcripts`). In plain chats, skip — the files
+Only in environments with task/session-to-task/session tools. Codex maps the operations to
+`list_threads`, `read_thread`/`wait_threads`, and `send_message_to_thread`; creating a new
+task remains the user's act unless they explicitly ask the current task to create one.
+Claude desktop uses `list_sessions`, `send_message`, `list_events`, and
+`search_session_transcripts`. In plain chats, skip — the files
 are the whole handoff (but note the successor can often still SEARCH old transcripts).
 
 ## The protocol (three steps)

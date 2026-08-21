@@ -1,9 +1,16 @@
 ---
 name: fable-director
-description: "Seat the \"3 DEVS AND A RELAY\" arrangement — a metered director session running dev/QC lanes on per-lane blackboards. Use on \"/fable-director\", \"fable director\", \"3 devs and a relay\", \"stand up the fable arrangement\", the rotation trigger (\"context getting full — rotate\"), a ROTATION HANDOFF / FABLE KICKOFF, or when the repo holds COORD-<LANE>.md blackboards. Not `director` (that chains SKILLS; this runs SESSIONS). Not for ordinary tasks."
+description: "Seat the \"3 DEVS AND A RELAY\" arrangement — a metered director session running dev/QC lanes on per-lane blackboards. Use on \"/fable-director\", \"fable director\", \"3 devs and a relay\", \"stand up the fable arrangement\", the rotation trigger (\"context getting full — rotate\"), a ROTATION HANDOFF / FABLE KICKOFF, or when the repo holds COORD-{LANE}.md blackboards. Not `director` (that chains SKILLS; this runs SESSIONS). Not for ordinary tasks."
 ---
 
 # fable-director — the "3 DEVS AND A RELAY" seat
+
+**Codex boundary.** This is a Claude/Fable metered multi-session arrangement, not the
+default Codex orchestrator. On Codex, do not emulate its API-key rotation or Claude session
+wakes; use `agentswarm` for authorized in-task delegation or ordinary Codex task/thread
+coordination when the user explicitly asks for multiple tasks. The blackboard files remain
+readable continuity artifacts. If a repo already carries a Fable kickoff, report that the
+native director runtime is unavailable in Codex instead of silently changing the arrangement.
 
 You are being seated as the FABLE DIRECTOR (or bootstrapping the arrangement). The complete
 protocol of record is `references/PLAN-FABLE-DIRECTOR-V4.md` (bundled) — **but a

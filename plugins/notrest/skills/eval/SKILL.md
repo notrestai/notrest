@@ -5,6 +5,12 @@ description: "The harness's law-conformance suite — one static pass asking whe
 
 # eval — does the harness obey its own laws?
 
+**Runtime adapter.** OFFLOAD-POLICY is dual: every documented lane contract maps Codex
+to explicit `model: "gpt-5.6-sol"` (with `fork_turns: "none"` or a bounded recent-turn
+fork) and Claude to explicit `model: "opus"` (never `subagent_type: "fork"`). Claude hook
+checks remain checks of the Claude adapter; their PASS does not claim Codex ran those
+hooks. `behavior --surface codex|claude` prints the correct bounded host command.
+
 ```bash
 python3 plugins/notrest/skills/eval/scripts/eval.py check --root .
 ```
@@ -19,7 +25,7 @@ is a different shape and goes to `/doctor`: doctor checks the INSTALL, eval chec
 ## The doctrine: check the fingerprint, not the behavior
 
 **A law that is well-encoded leaves a static fingerprint in the shipped text.** If the
-offload policy is real, `model: "opus"` is written where spawns are written. If the
+offload policy is real, the runtime model map is written where spawns are written. If the
 honesty grammar is real, the label vocabulary is in the skill that makes claims. If the
 zero-token claim is real, a script exists and compiles. Those are facts about files, and
 files can be read in 70 milliseconds for free.
@@ -38,7 +44,7 @@ a fix hint. A finding you cannot act on is a bug in this skill.
 
 | Check | The law |
 |---|---|
-| `OFFLOAD-POLICY` | every documented spawn of a Claude subagent names explicit **opus**; no sonnet/haiku directive; the fork ban is present wherever `subagent_type` is written; the SessionStart hook carries the rule |
+| `OFFLOAD-POLICY` | every documented spawn maps **Codex=gpt-5.6-sol** and **Claude=opus**; inherited/full-history forks are banned; the Claude SessionStart hook carries the Claude rule |
 | `HONESTY-LABELS` | every claim-making skill (researcher, factcheck, marketresearcher, explainer, decider, recap, watch, draft) defines or uses `[cited]/[recall]/[estimate]/[unverified]` or its documented verdict grammar |
 | `SCRIPT-OWNS-SCANNING` | every cited scanner exists in the tree and `py_compile`s, and every shipped script is named by its SKILL.md — this is what backs "the scanner reads the files, the model never has to" |
 | `REFERENCES-CITED` | every **bare** `references/…` or `scripts/…` path a SKILL.md cites exists in that skill's own directory. A path already carrying a prefix (`<spend-skill>/scripts/spend.py`) is a deliberate cross-skill reference and is left alone; a bare path that ships under a *different* skill WARNs unless the citing line names that skill; `.py` is left to `SCRIPT-OWNS-SCANNING`, so one defect never lights two checks |

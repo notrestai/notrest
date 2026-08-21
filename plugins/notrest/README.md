@@ -1,11 +1,12 @@
-# ORACLE Suite
+# ORACLE Suite — Codex + Claude
 
-A working-session toolkit for Claude Code by [Not Rest Inc.](https://do.not.rest) — structured
-thinking from intake to handoff. Thirty-one skills that compose:
+A cross-runtime working-session toolkit by [Not Rest Inc.](https://do.not.rest) — structured
+thinking from intake to handoff. Thirty-one skills share one estate and expose native
+Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
 
-- **oracle** — session intake (the ORACLE six-question setup) + loads/scaffolds the `CLAUDE.md` foundation. Say "hey oracle" or `/oracle`.
+- **oracle** — session intake + loads/scaffolds `AGENTS.md` on Codex or `CLAUDE.md` on Claude.
 - **notrest** — the establishment verb: writes `COORD.md` + a marker-delimited protocol block in
-  `CLAUDE.md` (idempotent, atomic, nothing outside the markers touched), then binds the invoking
+  `AGENTS.md` (Codex), `CLAUDE.md` (Claude), or both (idempotent, atomic, nothing outside the markers touched), then binds the invoking
   session to the protocol. `check` is the read-only drift check — establishment facts drive the
   exit code, adoption facts stay INFO, and adherence is the seat's judgment, said out loud.
 - **researcher** — multi-pass research → background + decision dossier.
@@ -45,11 +46,11 @@ thinking from intake to handoff. Thirty-one skills that compose:
   self-contained force-directed HTML view of every file and the references between them
   (wikilinks, links, imports, sourced scripts, estate pointers) at zero model tokens;
   `register` + `all` merge every registered project into one cross-project PM map.
-- **spend** — append-only model-spend ledger + report with a routing verdict (exits 4 if
-  Fable ever rode below the seat) — makes the v2.7.0 routing hard rule checkable.
-- **eval** — the harness's law-conformance suite: `eval.py check --root .` runs eight
-  static checks over the SHIPPED files — offload policy (explicit opus, no sonnet/haiku,
-  fork ban), honesty labels, scanners that exist and compile, append-only ledgers, the
+- **spend** — append-only model-spend ledger + report with a date-guarded runtime routing
+  verdict (Claude=opus, Codex=gpt-5.6-sol).
+- **eval** — the harness's law-conformance suite: `eval.py check --root .` runs static
+  checks over the shipped files — the dual runtime model map, inherited-fork ban,
+  honesty labels, scanners that exist and compile, append-only ledgers, the
   worker contract, front-matter YAML accepts with a `/slash` trigger, the named safety
   laws, silent-on-failure hooks. A law that is well-encoded leaves a static fingerprint;
   check the fingerprint, not the behavior. ~0.1s, zero model tokens, file:line on every
@@ -84,12 +85,12 @@ thinking from intake to handoff. Thirty-one skills that compose:
 - **fable-director** — seats and runs the "3 DEVS AND A RELAY" multi-session dev arrangement
   (metered director + flat lanes over per-lane blackboard files with token-watch wakes;
   V4 protocol + repo scaffolder bundled).
-- **agentswarm** — the fast delegation arrangement: the seat (the main session's model —
-  Fable or Opus alike) keeps decompose, judge, apply, gate; everything else offloads to
-  concurrent in-session **Opus** lanes; the harness is the wire (no blackboards, no watches,
+- **agentswarm** — the fast delegation arrangement: the seat keeps decompose, judge, apply,
+  gate; authorized work offloads to explicit runtime workers (Codex `gpt-5.6-sol`, Claude
+  `opus`); the harness is the wire (no blackboards, no watches,
   no rotation). The default way any seat delegates; fable-director remains the multi-day /
   multi-machine choice.
-- **sessionend** — writes START-HERE / HANDOFF / STATE / CLAUDE.md for a seamless next session.
+- **sessionend** — writes START-HERE / HANDOFF / STATE / the runtime foundation.
 - **fable-mode** — the Fable behavioral contract: the discipline loop + hard rules (incl.
   the offload model policy — Fable never rides in a subagent; every offloaded job runs on
   explicit Opus, never sonnet/haiku, never forks), consumer-side verification, the outage playbook
@@ -109,7 +110,7 @@ failure. Run it with `/doctor` (installation health) before a version bump.
 graders), kept only as a record of what was measured: ~13 min per pass, $4.58 per graded
 run, zero fixes in 45 minutes. **Never run as a ship gate.**
 
-## Install
+## Install — Claude
 ```
 /plugin marketplace add notrestai/notrest
 /plugin install notrest@notrest
@@ -121,10 +122,15 @@ Then invoke any skill as `/notrest:<name>` (e.g. `/notrest:researcher`), or just
 `oracle-suite` → `notrest` (the marketplace name is unchanged, hence `notrest@notrest`).
 Install `notrest` as above, then remove the old entry with `claude plugin uninstall oracle-suite`.
 
+## Install — Codex local build
+
+Use this repo's `.agents/plugins/marketplace.json`, install
+`notrest@notrest-codex-local`, and start a new Codex task. The native manifest is
+`.codex-plugin/plugin.json`; it intentionally omits Claude hooks.
+
 ## Note on `director`
-`director` orchestrates the sibling skills by reading their `SKILL.md` files directly. It resolves
-them from `${CLAUDE_PLUGIN_ROOT}/skills/` when installed as a plugin, and falls back to
-`.claude/skills/` (project) or `~/.claude/skills/` (global) — so chaining works whether the suite
+`director` orchestrates sibling skills by reading their `SKILL.md` files directly. It resolves
+them relative to its own selected skill first, then the host's project/user skill directories — so chaining works whether the suite
 is installed as a plugin or dropped in as loose skills. (`fable-director` is different: it
 orchestrates *sessions*, not skills — a multi-session dev arrangement over blackboard files.)
 

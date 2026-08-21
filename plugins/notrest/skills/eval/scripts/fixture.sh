@@ -26,7 +26,8 @@ name: agentswarm
 description: "The delegation arrangement — the seat keeps decompose/judge/apply/gate. Use on /agentswarm."
 ---
 # agentswarm
-Spawn with the Agent tool, `model: "opus"` on every lane.
+Runtime map: Claude uses `model: "opus"`; Codex uses `model: "gpt-5.6-sol"` with
+`fork_turns: "none"` or a bounded recent-turn fork. Spawn with the host's agent tool.
 - **Never spawn `subagent_type: "fork"`** — forks ignore the model parameter.
 EOF
 

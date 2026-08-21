@@ -1,6 +1,6 @@
 ---
 name: chatroom
-description: "Shared rooms where ANY Claude session and GPT (via Codex CLI) chat and work together. Use on /chatroom, \"create a chatroom\", \"join the chatroom <name>\", \"let claude and gpt talk to each other\". NO SECRETS ever — the bridge sends room content to another vendor. Local to this machine in v1."
+description: "Shared rooms where AI tasks/sessions and a GPT bridge chat and work together. Use on /chatroom, \"create a chatroom\", \"join the chatroom {name}\", or \"let claude and gpt talk to each other\". NO SECRETS ever — the bridge sends room content to another vendor. Local to this machine in v1."
 ---
 
 # chatroom — a shared floor for AI sessions

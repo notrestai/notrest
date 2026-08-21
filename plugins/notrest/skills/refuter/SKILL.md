@@ -5,6 +5,14 @@ description: "The adversarial reviewer for code and load-bearing artifacts — a
 
 # Refuter
 
+**Runtime adapter.** When an independent lane is authorized, Codex uses explicit
+`model: "gpt-5.6-sol"` with `fork_turns: "none"` or a bounded recent-turn fork; Claude
+uses explicit `model: "opus"` and never `subagent_type: "fork"`. The refuter must still
+be a lane other than the builder. If the host cannot provide an independent lane, report
+the refuter round as **unperformed**; deterministic tests are evidence, not a substitute
+for independent judgment. On Codex the foundation named below is `AGENTS.md`, not
+`CLAUDE.md`.
+
 The adversarial reviewer, as a contract.
 
 Every harness re-improvises this: "have a lane check the work." Improvised refuters read code and opine. They return "concerns" nobody can reproduce, they miss the path that pushes on a swallowed exit code, and they burn twenty minutes on one brief so broad it becomes a code review.
@@ -18,8 +26,8 @@ The bar is empirical. The best run this harness has had returned three CONFIRMED
 Some changes are estate-wide by construction, and they ship only through a refuter round:
 
 - `plugins/notrest/hooks/**` — hooks run in every session and fail silently by design.
-- `skills/notrest/scripts/establish.py` — writes COORD.md and the CLAUDE.md protocol
-  block into other people's projects.
+- `skills/notrest/scripts/establish.py` — writes COORD.md and the runtime foundation
+  protocol block into other people's projects.
 - Estate-ledger consumers and writers — `agent-ledger.sh`, `session-end.sh`, the spend
   ledger writers, the COORD volume roll.
 

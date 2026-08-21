@@ -5,6 +5,12 @@ description: "Seat the mentor-dev ritual: two PEER sessions on one chartered roo
 
 # mentor — two sessions, one teaching relationship, on the record
 
+**Runtime adapter.** On Codex, use task/thread tools for the two peer seats when the user
+has authorized that arrangement; authorized helper lanes use explicit
+`model: "gpt-5.6-sol"` with `fork_turns: "none"` or a bounded recent-turn fork. On Claude,
+helper lanes use explicit `model: "opus"` and never `subagent_type: "fork"`. If the host
+does not expose a peer wire, keep the room/file protocol and label live escort unavailable.
+
 A build seat has the code and its context. This seat has the laws, the gates and the
 estate's memory. Neither is the other's subagent: the mentor cannot write the builder's
 code, the builder cannot see the estate the mentor carries, and the wire between them is

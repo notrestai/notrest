@@ -5,6 +5,13 @@ description: Chain ORACLE skills into a pipeline — parse the ordered list + se
 
 # Director
 
+**Runtime adapter.** Codex stage lanes use explicit `model: "gpt-5.6-sol"` with
+`fork_turns: "none"` or a bounded recent-turn fork; Claude stage lanes use explicit
+`model: "opus"` and never `subagent_type: "fork"`. Only delegate when authorized. If no
+lane surface exists, the seat may run stages serially and must say that isolation was not
+provided. Resolve sibling skills relative to this selected `SKILL.md` first; Codex does
+not promise `CLAUDE_PLUGIN_ROOT`.
+
 A conductor for the other skills. Given an ordered list of skills and a starting prompt, it runs them one after another and chains them: the output of each stage becomes the input to the next, until the sequence finishes. You are the executor — there is no API that "calls" a skill; you run each skill by reading its `SKILL.md` and performing its workflow yourself, in order.
 
 The cardinal rule: **actually run every stage.** The failure mode of an orchestrator is pretending a stage ran and inventing its output. Never summarize or hand-wave a sub-skill — read its file and do its full workflow, producing its real files, before moving on.
@@ -16,9 +23,11 @@ The prompt names (a) the **ordered sequence of skills** to run and (b) the **see
 ## Locating the skills
 
 Resolve each named skill's `SKILL.md` by checking these locations **in order**, and read the first that exists:
-1. **`${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md`** — when this suite runs as an **installed plugin** (`notrest`), the director and its siblings ship together here. `CLAUDE_PLUGIN_ROOT` is set by Claude Code for plugin code; expand it and look here FIRST. (If your shell doesn't expose it, the plugin's skills sit alongside this `director/` folder — i.e. `../<name>/SKILL.md` relative to this file.)
-2. **`.claude/skills/<name>/SKILL.md`** — a project-level skill.
-3. **`~/.claude/skills/<name>/SKILL.md`** — a global/user skill.
+1. **`../<name>/SKILL.md` relative to this skill** — the portable plugin path. Resolve it
+   to an absolute path before reading. Claude may expose the equivalent through
+   `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md`.
+2. **`.agents/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`** — a project-level skill.
+3. **`~/.codex/skills/<name>/SKILL.md` or `~/.claude/skills/<name>/SKILL.md`** — a global/user skill.
 
 For every skill in the sequence, read its `SKILL.md` before the run. If a named skill can't be found in any of those locations, **stop and report it** — list the skills you did find and ask how to proceed. Don't substitute a different skill or invent the missing one's behavior.
 

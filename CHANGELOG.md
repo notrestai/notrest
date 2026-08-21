@@ -1,5 +1,43 @@
 # Changelog — the notrest harness
 
+## 4.3.0 — 2026-08-06
+
+**Codex is now a first-class runtime adapter, not a Claude package that happens to load.**
+
+- Added the native Codex manifest (`plugins/notrest/.codex-plugin/plugin.json`) and the
+  repo-local Codex marketplace (`.agents/plugins/marketplace.json`). The Codex manifest
+  intentionally omits Claude hooks: Codex does not execute those lifecycle events, and a
+  compatibility load is not enforcement.
+- `notrest establish/check/continuation` now accepts
+  `--surface auto|codex|claude|both`. Codex writes and grades `AGENTS.md`; Claude retains
+  `CLAUDE.md`; both use the same marker-delimited protocol v2 and byte/atomicity/root
+  safety laws. The fixture adds explicit Codex, auto-detection, both-surface, and
+  idempotency arms.
+- Protocol v2 makes the worker policy runtime-explicit: Claude=`opus`,
+  Codex=`gpt-5.6-sol`. Codex model overrides use `fork_turns: "none"` or a bounded
+  recent-turn fork; Claude continues to ban `subagent_type: "fork"`. Delegation remains
+  authorization-bound.
+- Doctor gained `--surface` and Codex-native packaging/inventory checks. Claude hook
+  liveness, Claude desktop shadows, and Claude token measurements SKIP on Codex rather
+  than manufacturing a PASS. Eval's OFFLOAD-POLICY now requires both runtime mappings.
+- The append-only spend gate now date-guards the runtime worker law. Historic entries keep
+  the law active when they were written; Codex `gpt-5.6-sol` becomes compliant from the
+  adapter boundary without laundering backdated entries.
+- Oracle and sessionend gained `AGENTS.md` templates and Codex task/thread live-line rules.
+  Agentswarm, director, refuter, mentor, compile, fable-mode, and beam declare their Codex
+  model/tool boundaries. Beam's remote Agent respawn is honestly Claude-only in this
+  release; Codex checkpoint/status remain usable.
+- Added `plugins/notrest/docs/CODEX.md` as the runtime truth table and a root `AGENTS.md`
+  for developing the harness with Codex.
+- **Ship-time refuter catch (F1 + review round):** the new `AGENTS.md` project marker made
+  `~/.codex` an establishable root — `/notrest` there would have injected the protocol
+  block into Codex's machine-wide instruction file. **Every dot-directory directly under
+  `$HOME`** is now refused absolutely (deliberately broader than known config dirs — a
+  genuine project there establishes a subdirectory instead), on **both the named and the
+  resolved path** so a `~/.codex` symlinked into a dotfiles tree is still refused, and
+  `HOME=""` (launchd/CI shells) no longer disarms the home-refusal family (account-derived
+  fallback). Fixture arms prove each refusal, the no-write, and were watched red pre-fix.
+
 ## 4.2.1 — 2026-08-06
 
 **Fixture debt, paid — and the checks were wrong in a way only the fixtures could show.**

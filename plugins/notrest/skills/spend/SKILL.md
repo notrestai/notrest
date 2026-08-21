@@ -5,12 +5,19 @@ description: "The token receipt — an append-only spend/ledger.md logging every
 
 # spend — the receipt behind the routing rule
 
+**Runtime adapter.** The live v4.3 policy is runtime-explicit: Claude offload lanes use
+`opus`; Codex offload lanes use `gpt-5.6-sol`. The report date-guards the adapter so a
+backdated Codex model cannot rewrite the earlier Opus-only law. Seat lanes and explicitly
+allowlisted cross-vendor lanes remain separate. Record the model that actually ran; an
+intended model is not a receipt.
+
 v2.7.0 hardcoded the rule (Fable is the orchestrator seat, not the fan-out) in the
 SessionStart hook and fable-mode Hard Rule 11; since v2.9.0 the owner policy (2026-07-15)
-routes every offloaded job to explicit Opus —
+routes every Claude offloaded job to explicit Opus; v4.3 adds explicit
+`gpt-5.6-sol` for Codex —
 but a rule without an instrument is an assertion. This skill is the instrument: every model
 spend the session can *observe* gets one append-only ledger line, and `report` computes the
-model split and flags any offload lane that ran on anything but Opus.
+model split and flags any offload lane outside the runtime policy in force on its date.
 
 **Router shape:** `spend-audit`
 
@@ -54,12 +61,13 @@ it is:
 
 ## What counts as a violation
 
-The verdict line names the rule version it enforces — `policy 2026-07-15: opus-only
-offload` — so a gate log is greppable and a stale rule cannot hide behind the word
+The verdict line names the rule version it enforces —
+`policy v4.3: runtime worker (Claude=opus, Codex=gpt-5.6-sol)` — so a gate log is
+greppable and a stale rule cannot hide behind the word
 "CLEAN". An **offload lane** is any lane that is not a seat lane (main/director/seat).
 
-- **Violation (exit 4)** — an offload lane on a known non-Opus model, dated after the
-  policy day.
+- **Violation (exit 4)** — an offload lane on a known model outside the runtime policy
+  that was active on its date.
 - **Policy-date guard** — an entry is judged by the law in force when it was logged.
   Entries dated on or before 2026-07-15 fall under the rule that was live then ("Fable
   never rides in a subagent"), so a pre-policy non-Opus lane is lawful-at-the-time and is

@@ -5,8 +5,15 @@ description: "The harness's own self-check — one read-only pass, PASS/WARN/FAI
 
 # doctor — the harness's self-check
 
+**Runtime adapter.** Run `doctor.py check --surface auto`; use `--surface codex` or
+`--surface claude` for a deliberate arm. Codex mode validates the native
+`.codex-plugin/plugin.json`, repo-local `.agents/plugins/marketplace.json`, and Codex's
+installed inventory. Claude hook liveness, app-side shadows, and Claude token receipts are
+SKIP on Codex—not PASS—because Codex v4.3 does not expose those surfaces. Resolve
+`<plugin-root>` from this selected `SKILL.md`; never execute a literal placeholder.
+
 ```bash
-python3 plugins/notrest/skills/doctor/scripts/doctor.py check --root .
+python3 <plugin-root>/skills/doctor/scripts/doctor.py check --surface auto --root .
 ```
 
 That is the whole skill. Eleven named checks, one line each, a fix command on every WARN and

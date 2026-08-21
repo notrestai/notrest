@@ -13,14 +13,14 @@ said so honestly, and that honesty left the gap the exact size of the reader's
 imagination. `--seat-estimate` writes the seat's own guess down as what it is: a
 `lane=seat`, `grade=estimate`, `kind=seat-estimate` line, kept OUT of the observed
 token totals and reported on its own count line. It is informational and never
-offload-gated — the seat is where a non-opus orchestrator legitimately sits, so a seat
+offload-gated — the seat is where a different orchestrator legitimately sits, so a seat
 line cannot be a routing violation, and an estimate must never be able to move a gate.
 
 Ledger: <root>/spend/ledger.md — one line per entry, flock-atomic append.
 
-THE RULE `report` ENFORCES (owner-set 2026-07-15): every job a session OFFLOADS runs on
-an explicit opus model. An offload lane is any lane that is not a seat lane
-(main/director/seat) — the seat is where a non-opus orchestrator legitimately sits.
+THE RULE `report` ENFORCES: every offload names the runtime's explicit frontier worker.
+Claude uses opus. The Codex adapter (v4.3.0, 2026-08-06) uses gpt-5.6-sol. An offload lane
+is any lane that is not a seat lane (main/director/seat).
 
 Two guards keep the verdict honest rather than merely loud:
 
@@ -48,7 +48,7 @@ from datetime import datetime, timezone
 
 # ── lanes ────────────────────────────────────────────────────────────────────
 SEAT_LANES = {"main", "director", "seat"}
-# Lanes that legitimately run another vendor's model: exempt from the opus-only offload
+# Lanes that legitimately run another vendor's model: exempt from the worker offload
 # rule, counted separately, never silently. EXACT NAMES ONLY — an allowlist that grows by
 # pattern (connector-*) stops being an allowlist, so each new lane is added deliberately,
 # here, with its reason. `connector-openai` added 2026-07-27 for the rig.rest connector:
@@ -57,12 +57,15 @@ SEAT_LANES = {"main", "director", "seat"}
 CROSS_VENDOR_LANES = {"gpt", "chatroom-gpt", "connector-openai"}
 
 # ── the policy, as data (so the verdict can name the rule version it enforces) ─
-POLICY_DATE = "2026-07-15"          # the day the owner set opus-only offload
+POLICY_DATE = "2026-07-15"          # the day the owner set opus-only Claude offload
 POLICY_BINDS_FROM = "2026-07-16"    # first day an entry is judged by it (see guard above)
-POLICY_NAME = "policy 2026-07-15: opus-only offload"
+CODEX_POLICY_DATE = "2026-08-06"    # Codex adapter release day (day itself grandfathered)
+CODEX_BINDS_FROM = "2026-08-07"
+POLICY_NAME = "policy v4.3: runtime worker (Claude=opus, Codex=gpt-5.6-sol)"
 LEGACY_NAME = "pre-2026-07-15 rule: fable never below the seat"
 
 OPUS_RE = re.compile(r"opus", re.I)
+CODEX_RE = re.compile(r"(?:^|[-_/])gpt-5\.6-sol(?:$|[-_/])", re.I)
 FABLE_RE = re.compile(r"fable", re.I)
 UNKNOWN_MODELS = {"", "?", "-", "unknown", "none", "null"}
 
@@ -93,9 +96,9 @@ def classify(ts, lane, model):
     cross-vendor  — allowlisted foreign-vendor lane; exempt, counted separately
     pre-policy    — offload lane, dated on/before the policy day, lawful at the time
     legacy-violation — pre-policy, but broke the rule that WAS live then (fable below seat)
-    compliant     — offload lane, post-policy, explicit opus
+    compliant     — offload lane, explicit worker valid for the law then in force
     unverifiable  — offload lane, post-policy, model unknown; routing not provable
-    violation     — offload lane, post-policy, a known non-opus model
+    violation     — offload lane, a known model outside the law then in force
     """
     lane = (lane or "").strip()
     model = (model or "").strip()
@@ -109,6 +112,10 @@ def classify(ts, lane, model):
     if model.lower() in UNKNOWN_MODELS:
         return "unverifiable"
     if OPUS_RE.search(model):
+        return "compliant"
+    # The Codex model becomes lawful only after the adapter exists. A backdated Codex
+    # receipt must not rewrite the policy that actually governed that old lane.
+    if CODEX_RE.search(model) and (not d or d >= CODEX_BINDS_FROM):
         return "compliant"
     return "violation"
 
@@ -281,7 +288,7 @@ def cmd_report(a):
             print("  " + e["raw"])
     if verdict == "VIOLATION":
         print(f"routing: VIOLATION — {POLICY_NAME} "
-              f"({len(violations)} offload entries on a non-opus model, "
+              f"({len(violations)} offload entries on an unsupported worker model, "
               f"{len(legacy)} legacy)")
         sys.exit(4)
     print(f"routing: CLEAN — {POLICY_NAME} "

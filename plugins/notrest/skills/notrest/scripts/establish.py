@@ -19,9 +19,13 @@ Constraints this file is built under:
   - NOTHING is written outside the resolved root; a path whose realpath escapes the root
     is refused rather than followed, and an in-root symlink is written THROUGH (we operate
     on its realpath) so the link survives instead of being replaced by a regular file.
-  - The root is refused rather than guessed. $HOME is never a project, a subdirectory of a
-    git repo is never a root (every hook would resolve to the toplevel instead), and a
-    directory with no project marker is refused outright.
+  - The root is refused rather than guessed. $HOME is never a project, a dot-directory
+    directly under $HOME (~/.codex, ~/.claude — per-machine configuration) is refused on
+    both its named and resolved path, a subdirectory of a git repo is never a root (every
+    hook would resolve to the toplevel instead), and a directory with no project marker
+    is refused outright.
+  - RUNTIME-EXPLICIT: Codex writes AGENTS.md, Claude writes CLAUDE.md, and `both` writes
+    both. Auto-detection is conservative and can always be overridden with `--surface`.
   - REPORT/JUDGE SPLIT (load-bearing): establishment checks drive the exit code; adoption
     facts are INFO and can never move it. "Is this session actually following the plugin"
     is a judgment, and it belongs to the seat reading these lines.
@@ -46,9 +50,10 @@ EXIT_OK, EXIT_USAGE, EXIT_PARTIAL, EXIT_NONE = 0, 2, 5, 6
 # made $HOME a project — and `/notrest` from a home directory would have written COORD.md
 # and a CLAUDE.md there, the CLAUDE.md that Claude Code then loads into every session on
 # the machine. Found by the adversarial round, 2026-08-02.
-PROJECT_MARKERS = ("CLAUDE.md", "README.md", "package.json", "pyproject.toml", "COORD.md")
+PROJECT_MARKERS = ("AGENTS.md", "CLAUDE.md", "README.md", "package.json", "pyproject.toml",
+                   "COORD.md")
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 BLOCK_CLOSE = "<!-- /notrest:protocol -->"
 # Line-anchored on purpose, and every search runs over FENCE-MASKED text: an unanchored
 # search matches the marker inside a fenced documentation EXAMPLE, and a file that merely
@@ -94,7 +99,31 @@ BODY_V1 = """## notrest protocol
   ~500 lines it seals whole as `COORD-<NNN>.md` and a fresh volume opens.
 - **Close** a working session with `/sessionend`. **Drift check:** `/notrest check`."""
 
-CANONICAL_BODIES = {1: BODY_V1}
+BODY_V2 = """## notrest protocol
+
+- **Fable discipline** — ORIENT -> PROBE -> ACT -> PROVE -> BANK. Probe the live
+  system before reasoning; a done/works/fixed claim needs in-transcript evidence
+  (exit code, diff, status) or it is labeled `[unverified]`; bank state before stopping.
+  Full contract: `/notrest:fable-mode`.
+- **Runtime-explicit offload rule** — delegate only when the user asks or the host policy
+  permits it. Claude lanes set model `\"opus\"` explicitly and never use
+  `subagent_type: \"fork\"`. Codex lanes set model `\"gpt-5.6-sol\"` explicitly and,
+  because a model override cannot use a full-history inherited fork, use
+  `fork_turns: \"none\"` or a bounded recent-turn fork. Never silently substitute one
+  runtime's model for the other. A build keeps one persistent builder lane per domain and
+  resumes it for feedback.
+- **Enforcement honesty** — Claude lifecycle hooks may enforce and receipt laws. Codex
+  v4.3 has no equivalent plugin hook surface: `AGENTS.md`, the selected skill, Doctor,
+  Eval, and consumer-side evidence carry the law. Never claim a hook ran on Codex.
+- **COORD law** — one honest ledger line per substantive prompt when its work lands:
+  `ask -> landed | evidence`. `COORD.md` is append-only and is never compacted: at
+  ~500 lines it seals whole as `COORD-<NNN>.md` and a fresh volume opens.
+- **Close** a working session with `/sessionend`. **Drift check:** `/notrest check`."""
+
+CANONICAL_BODIES = {1: BODY_V1, 2: BODY_V2}
+
+SURFACE_FILES = {"claude": "CLAUDE.md", "codex": "AGENTS.md"}
+SURFACE_LABELS = {"claude": "CLAUDE-BLOCK", "codex": "AGENTS-BLOCK"}
 
 
 def open_marker(version):
@@ -236,19 +265,54 @@ def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
 
 
+# ── runtime surface ───────────────────────────────────────────────────────────────────
+def detect_surface(requested, root=None):
+    """Return `claude`, `codex`, or `both` without pretending the shell knows more than it
+    does. Explicit selection always wins. Codex and Claude runtime variables win next;
+    existing foundation files break a tie. The historical CLI behavior remains Claude
+    when no signal exists, so automation does not silently start writing a second file."""
+    if requested and requested != "auto":
+        return requested
+    if os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SANDBOX"):
+        return "codex"
+    if os.environ.get("CLAUDE_PLUGIN_ROOT") or os.environ.get("CLAUDE_CONFIG_DIR"):
+        return "claude"
+    if root:
+        has_agents = os.path.isfile(os.path.join(root, "AGENTS.md"))
+        has_claude = os.path.isfile(os.path.join(root, "CLAUDE.md"))
+        if has_agents and has_claude:
+            return "both"
+        if has_agents:
+            return "codex"
+        if has_claude:
+            return "claude"
+    return "claude"
+
+
+def selected_surfaces(surface):
+    return ("claude", "codex") if surface == "both" else (surface,)
+
+
 # ── root resolution ───────────────────────────────────────────────────────────────────
 def resolve_root(explicit):
     """(root, error). --root wins; else the git root; else the cwd IF it looks like a
     project; else a refusal that NAMES what it looked for. Always realpath'd."""
     if explicit:
-        r = os.path.realpath(os.path.expanduser(explicit))
+        # lex keeps the path AS NAMED (symlinks unresolved): the dot-dir refusal below
+        # must hold for ~/.codex even when its realpath leaves HOME (dotfiles managers).
+        lex = os.path.normpath(os.path.abspath(os.path.expanduser(explicit)))
+        r = os.path.realpath(lex)
         if not os.path.isdir(r):
             return None, "--root %s is not a directory" % explicit
     else:
         top = git_toplevel(os.getcwd())
         if top:
-            r = top
+            r = lex = top
         else:
+            env_pwd = os.environ.get("PWD", "")
+            lex = (os.path.normpath(env_pwd)
+                   if env_pwd and os.path.realpath(env_pwd) == os.path.realpath(os.getcwd())
+                   else os.path.normpath(os.getcwd()))
             cwd = os.path.realpath(os.getcwd())
             if not any(os.path.exists(os.path.join(cwd, m)) for m in PROJECT_MARKERS):
                 return None, ("%s is not a git repo and carries no project marker (looked "
@@ -260,7 +324,17 @@ def resolve_root(explicit):
     # $HOME and the filesystem root are refused however they were reached, --root
     # included: a CLAUDE.md in $HOME is loaded into every session on this machine, and
     # there is no such thing as a legitimate $HOME estate.
-    home = os.path.realpath(os.path.expanduser("~"))
+    # HOME="" (set but empty — launchd/CI shells) makes expanduser("~") return "/",
+    # silently disarming every refusal below; derive home from the account instead.
+    # (Review-the-fix round, 2026-08-21.)
+    if os.environ.get("HOME"):
+        home = os.path.realpath(os.path.expanduser("~"))
+    else:
+        try:
+            import pwd
+            home = os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
+        except Exception:
+            home = os.path.realpath(os.path.expanduser("~"))
     if r == home:
         return None, ("%s is your HOME directory, not a project — refusing. A CLAUDE.md "
                       "here is loaded into every session on this machine; establish "
@@ -272,6 +346,27 @@ def resolve_root(explicit):
             return None, ("%s is a well-known home folder, not a project — refusing. Its "
                           "SUBdirectories are ordinary projects; establish in the one you "
                           "mean." % r)
+
+    # A dot-directory directly under $HOME is per-machine configuration territory:
+    # ~/.codex/AGENTS.md and ~/.claude/CLAUDE.md are loaded into every session of their
+    # runtimes, so establishing one is the $HOME defect one level down — and the rule
+    # holds for the path AS NAMED as well as its realpath, because ~/.codex symlinked
+    # into a dotfiles tree is still ~/.codex to every tool that loads it. Found by the
+    # 2026-08-21 refuter rounds (F1 + review-the-fix).
+    # The PARENT is realpath'd (so /var-vs-/private/var aliasing or a symlinked $HOME
+    # cannot dodge the compare) while the LEAF stays as named — the leaf's own symlink
+    # is exactly what must not be followed before judging it.
+    def _dot_under_home(p):
+        return (os.path.realpath(os.path.dirname(p)) == home
+                and os.path.basename(p).startswith("."))
+    for cand in (r, lex):
+        if _dot_under_home(cand):
+            return None, ("%s is a dot-directory directly under your HOME — refused: "
+                          "these are per-machine configuration territory, and a "
+                          "foundation file here is loaded into every session on this "
+                          "machine. If this really is a project, establish a "
+                          "subdirectory of it, or house it outside the leading-dot "
+                          "namespace." % cand)
 
     # A subdirectory of a git repo is never a root: every estate hook resolves to the
     # TOPLEVEL, so an estate established here would be written by nobody and read by
@@ -334,18 +429,20 @@ def block_problem(txt):
     return None, blocks
 
 
-def claude_state(root):
-    """(status, detail, version)."""
-    p = os.path.join(root, "CLAUDE.md")
+def foundation_state(root, surface):
+    """(status, detail, version) for one runtime foundation."""
+    filename = SURFACE_FILES[surface]
+    p = os.path.join(root, filename)
     if not os.path.isfile(p):
-        return FAIL, "CLAUDE.md absent — no protocol block, so nothing states the contract", None
+        return FAIL, "%s absent — no protocol block, so nothing states the contract" % filename, None
     enc = not_utf8(p)
     if enc:
-        return WARN, ("CLAUDE.md is not UTF-8 (%s) — this tool will not write into it; a "
-                      "UTF-8 block appended here would be unreadable to its own reader" % enc), None
+        return WARN, ("%s is not UTF-8 (%s) — this tool will not write into it; a "
+                      "UTF-8 block appended here would be unreadable to its own reader"
+                      % (filename, enc)), None
     txt = read_rt(p)
     if txt is None:
-        return WARN, "CLAUDE.md is unreadable", None
+        return WARN, "%s is unreadable" % filename, None
     problem, blocks = block_problem(txt)
     if problem:
         return WARN, problem, None
@@ -354,7 +451,7 @@ def claude_state(root):
             return WARN, ("protocol markers exist only inside a fenced/masked region "
                           "(a code-fence example, or an unterminated fence) — not a live "
                           "block; add the block outside the fence by hand — nothing written"), None
-        return FAIL, "CLAUDE.md present but carries no notrest:protocol block", None
+        return FAIL, "%s present but carries no notrest:protocol block" % filename, None
     v, _m, c = blocks[0]
     if c is None:
         return WARN, "notrest:protocol block is unterminated (no closing marker)", None
@@ -362,6 +459,11 @@ def claude_state(root):
         return WARN, ("notrest:protocol block is v%d; current is v%d — run `establish` to "
                       "replace it in place" % (v, PROTOCOL_VERSION)), v
     return PASS, "notrest:protocol block present at v%d" % v, v
+
+
+def claude_state(root):
+    """Compatibility alias for callers outside this file."""
+    return foundation_state(root, "claude")
 
 
 # ── adoption facts (INFO ONLY — never move the exit code) ─────────────────────────────
@@ -406,8 +508,7 @@ def adoption(root):
 
 
 NONGIT_WARNS = [
-    "self-update is dead — the SessionStart hook's `git pull --ff-only` has no clone to "
-    "pull, so the harness cannot update itself here",
+    "automatic self-update is unavailable — there is no project clone to pull from",
     "ship gates are weaker — no commit, no diff, no HEAD-vs-tree check; 'what changed' has "
     "no answer a machine can produce",
     "the trail is not diffable — COORD.md still records what landed, but nothing binds a "
@@ -458,7 +559,7 @@ def git_facts(root):
     return True, (head if rc == 0 and head else None), dirty, (subj if rc3 == 0 and subj else None)
 
 
-def packet(root):
+def packet(root, surface="claude"):
     """Everything a fresh seat needs to continue, in one gulp. NO CLOCK: every timestamp
     here comes off a file, so the same estate yields the same packet twice."""
     coord = tail_lines(os.path.join(root, "COORD.md"), COORD_TAIL)
@@ -480,13 +581,22 @@ def packet(root):
         briefs = 0
     is_repo, head, dirty, subj = git_facts(root)
     cs, _cd = coord_state(root)
-    ks, _kd, ver = claude_state(root)
+    states = {}
+    for runtime in selected_surfaces(surface):
+        st, _detail, ver = foundation_state(root, runtime)
+        states[runtime] = {"status": st, "version": ver,
+                           "file": SURFACE_FILES[runtime]}
+    established = cs == PASS and all(v["status"] == PASS for v in states.values())
+    versions = sorted(set(v["version"] for v in states.values() if v["version"] is not None))
     return {
         "root": root,
-        "established": cs == PASS and ks == PASS,
+        "surface": surface,
+        "established": established,
         "coord_state": cs,
-        "claude_block": ks,
-        "protocol_version": ver,
+        "foundation_blocks": states,
+        "claude_block": states.get("claude", {}).get("status"),
+        "agents_block": states.get("codex", {}).get("status"),
+        "protocol_version": versions[0] if len(versions) == 1 else versions,
         "coord_lines_shown": len(coord),
         "coord_tail": coord,
         "coord_sealed_volumes": len(sealed_volumes(root, "COORD")),
@@ -510,7 +620,8 @@ def cmd_continuation(args):
     if err:
         sys.stderr.write("notrest: %s\n" % err)
         return EXIT_USAGE
-    p = packet(root)
+    surface = detect_surface(args.surface, root)
+    p = packet(root, surface)
     if not p["established"]:
         if args.json:
             print(json.dumps({"root": root, "established": False}, indent=1, sort_keys=True))
@@ -577,56 +688,63 @@ def cmd_check(args):
     if err:
         sys.stderr.write("notrest: %s\n" % err)
         return EXIT_USAGE
-    print("notrest check — %s" % root)
+    surface = detect_surface(args.surface, root)
+    print("notrest check — %s (surface=%s)" % (root, surface))
     cs, cd = coord_state(root)
-    ks, kd, _v = claude_state(root)
     emit(cs, "COORD", cd)
-    emit(ks, "CLAUDE-BLOCK", kd)
-    emit(INFO, "GIT", "git repo — every estate hook operates at full strength"
+    foundation_states = []
+    for runtime in selected_surfaces(surface):
+        ks, kd, _v = foundation_state(root, runtime)
+        foundation_states.append(ks)
+        emit(ks, SURFACE_LABELS[runtime], kd)
+    emit(INFO, "GIT", "git repo — revision, diff, and trail evidence are available"
          if git_toplevel(root) == root
          else "NOT a git repo — estate surfaces are limited (see /notrest, non-git section)")
     for s, n, d in adoption(root):
         emit(s, n, d)
-    code = grade([cs, ks])
+    code = grade([cs] + foundation_states)
     verdict(code, root)
     return code
 
 
-def write_claude(root, kp, failures):
-    """The CLAUDE.md half of establish. Returns the list of 'wrote' descriptions."""
+def write_foundation(root, surface, failures):
+    """One runtime-foundation half of establish. Returns the 'wrote' descriptions."""
+    filename = SURFACE_FILES[surface]
+    label = SURFACE_LABELS[surface]
+    kp = os.path.join(root, filename)
     wrote = []
     block = protocol_block()
     target = contain(root, kp)
     if target is None:
-        emit(FAIL, "CLAUDE-BLOCK", "CLAUDE.md resolves outside %s — refusing to write "
-                                   "through it" % root)
-        failures.append("CLAUDE.md")
+        emit(FAIL, label, "%s resolves outside %s — refusing to write through it"
+             % (filename, root))
+        failures.append(filename)
         return wrote
     if not os.path.isfile(target):
         try:
-            atomic_write(target, "# CLAUDE.md — project foundation\n\n" + block)
-            wrote.append("CLAUDE.md")
-            emit(PASS, "CLAUDE-BLOCK", "CLAUDE.md created with the v%d protocol block"
-                 % PROTOCOL_VERSION)
+            atomic_write(target, "# %s — project foundation\n\n%s" % (filename, block))
+            wrote.append(filename)
+            emit(PASS, label, "%s created with the v%d protocol block"
+                 % (filename, PROTOCOL_VERSION))
         except OSError as exc:
-            emit(FAIL, "CLAUDE-BLOCK", "could not write CLAUDE.md: %s" % exc)
-            failures.append("CLAUDE.md")
+            emit(FAIL, label, "could not write %s: %s" % (filename, exc))
+            failures.append(filename)
         return wrote
 
     enc = not_utf8(target)
     if enc:
-        emit(WARN, "CLAUDE-BLOCK", "CLAUDE.md is not UTF-8 (%s) — nothing written. A UTF-8 "
+        emit(WARN, label, "%s is not UTF-8 (%s) — nothing written. A UTF-8 "
              "block appended here would be mojibake to its own reader, and the next "
-             "round-trip read would raise." % enc)
+             "round-trip read would raise." % (filename, enc))
         return wrote
     txt = read_rt(target)
     if txt is None:
-        emit(FAIL, "CLAUDE-BLOCK", "CLAUDE.md is unreadable — leaving it alone")
-        failures.append("CLAUDE.md")
+        emit(FAIL, label, "%s is unreadable — leaving it alone" % filename)
+        failures.append(filename)
         return wrote
     problem, blocks = block_problem(txt)
     if problem:
-        emit(WARN, "CLAUDE-BLOCK", problem)
+        emit(WARN, label, problem)
         return wrote
     try:
         if not blocks:
@@ -635,24 +753,24 @@ def write_claude(root, kp, failures):
             # some masking rule swallowed a real block — and appending would add one more
             # every run, without bound. Never append past that disagreement.
             if BLOCK_OPEN_RE.search(txt):
-                emit(WARN, "CLAUDE-BLOCK",
+                emit(WARN, label,
                      "protocol markers exist only inside a fenced/masked region (a code-fence "
                      "example, or an unterminated fence) — not a live block; add the block "
                      "outside the fence by hand — nothing written")
                 return wrote
             sep = "" if txt.endswith("\n\n") else ("\n" if txt.endswith("\n") else "\n\n")
             atomic_write(target, txt + sep + block, roundtrip=True)
-            wrote.append("CLAUDE.md (block appended)")
-            emit(PASS, "CLAUDE-BLOCK", "v%d protocol block appended — existing content "
+            wrote.append("%s (block appended)" % filename)
+            emit(PASS, label, "v%d protocol block appended — existing content "
                  "untouched, byte for byte" % PROTOCOL_VERSION)
             return wrote
         found, m, c = blocks[0]
         if c is None:
-            emit(WARN, "CLAUDE-BLOCK", "block opens at v%d but never closes — left alone; "
+            emit(WARN, label, "block opens at v%d but never closes — left alone; "
                  "close the marker by hand, then re-run" % found)
             return wrote
         if found >= PROTOCOL_VERSION:
-            emit(INFO, "CLAUDE-BLOCK", "v%d protocol block already current — left untouched"
+            emit(INFO, label, "v%d protocol block already current — left untouched"
                  % found)
             return wrote
 
@@ -666,22 +784,27 @@ def write_claude(root, kp, failures):
             bak = target + ".notrest-v%d.bak" % found
             try:
                 atomic_write(bak, old_body + "\n", roundtrip=True)
-                emit(WARN, "CLAUDE-BLOCK", "in-block edits discarded on the v%d -> v%d "
+                emit(WARN, label, "in-block edits discarded on the v%d -> v%d "
                      "upgrade — the old body was saved to %s"
                      % (found, PROTOCOL_VERSION, os.path.basename(bak)))
             except OSError as exc:
-                emit(WARN, "CLAUDE-BLOCK", "in-block edits found but the backup failed "
+                emit(WARN, label, "in-block edits found but the backup failed "
                      "(%s) — the block was left alone" % exc)
                 return wrote
         atomic_write(target, txt[:m.start()] + block.rstrip("\n") + txt[c.end():],
                      roundtrip=True)
-        wrote.append("CLAUDE.md (block v%d -> v%d)" % (found, PROTOCOL_VERSION))
-        emit(PASS, "CLAUDE-BLOCK", "protocol block replaced in place v%d -> v%d — nothing "
+        wrote.append("%s (block v%d -> v%d)" % (filename, found, PROTOCOL_VERSION))
+        emit(PASS, label, "protocol block replaced in place v%d -> v%d — nothing "
              "outside the markers changed" % (found, PROTOCOL_VERSION))
     except OSError as exc:
-        emit(FAIL, "CLAUDE-BLOCK", "could not write CLAUDE.md: %s" % exc)
-        failures.append("CLAUDE.md")
+        emit(FAIL, label, "could not write %s: %s" % (filename, exc))
+        failures.append(filename)
     return wrote
+
+
+def write_claude(root, kp, failures):
+    """Compatibility wrapper retained for external imports and older fixtures."""
+    return write_foundation(root, "claude", failures)
 
 
 def seed_pulse(root):
@@ -708,7 +831,8 @@ def cmd_establish(args):
     if err:
         sys.stderr.write("notrest: %s\n" % err)
         return EXIT_USAGE
-    print("notrest establish — %s" % root)
+    surface = detect_surface(args.surface, root)
+    print("notrest establish — %s (surface=%s)" % (root, surface))
     wrote, failures = [], []
 
     # ── 1. COORD.md — the ledger. An existing ledger is the project's own history and is
@@ -732,13 +856,15 @@ def cmd_establish(args):
             emit(FAIL, "COORD", "could not write COORD.md: %s" % exc)
             failures.append("COORD.md")
 
-    # ── 2. CLAUDE.md — the protocol block.
-    wrote += write_claude(root, os.path.join(root, "CLAUDE.md"), failures)
+    # ── 2. Runtime foundation — AGENTS.md on Codex, CLAUDE.md on Claude, or both when
+    # explicitly requested. The same versioned block and byte-preservation laws apply.
+    for runtime in selected_surfaces(surface):
+        wrote += write_foundation(root, runtime, failures)
 
     # ── 3. git. Never initialized uninvited: `git init` changes what a directory IS, and
     # that is the owner's decision, not a side effect of establishing a ledger.
     if git_toplevel(root) == root:
-        emit(INFO, "GIT", "git repo — every estate hook operates at full strength")
+        emit(INFO, "GIT", "git repo — revision, diff, and trail evidence are available")
     elif args.git_init:
         rc, _out = git(root, "init")
         if rc == 0:
@@ -746,8 +872,8 @@ def cmd_establish(args):
         else:
             emit(FAIL, "GIT", "git init failed — leaving the directory as it was")
     else:
-        emit(INFO, "GIT", "NOT a git repo — establishment still holds; the hooks honor a "
-                          "COORD.md root, so the ledger and agent index work here")
+        emit(INFO, "GIT", "NOT a git repo — establishment still holds; COORD.md remains "
+                          "the project trail, but revision-bound evidence is unavailable")
         for w in NONGIT_WARNS:
             emit(WARN, "GIT-DEGRADED", w)
         emit(INFO, "GIT", "`establish --git-init` runs `git init` (and nothing else) — "
@@ -756,14 +882,17 @@ def cmd_establish(args):
     # ── the verdict is re-read from disk, and the per-surface STATE is re-emitted beside
     # it: a run that ends in 5 must say WHICH surface is unfinished, on the same screen.
     cs, cd = coord_state(root)
-    ks, kd, _v = claude_state(root)
     emit(cs, "COORD", cd)
-    emit(ks, "CLAUDE-BLOCK", kd)
-    code = grade([cs, ks])
+    foundation_states = []
+    for runtime in selected_surfaces(surface):
+        ks, kd, _v = foundation_state(root, runtime)
+        foundation_states.append(ks)
+        emit(ks, SURFACE_LABELS[runtime], kd)
+    code = grade([cs] + foundation_states)
     if seed_pulse(root):
         emit(INFO, "PULSE", "instrument readings seeding in the background → pulse/*.txt "
-                            "+ pulse/pulse.json (derived, disposable, refreshed on every "
-                            "swarm stop and session end)")
+                            "+ pulse/pulse.json (derived, disposable; Claude hooks refresh "
+                            "automatically, Codex refreshes through explicit harness actions)")
     if failures:
         tail = " · wrote: nothing (writes failed: %s)" % ", ".join(sorted(set(failures)))
     else:
@@ -780,13 +909,19 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd")
     c = sub.add_parser("check", help="read-only: is the harness established here?")
     c.add_argument("--root", help="project root (default: git root, else a marked cwd)")
+    c.add_argument("--surface", choices=("auto", "codex", "claude", "both"), default="auto",
+                   help="foundation surface (default: detect host/files; historical fallback claude)")
     e = sub.add_parser("establish", help="write the establishment surfaces (idempotent)")
     e.add_argument("--root", help="project root (default: git root, else a marked cwd)")
+    e.add_argument("--surface", choices=("auto", "codex", "claude", "both"), default="auto",
+                   help="foundation surface to write")
     e.add_argument("--git-init", action="store_true",
                    help="also run `git init` (and nothing else) when the root is not a repo")
     n = sub.add_parser("continuation",
                        help="read-only: the packet a successor seat needs to continue")
     n.add_argument("--root", help="project root (default: git root, else a marked cwd)")
+    n.add_argument("--surface", choices=("auto", "codex", "claude", "both"), default="auto",
+                   help="foundation surface to read")
     n.add_argument("--json", action="store_true", help="machine output, stable key order")
     args = ap.parse_args(argv)
     if args.cmd == "check":

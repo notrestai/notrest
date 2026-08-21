@@ -1,0 +1,42 @@
+{
+  "name": "notrest",
+  "version": "4.3.0",
+  "description": "A cross-runtime working-session harness for Codex and Claude: establishment, continuity, evidence-led planning, deterministic health checks, and thirty-one composable skills.",
+  "author": {
+    "name": "Not Rest Inc.",
+    "url": "https://do.not.rest"
+  },
+  "homepage": "https://do.not.rest",
+  "repository": "https://github.com/notrestai/notrest.git",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "planning",
+    "verification",
+    "orchestration",
+    "multi-agent",
+    "continuity",
+    "sessions"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Not Rest — ORACLE Harness",
+    "shortDescription": "Evidence-led sessions from intake to handoff",
+    "longDescription": "A Codex-native adapter for the Not Rest working-session harness. It establishes an AGENTS.md and COORD.md estate, preserves decision trails across tasks, provides deterministic Doctor and Eval instruments, and exposes thirty-one skills for research, planning, critique, building, verification, orchestration, and handoff. Claude hooks remain available only in the Claude adapter; Codex enforcement is instruction- and instrument-based and is reported honestly.",
+    "developerName": "Not Rest Inc.",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive",
+      "Orchestration"
+    ],
+    "websiteURL": "https://do.not.rest",
+    "defaultPrompt": [
+      "Establish Not Rest in this project for Codex.",
+      "Continue this build from its recorded trail.",
+      "Run Doctor and Eval on this harness."
+    ],
+    "brandColor": "#151515"
+  }
+}

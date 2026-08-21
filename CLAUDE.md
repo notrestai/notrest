@@ -52,17 +52,23 @@ claimed — so the convention cannot quietly rot into prose nobody applies.
 - A compiled runtime under `compile/<slug>/` is tracked SOURCE, isolated until the owner
   ships it; only derived scan output is gitignored.
 
-<!-- notrest:protocol v1 (do not edit inside markers; managed by /notrest) -->
+<!-- notrest:protocol v2 (do not edit inside markers; managed by /notrest) -->
 ## notrest protocol
 
 - **Fable discipline** — ORIENT -> PROBE -> ACT -> PROVE -> BANK. Probe the live
   system before reasoning; a done/works/fixed claim needs in-transcript evidence
-  (exit code, diff, status) or it is labeled unverified; bank state before stopping.
+  (exit code, diff, status) or it is labeled `[unverified]`; bank state before stopping.
   Full contract: `/notrest:fable-mode`.
-- **Offload HARD RULE** — every spawned lane sets model `"opus"` explicitly. Never
-  sonnet, never haiku, never a fork (a fork inherits the seat and bills its credit);
-  omitting the model is a violation, not a default. Delegate via `/notrest:agentswarm`;
-  a build runs ONE persistent lane and feedback RESUMES that lane, never a fresh spawn.
+- **Runtime-explicit offload rule** — delegate only when the user asks or the host policy
+  permits it. Claude lanes set model `"opus"` explicitly and never use
+  `subagent_type: "fork"`. Codex lanes set model `"gpt-5.6-sol"` explicitly and,
+  because a model override cannot use a full-history inherited fork, use
+  `fork_turns: "none"` or a bounded recent-turn fork. Never silently substitute one
+  runtime's model for the other. A build keeps one persistent builder lane per domain and
+  resumes it for feedback.
+- **Enforcement honesty** — Claude lifecycle hooks may enforce and receipt laws. Codex
+  v4.3 has no equivalent plugin hook surface: `AGENTS.md`, the selected skill, Doctor,
+  Eval, and consumer-side evidence carry the law. Never claim a hook ran on Codex.
 - **COORD law** — one honest ledger line per substantive prompt when its work lands:
   `ask -> landed | evidence`. `COORD.md` is append-only and is never compacted: at
   ~500 lines it seals whole as `COORD-<NNN>.md` and a fresh volume opens.

@@ -1,6 +1,6 @@
 ---
 name: draft
-description: "The suite's outbound verb — turns a dossier, decision, or recap into the thing you actually send (email · memo · slack update · one-pager), every factual sentence traced to its source line, honesty label kept. Use on /draft, \"write the email\", \"draft the memo\", \"turn this into an update\", \"make this sendable\", \"write it up for <audience>\"; --quick for chat-only. A draft is never sent — sending is the owner's act. Not for legal or regulatory notices, nor before the decision exists."
+description: "The suite's outbound verb — turns a dossier, decision, or recap into the thing you actually send (email · memo · slack update · one-pager), every factual sentence traced to its source line, honesty label kept. Use on /draft, \"write the email\", \"draft the memo\", \"turn this into an update\", \"make this sendable\", \"write it up for {audience}\"; --quick for chat-only. A draft is never sent — sending is the owner's act. Not for legal or regulatory notices, nor before the decision exists."
 ---
 
 # draft — the dossier, turned into the thing you send

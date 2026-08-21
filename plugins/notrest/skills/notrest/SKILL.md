@@ -6,10 +6,16 @@ description: "Establish the harness in a project, or CONTINUE the build already 
 # notrest — the establishment verb
 
 ```bash
-python3 plugins/notrest/skills/notrest/scripts/establish.py check         # is it established here?
-python3 plugins/notrest/skills/notrest/scripts/establish.py establish     # make it so (idempotent)
-python3 plugins/notrest/skills/notrest/scripts/establish.py continuation  # continue the build here
+python3 <this-skill>/scripts/establish.py check --surface auto         # is it established here?
+python3 <this-skill>/scripts/establish.py establish --surface auto     # make it so (idempotent)
+python3 <this-skill>/scripts/establish.py continuation --surface auto  # continue the build here
 ```
+
+Resolve `<this-skill>` from the absolute path of this selected `SKILL.md`; never execute
+the placeholder literally. `auto` selects `AGENTS.md` in Codex, `CLAUDE.md` in Claude,
+and respects an existing single foundation file. Use `--surface codex|claude|both` when
+the intended consumer must be explicit. Read `../../docs/CODEX.md` before performing a
+Codex establishment or continuation.
 
 **Router shape:** `establish` — the UserPromptSubmit router (`hooks/router.sh`) nudges a
 prompt here when it looks like *"establish the harness"*, *"set up the plugin in this
@@ -37,7 +43,8 @@ That is the gap this verb closes, and the shape of the gap is the lesson:
 
 1. **Establishment is files plus a contract, and both are checkable.** A project is
    established when it carries `COORD.md` (with the ledger header every estate reader
-   parses) and a **marker-delimited, versioned protocol block** in `CLAUDE.md`. Two
+   parses) and a **marker-delimited, versioned protocol block** in the active foundation:
+   `AGENTS.md` on Codex, `CLAUDE.md` on Claude. Two
    surfaces, two lines of output, one exit code. Anything softer is a feeling.
 2. **The script reports; the seat judges.** `establish.py` emits establishment facts
    (which drive the exit code) and **adoption facts** — ledger lines beyond the scaffold,
@@ -50,13 +57,18 @@ That is the gap this verb closes, and the shape of the gap is the lesson:
    session that runs this verb must then *operate* under the protocol — from that turn
    on, not from the next session.
 4. **The estate never scatters.** `establish.py` refuses any root that is neither a git
-   repo nor carries a project marker (`CLAUDE.md`, `README.md`, `package.json`,
+   repo nor carries a project marker (`AGENTS.md`, `CLAUDE.md`, `README.md`, `package.json`,
    `pyproject.toml`, `COORD.md`) and exits **2** naming what it looked for. Some refusals
    are **absolute** — `--root` cannot overrule them, because a stray `README.md` must never
    make one of these a project: **$HOME** (a `CLAUDE.md` there is loaded into every session
    on the machine), any **filesystem root**, the three **well-known home folders**
    `~/Desktop`, `~/Documents` and `~/Downloads` by exact path (their *subdirectories* are
-   ordinary projects), and a **subdirectory of a git repo** (every estate hook resolves to
+   ordinary projects), any **dot-directory directly under `$HOME`** — by name or by
+   realpath, so a symlinked `~/.codex` is still refused — because `~/.codex/AGENTS.md`
+   and `~/.claude/CLAUDE.md` are per-machine configuration loaded into every session of
+   their runtimes (a genuine project there establishes a *subdirectory* instead; this
+   deliberately covers every leading-dot name, not just known config dirs), and a
+   **subdirectory of a git repo** (every estate hook resolves to
    the toplevel, so an estate below it would be written by nobody and read by nobody — the
    refusal names the toplevel to use instead). `.claude/` is deliberately *not* an
    establish-time marker: `~/.claude` exists on every machine, and while it was on that
@@ -67,9 +79,9 @@ That is the gap this verb closes, and the shape of the gap is the lesson:
 **1 · PROBE.** Run `establish.py check` and *read its lines*. It tells you what already
 exists; never assume a fresh project or a stale one.
 
-**2 · ESTABLISH.** Run `establish.py establish`. Report **exactly what was written versus
+**2 · ESTABLISH.** Run `establish.py establish --surface auto`. Report **exactly what was written versus
 what was already present** — the script's own verdict line names it (`wrote: COORD.md,
-CLAUDE.md` / `wrote: nothing (already established)`). "Established" over a project that
+`AGENTS.md` or `CLAUDE.md` / `wrote: nothing (already established)`). "Established" over a project that
 was already established is not a lie, but it is not news either, and the difference is
 the whole value of the line.
 
@@ -77,12 +89,13 @@ the whole value of the line.
 immediately** — not deferred, not "from now on" in the abstract:
 
 - Append **one** ledger line to `COORD.md` recording the establishment
-  (`- [YYYY-MM-DD HH:MMZ] [notrest] established the harness -> COORD.md + CLAUDE.md
-  protocol block v1 | evidence: establish.py exit 0`). `COORD.md` is **append-only** —
+  (`- [YYYY-MM-DD HH:MMZ] [notrest] established the harness -> COORD.md + <foundation>
+  protocol block v2 | evidence: establish.py exit 0`). `COORD.md` is **append-only** —
   add the line at the end; never rewrite COORD history.
 - Operate under the protocol **from this turn on**: fable discipline (ORIENT → PROBE →
-  ACT → PROVE → BANK, evidence or the word *unverified*), the offload HARD RULE (every
-  spawned lane sets model `"opus"` explicitly; delegate via `/notrest:agentswarm`; a
+  ACT → PROVE → BANK, evidence or the word *unverified*), the runtime offload rule
+  (Claude uses explicit `"opus"`; Codex uses explicit `"gpt-5.6-sol"` with
+  `fork_turns: "none"` or a bounded recent-turn fork; delegate via `/notrest:agentswarm`; a
   build runs ONE persistent lane and feedback resumes it), one honest ledger line per
   substantive prompt when its work lands, and `/sessionend` at the close.
 
@@ -113,8 +126,9 @@ briefs banked · the spend ledger's own last line · git HEAD, dirty count, last
 Read-only, no clock, byte-identical twice on an unchanged estate. **This is where you stand
 before anyone tells you anything.**
 
-**2 · FIND THE MENTOR — ask once, batched.** Where the session-management tools exist
-(Claude Code desktop: `list_sessions` / `send_message`), list sessions, keep the ones whose
+**2 · FIND THE MENTOR — ask once, batched.** Where task/session-management tools exist
+(Codex: `list_threads` / `send_message_to_thread`; Claude desktop: `list_sessions` /
+`send_message`), list tasks/sessions, keep the ones whose
 cwd is **this** project, drop yourself, and prefer the most recent still-running one. Send
 **one** message:
 
@@ -204,10 +218,10 @@ Never upgrade "the files are there" into "the session is following it." The file
 
 | exit | meaning |
 |---|---|
-| 0 | established — both surfaces present, block at the current version |
+| 0 | established — COORD plus every selected foundation surface present at the current version |
 | 5 | partially established — a surface missing, damaged, or a block at an older version |
 | 6 | not established |
-| 2 | usage error, or a **refused root**: no project marker · $HOME · `/` · a subdirectory of a git repo |
+| 2 | usage error, or a **refused root**: no project marker · $HOME · `/` · a dot-directory directly under $HOME · a subdirectory of a git repo |
 
 The non-git warnings are **WARN lines that never move the exit code**: git is not part of
 establishment, and a project established outside git is genuinely established.
@@ -218,7 +232,7 @@ All four estate hooks share ONE resolver — `hooks/estate-root.sh`, sourced by
 `session-start`, `coord-nudge`, `agent-ledger` and `session-end`, because four hooks that
 disagree about the root are four different estates. It answers: the git toplevel, else the
 nearest `COORD.md` walking up at most three levels — **stopping at any directory that
-carries a project marker of its own** (`CLAUDE.md`, `README.md`, `package.json`,
+carries a project marker of its own** (`AGENTS.md`, `CLAUDE.md`, `README.md`, `package.json`,
 `pyproject.toml`, `.git`, `.claude` — the boundary list and the marker list are ONE list,
 and leaving `CLAUDE.md` off it left the commonest shape of all, a CLAUDE.md-only
 subproject, adopting its parent). An un-established subproject must never be adopted into
@@ -232,8 +246,8 @@ established non-git project gets the live-ledger nudge, the per-prompt COORD dis
 the agent index and briefs, the spend receipt, the session-end cushion and the volume
 roll. **What stays weaker, named rather than waved at:**
 
-- **Self-update is dead** — the SessionStart hook's `git pull --ff-only` has no clone to
-  pull, so the harness cannot update itself there.
+- **Automatic self-update is unavailable** — there is no project clone to pull, so
+  neither Claude's SessionStart updater nor a future Codex updater has a source there.
 - **Ship gates are weaker** — no commit, no diff, no HEAD-vs-tree comparison; *what
   changed* has no answer a machine can produce.
 - **The trail is not diffable** — the ledger still records what landed, but nothing binds
@@ -254,15 +268,15 @@ decision, never a side effect of establishing a ledger. Offer it; wait for the y
   that lands outside the root; a link *inside* the root is written **through**, so it keeps
   working instead of being replaced by a regular file. The
   symlink-marching-out-of-the-repo defect class is a real scar here, twice over.
-- **Never edits `CLAUDE.md` outside its own marker block.** Everything beyond
-  `<!-- notrest:protocol v1 -->` … `<!-- /notrest:protocol -->` is the project's own text
+- **Never edits the selected foundation outside its own marker block.** Everything beyond
+  `<!-- notrest:protocol v2 -->` … `<!-- /notrest:protocol -->` is the project's own text
   and survives **byte for byte** — the round trip preserves CRLF line endings and bytes
   that are not valid UTF-8, which a naive read-and-rewrite destroys silently. It is **not
-  an encoding converter** and will not pretend to be one: a UTF-16 or UTF-32 `CLAUDE.md` is
+  an encoding converter** and will not pretend to be one: a UTF-16 or UTF-32 foundation is
   refused outright, since appending a UTF-8 block would "preserve every byte" while leaving
   the file unreadable to its own reader. An older
   block is replaced **in place** (and any hand-edit inside the markers is banked to
-  `CLAUDE.md.notrest-v<N>.bak` first, and said out loud); a current one is left untouched;
+  `<foundation>.notrest-v<N>.bak` first, and said out loud); a current one is left untouched;
   a missing one is appended at the end. Markers inside a fenced code block are
   documentation, not the block. If the markers are **ambiguous** — a stray opener above
   the block, or two blocks in one file — nothing is written at all and the finding names
@@ -277,7 +291,7 @@ decision, never a side effect of establishing a ledger. Offer it; wait for the y
   from what I wrote?
 - Did I append the establishment line to `COORD.md` **in this session** — or did I write
   the files and call binding done?
-- Am I actually operating under the protocol now (opus-only offload, ledger line per
+- Am I actually operating under the protocol now (runtime-explicit offload, ledger line per
   substantive prompt), or did I only describe it?
 - If the root is not a git repo, did the owner *hear* which surfaces are degraded, and
   did I offer `--git-init` rather than running it?
@@ -295,8 +309,8 @@ starts.
 bash plugins/notrest/skills/notrest/scripts/fixture.sh   # exit 0 = every assertion held
 ```
 
-187 assertions in a `mktemp` sandbox, over marker directories, non-git projects, a
-hostile-`CLAUDE.md` corpus and two scratch git repos. The script contract: a fresh project
+The fixture runs in a `mktemp` sandbox over marker directories, non-git projects, a
+hostile-foundation corpus, explicit Codex/Claude/both arms, and two scratch git repos. The script contract: a fresh project
 checks 6 and establishes to 0; establishing twice leaves **one** block and a
 byte-identical `COORD.md`; a CRLF-and-latin-1 file round-trips with its bytes intact; a
 fenced example is not the block; a stray opener, duplicate blocks, a read-only directory

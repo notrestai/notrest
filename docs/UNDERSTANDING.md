@@ -26,7 +26,7 @@ ones, that survive the session that produced them.
 
 | | **notrest** | **rig.rest** |
 |---|---|---|
-| What it is | A Claude Code **plugin** — the engine | A **product** — a portal plus an app |
+| What it is | A Codex + Claude **plugin harness** — the engine | A **product** — a portal plus an app |
 | Who uses it | You, on this machine, today | Other people, once you deploy it |
 | Where it lives | `~/Desktop/oracle-suite-plugin` | `~/Desktop/rig.rest` |
 | Status | Shipped, v3.16.0, running live | Built, gated, **not deployed** |

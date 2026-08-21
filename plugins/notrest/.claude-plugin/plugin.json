@@ -1,8 +1,8 @@
 {
   "name": "notrest",
   "displayName": "Not Rest Inc. — ORACLE session harness",
-  "version": "4.2.1",
-  "description": "A session harness by Not Rest Inc. — the scaffolding a working session runs inside: laws anchored by hooks, delegation on receipted Opus lanes, an estate that writes itself, self-grading instruments, zero-token graphs, and thirty-one skills from intake to handoff. See README and docs/CAPABILITIES.md.",
+  "version": "4.3.0",
+  "description": "A cross-runtime session harness by Not Rest Inc. — shared estate, instruments, and thirty-one skills, with native adapters for Claude and Codex. Claude keeps lifecycle hooks and explicit Opus lanes; Codex uses AGENTS.md, native packaging, explicit gpt-5.6-sol lanes when delegation is authorized, and honest post-checks where hooks do not exist.",
   "author": {
     "name": "Not Rest Inc.",
     "url": "https://do.not.rest"

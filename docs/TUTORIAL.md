@@ -1,8 +1,11 @@
 # The notrest harness in 10 minutes
 
-The session harness that makes any Claude session **token-lean, verified, and continuous** — on any topic, with any model — riding on thirty-one skills, from intake to handoff. This is the shortest path from install to your first full working loop.
+The session harness that makes a Codex task or Claude session **token-lean, verified, and
+continuous** — riding on thirty-one skills from intake to handoff.
 
 ## 1. Install (once)
+
+### Claude
 
 ```
 /plugin marketplace add notrestai/notrest
@@ -13,7 +16,19 @@ The session harness that makes any Claude session **token-lean, verified, and co
 install id is `notrest@notrest` and skills invoke as `/notrest:<name>`). Install `notrest` as above,
 then `claude plugin uninstall oracle-suite`.
 
-That's it. Four hooks come alive immediately:
+### Codex local source build
+
+```bash
+codex plugin marketplace add /absolute/path/to/notrest-repo
+codex plugin add notrest@notrest-codex-local
+```
+
+Then start a new Codex task. Codex uses `AGENTS.md` and explicit `gpt-5.6-sol` workers
+when delegation is authorized. It does not run the Claude lifecycle hooks below; run
+`notrest establish --surface codex`, Doctor, and Eval explicitly. The exact capability
+map is `plugins/notrest/docs/CODEX.md`.
+
+On Claude, four hooks come alive immediately:
 - **SessionStart** injects the fable-discipline anchor (verification-first working habits) AND the offload model policy (every job a Fable session delegates runs on explicit Opus) into every session, auto-creates `COORD.md` — the per-prompt session ledger — at any git-repo root, detects `START-HERE.md` / `HANDOFF.md` resume files, and self-updates the plugin from git (note: marketplace installs live in a version cache, not a git clone — there, update with `claude plugin update notrest@notrest`).
 - **UserPromptSubmit** — two per-prompt lines, both cheap and both optional-feeling by design: when `COORD.md` exists, a one-line reminder to append a ledger line when the work lands (ask → landed | evidence); and the **router** — when the prompt is a task shape a suite skill owns (research, decide, fact-check, red-team, plan, outbound, …), one line names the verb (`/notrest:<skill>` — fine to skip deliberately). The ledger survives crashes and compaction even if `/sessionend` never runs.
 - **PreCompact** reminds you to run `/sessionend` before context compaction eats your session state — or at minimum to append the COORD ledger line first.

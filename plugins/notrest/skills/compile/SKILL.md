@@ -1,9 +1,14 @@
 ---
 name: compile
-description: "Compile repeated work into code — a script mines the estate for the same job done three or more times, then a ritual builds an isolated runtime under compile/<slug>/ and fair-benchmarks it against that history. Use on \"/compile\", \"compile this workflow\", \"what should we compile\", \"workflow compiler\", \"make repeat work cheaper\". Runtimes stay isolated until the owner ships them."
+description: "Compile repeated work into code — a script mines the estate for the same job done three or more times, then a ritual builds an isolated runtime under compile/{slug}/ and fair-benchmarks it against that history. Use on \"/compile\", \"compile this workflow\", \"what should we compile\", \"workflow compiler\", \"make repeat work cheaper\". Runtimes stay isolated until the owner ships them."
 ---
 
 # compile — the estate's fourth verb
+
+**Runtime adapter.** Authorized Codex builder/refuter lanes use explicit
+`model: "gpt-5.6-sol"` with `fork_turns: "none"` or a bounded recent-turn fork. Claude
+uses explicit `model: "opus"` and never `subagent_type: "fork"`. Resolve
+`<plugin-root>` from this selected `SKILL.md`; never execute a literal placeholder.
 
 `archivist` says what the estate *knows*. `graph` says how it *connects*. `recap` says what
 happened *over time*. **compile** says what happened over time **more than once** — and does
@@ -42,7 +47,7 @@ right owner:
 
 # Part 1 · Detection is a script
 
-Script: `${CLAUDE_PLUGIN_ROOT}/skills/compile/scripts/compile.py` (python3 stdlib only; loose
+Script: `<plugin-root>/skills/compile/scripts/compile.py` (python3 stdlib only; loose
 installs: `.claude/skills/…` or `~/.claude/skills/…`). `<compile-skill>` below means that path.
 
 ```bash

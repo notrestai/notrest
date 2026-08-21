@@ -2,9 +2,8 @@
 # fixture.sh — proves the spend gate's violation predicate against synthetic ledgers.
 #
 # A gate that never fires is an unproven gate, so every case below is a NEGATIVE
-# control as much as a positive one: the live policy (owner-set 2026-07-15, opus-only
-# offload) must bite a post-policy sonnet lane and must NOT bite the pre-policy sonnet
-# lanes that were lawful when they were logged.
+# control as much as a positive one: the live policy maps Claude=opus and
+# Codex=gpt-5.6-sol, while preserving the earlier date-guarded laws.
 #
 # Never touches the real spend/ledger.md — every case writes its own throwaway ledger
 # under a mktemp estate. Self-relative: runs from anywhere.
@@ -46,7 +45,7 @@ echo "── 1. the live rule bites: post-policy non-opus offload lanes"
 R=$(mk "$(E '2026-07-20 10:00Z' subagent claude-sonnet-5)")
 chk "post-policy sonnet on subagent → exit 4" "$(run "$R")" "4"
 grep -q 'ROUTING VIOLATIONS (1)' "$OUT" && ok "  names it a routing violation" || no "  names it a routing violation" "$(cat "$OUT")"
-grep -q 'policy 2026-07-15: opus-only offload' "$OUT" \
+grep -q 'policy v4.3: runtime worker (Claude=opus, Codex=gpt-5.6-sol)' "$OUT" \
   && ok "  verdict names the rule version it enforces (greppable fingerprint)" \
   || no "  verdict names the rule version it enforces"
 
@@ -62,6 +61,10 @@ R=$(mk "$(E '2026-07-20 10:00Z' subagent claude-opus-5)")
 chk "post-policy opus-5 → exit 0" "$(run "$R")" "0"
 R=$(mk "$(E '2026-07-20 10:00Z' subagent claude-opus-4-8)")
 chk "post-policy opus-4-8 → exit 0" "$(run "$R")" "0"
+R=$(mk "$(E '2026-08-07 00:01Z' subagent gpt-5.6-sol)")
+chk "Codex adapter gpt-5.6-sol → exit 0" "$(run "$R")" "0"
+R=$(mk "$(E '2026-08-05 23:59Z' subagent gpt-5.6-sol)")
+chk "backdated Codex model cannot rewrite the prior Opus-only law → exit 4" "$(run "$R")" "4"
 
 echo "── 3. policy-date guard: lawful-at-the-time is never a violation"
 R=$(mk "$(E '2026-07-14 10:00Z' subagent claude-sonnet-5)")
@@ -126,7 +129,7 @@ import json,sys
 d=json.load(open('$OUT'))
 assert d['verdict']=='VIOLATION', d['verdict']
 assert d['exit']==4, d['exit']
-assert d['policy']=='policy 2026-07-15: opus-only offload', d['policy']
+assert d['policy']=='policy v4.3: runtime worker (Claude=opus, Codex=gpt-5.6-sol)', d['policy']
 assert len(d['violations'])==1, d['violations']
 assert d['counts']['violation']==1, d['counts']
 " 2>"$TMP/jerr" && ok "  json carries verdict/exit/policy/violations/counts" \

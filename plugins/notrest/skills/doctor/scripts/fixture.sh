@@ -14,6 +14,9 @@
 #     the fixture chose ($FIXTURE_ALWAYS_ON) rather than the real plugin's cost.
 # Usage: bash <doctor-skill>/scripts/fixture.sh   (exit 0 = all pass, 1 = a failure)
 set -u
+# This corpus proves the historical Claude diagnostics. Host variables from a Codex caller
+# must not silently select the other arm; Codex-specific checks have their own cases below.
+unset CODEX_THREAD_ID CODEX_SANDBOX
 DOC="$(cd "$(dirname "$0")" && pwd)/doctor.py"
 PY="$(command -v python3)"
 W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
@@ -38,6 +41,15 @@ printf '  Source: fixtureplug@inline\n'
 exit 0
 SHIM
 chmod +x "$W/bin/claude"
+cat > "$W/bin/codex" <<'SHIM'
+#!/bin/bash
+if [ "${1:-}" = plugin ] && [ "${2:-}" = list ]; then
+  printf 'fixtureplug@fixture-codex-local installed, enabled  1.0.0  /fixture/cache\n'
+  exit 0
+fi
+exit 2
+SHIM
+chmod +x "$W/bin/codex"
 export PATH="$W/bin:$PATH"
 
 RC=0
@@ -58,7 +70,8 @@ py(){ python3 -c "$1" "$2"; }
 
 # ── the healthy synthetic harness ─────────────────────────────────────────────────────
 H="$W/healthy"
-mkdir -p "$H/.claude-plugin" "$H/plugins/fixtureplug/.claude-plugin" \
+mkdir -p "$H/.claude-plugin" "$H/.agents/plugins" \
+         "$H/plugins/fixtureplug/.claude-plugin" "$H/plugins/fixtureplug/.codex-plugin" \
          "$H/plugins/fixtureplug/skills/alpha" "$H/plugins/fixtureplug/skills/beta" \
          "$H/plugins/fixtureplug/hooks" "$H/plugins/tomb/.claude-plugin" \
          "$H/docs" "$H/spend" "$H/compile"
@@ -77,6 +90,39 @@ cat > "$H/plugins/fixtureplug/.claude-plugin/plugin.json" <<'EOF'
   "version": "1.0.0",
   "description": "A synthetic harness — two natural-language-invocable skills ride on it.",
   "hooks": "./hooks/hooks.json"
+}
+EOF
+
+cat > "$H/plugins/fixtureplug/.codex-plugin/plugin.json" <<'EOF'
+{
+  "name": "fixtureplug",
+  "version": "1.0.0",
+  "description": "A synthetic native Codex harness.",
+  "author": { "name": "Fixture" },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Fixture",
+    "shortDescription": "Synthetic harness",
+    "longDescription": "Synthetic harness for Doctor's native package checks.",
+    "developerName": "Fixture",
+    "category": "Productivity",
+    "capabilities": ["Read"]
+  }
+}
+EOF
+
+cat > "$H/.agents/plugins/marketplace.json" <<'EOF'
+{
+  "name": "fixture-codex-local",
+  "interface": { "displayName": "Fixture" },
+  "plugins": [
+    {
+      "name": "fixtureplug",
+      "source": { "source": "local", "path": "./plugins/fixtureplug" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
 }
 EOF
 
@@ -380,6 +426,8 @@ import io, json, os, sys
 d = sys.argv[1]
 p = os.path.join(d, "plugins/fixtureplug/.claude-plugin/plugin.json")
 o = json.load(open(p)); o["version"] = "1.0.1"; json.dump(o, open(p, "w"), indent=2)
+p = os.path.join(d, "plugins/fixtureplug/.codex-plugin/plugin.json")
+o = json.load(open(p)); o["version"] = "1.0.1"; json.dump(o, open(p, "w"), indent=2)
 p = os.path.join(d, ".claude-plugin/marketplace.json")
 o = json.load(open(p)); o["metadata"]["version"] = "1.0.1"
 for e in o["plugins"]:
@@ -514,6 +562,24 @@ print(sum(1 for c in d["checks"] if c["status"]=="SKIP")>=2)' "$W/plug.json")" "
 snap(){ (cd "$1" && find . -type f | sort | while read -r f; do printf '%s %s\n' "$f" "$(cksum < "$f")"; done); }
 BEFORE="$(snap "$H")"; runjson "$H"; AFTER="$(snap "$H")"
 t "doctor never writes into the target" "$([ "$BEFORE" = "$AFTER" ] && echo identical || echo mutated)" "identical"
+
+# ── D · native Codex surface ─────────────────────────────────────────────────────────
+echo "── D · native Codex surface"
+python3 "$DOC" check --root "$H" --surface codex --json > "$W/codex.json" 2>&1
+RC=$?
+cp "$W/codex.json" "$W/out.json"
+t "healthy Codex adapter exits 0" "$RC" "0"
+t "Codex MANIFESTS pass" "$(st 'MANIFESTS')" "PASS"
+t "Codex INSTALL FRESHNESS reads Codex inventory" "$(st 'INSTALL FRESHNESS')" "PASS"
+t "Codex hook liveness is an honest SKIP" "$(st 'HOOKS FIRED')" "SKIP"
+t "Codex Claude-token measurement is an honest SKIP" "$(st 'TOKEN BUDGET')" "SKIP"
+t "Codex desktop-shadow probe is an honest SKIP" "$(st 'SHADOW-APPSIDE')" "SKIP"
+
+HC="$W/codex-broken"; cp -R "$H" "$HC"
+rm -f "$HC/plugins/fixtureplug/.codex-plugin/plugin.json"
+python3 "$DOC" check --root "$HC" --surface codex --json > "$W/out.json" 2>&1
+t "missing native Codex manifest exits 6" "$?" "6"
+t "missing native Codex manifest fails MANIFESTS" "$(st 'MANIFESTS')" "FAIL"
 
 echo
 echo "doctor fixture: $PASS passed, $FAIL failed"

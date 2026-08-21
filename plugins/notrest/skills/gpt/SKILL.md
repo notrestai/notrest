@@ -5,6 +5,12 @@ description: "Chat-first GPT lane — /gpt talks to a persistent GPT-5.6 convers
 
 # gpt — the chat-first cross-model lane
 
+**Codex boundary.** In a Codex task, the current seat is already GPT/Codex, so `/gpt` is
+redundant by default. Do not shell back into Codex and call that a second opinion. Use this
+skill on Codex only when the user explicitly asks for a separate persistent comparison/task;
+otherwise answer in the current task and label model opinion normally. The no-secrets rule
+still applies whenever a prompt leaves the current task.
+
 `/gpt <anything>` is a conversation with GPT that remembers. One setup moment, then it's
 just talking. Everything agentic is opt-in, explained, and verified before it's trusted.
 

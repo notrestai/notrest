@@ -1,9 +1,26 @@
 ---
 name: agentswarm
-description: "The default delegation arrangement — the seat keeps decompose/judge/apply/gate, background lanes do the rest. MODEL POLICY: every offloaded job sets model \"opus\" explicitly — no sonnet, no haiku, never subagent_type \"fork\" (forks inherit the seat). Builds run ONE persistent lane, resumed for feedback. Use on \"/agentswarm\", \"swarm this\", \"offload this\", legacy \"/fable-swarm\", or BY DEFAULT whenever a session delegates substantial work. Multi-day arrangements: fable-director."
+description: "The delegation arrangement — the seat keeps decompose/judge/apply/gate and background lanes do the work. MODEL POLICY is runtime-explicit: Codex uses gpt-5.6-sol; Claude uses opus; inherited/full-history forks are forbidden. Builds run one persistent lane per domain, resumed for feedback. Use on /agentswarm, 'swarm this', 'offload this', or explicit delegation requests."
 ---
 
 # agentswarm — the seat and the swarm
+
+## Runtime lane policy (overrides runtime-specific wording below)
+
+Run this arrangement only when the user explicitly asks for delegation or the active host
+policy independently permits it. Choose `WORKER_MODEL` once and put it on **every** spawn:
+
+- Codex: `model: "gpt-5.6-sol"` with `fork_turns: "none"` or a bounded recent-turn fork.
+  A model override cannot use a full-history inherited fork. Use Codex `spawn_agent`,
+  `send_message`, and `followup_task`; do not invent Claude Agent/Workflow calls.
+- Claude: `model: "opus"`; never `subagent_type: "fork"`. Use Agent/Task/Workflow tools.
+
+In the historical sections below, “Opus lane” means **the runtime's explicit frontier
+worker lane** when this skill runs on Codex. It does not authorize silently passing the
+Claude model name to Codex. Receipts record the model that actually ran. Codex has no
+Claude SubagentStop hook, so the seat must bank the commission/result and spend receipt
+explicitly. Resolve `<plugin-root>` from this selected `SKILL.md` and substitute its
+absolute path; never execute a literal placeholder.
 
 **THE SEAT is the main session's model** — Fable when Fable is driving, otherwise the
 latest Opus. The arrangement is the same either way: the seat decomposes, judges, applies,
@@ -346,7 +363,7 @@ The seat never hand-builds a feature; it specs, gates, and ships:
 8. **Domains are computed, not guessed.** Rules 5 and 7 command domain-scoped lanes split
    along file boundaries — but a TOUCH-ONLY list drawn from the seat's memory of the tree
    is a guess. When lanes will touch a SHARED tree, the seat runs the partitioner and
-   reads the answer: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/graph.py domains
+   reads the answer: `python3 <plugin-root>/skills/graph/scripts/graph.py domains
    --root . (--paths P1 P2 ... | --changed | --all) [--lanes N] [--json]`. Lanes are the
    connected components of the file-link graph restricted to the scope — hubs are
    extracted FIRST, then components are found on the remainder, and **a component is

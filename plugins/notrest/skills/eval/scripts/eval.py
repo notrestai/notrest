@@ -30,9 +30,12 @@ CLAIM_SKILLS = {"researcher", "factcheck", "marketresearcher", "explainer",
                 "decider", "recap", "watch", "draft"}
 LABEL_RE = re.compile(r"\[(cited|recall|estimate|unverified|model-opinion)\]", re.I)
 VERDICT_RE = re.compile(r"\b(CONFIRMED|REFUTED|PLAUSIBLE|UNVERIFIABLE|MISLEADING|DEAD-SOURCE)\b")
-# A spawn of a CLAUDE subagent is what the offload policy binds. `run_in_background`
-# alone is not evidence — Bash jobs and vendor bridges (gpt) share that parameter.
-SPAWN_MARK = re.compile(r"subagent_type|Agent tool|agent\(|model:\s*\"?opus", re.I)
+# A documented model lane is what the offload policy binds. `run_in_background` alone is
+# not evidence — Bash jobs and vendor bridges share that parameter.
+SPAWN_MARK = re.compile(r"subagent_type|Agent tool|spawn_agent|agent\(|"
+                        r"model:\s*\"?(?:opus|gpt-5\.6-sol)", re.I)
+CLAUDE_MODEL_RE = re.compile(r"\bopus\b", re.I)
+CODEX_MODEL_RE = re.compile(r"\bgpt-5\.6-sol\b", re.I)
 DOWNGRADE_RE = re.compile(r"model[\"']?\s*[:=]\s*[\"']?\s*(sonnet|haiku)", re.I)
 FORK_RE = re.compile(r"subagent_type:\s*[\"']?fork", re.I)
 FORKBAN_RE = re.compile(r"^.*\bfork\b.*$", re.I | re.M)
@@ -137,7 +140,8 @@ def locate(root):
 # ---------------------------------------------------------------------------
 def check_offload(root, plug, skills):
     ID = "OFFLOAD-POLICY"
-    law = "every documented spawn names explicit opus; never sonnet/haiku; forks banned"
+    law = ("every documented spawn maps both runtimes: Codex=gpt-5.6-sol, "
+           "Claude=opus; inherited forks banned")
     out, spawners = [], []
     for name, (d, txt) in skills.items():
         f = rel(root, os.path.join(d, "SKILL.md"))
@@ -157,13 +161,19 @@ def check_offload(root, plug, skills):
         if m:
             out.append(R(ID, "FAIL", law, "%s:%d  %r" % (f, lineno(txt, m.start()),
                                                          m.group(0).strip()),
-                         "replace with model: \"opus\"; forks inherit the seat model"))
+                         "use the runtime map (Codex gpt-5.6-sol; Claude opus); forks inherit"))
             continue
         if SPAWN_MARK.search(txt):
             spawners.append(name)
-            if not re.search(r"\bopus\b", txt, re.I):
-                out.append(R(ID, "FAIL", law, "%s  (spawn directive, no model named)" % f,
-                             "state model: \"opus\" on every spawn in this skill"))
+            missing = []
+            if not CLAUDE_MODEL_RE.search(txt):
+                missing.append("Claude=opus")
+            if not CODEX_MODEL_RE.search(txt):
+                missing.append("Codex=gpt-5.6-sol")
+            if missing:
+                out.append(R(ID, "FAIL", law, "%s  (spawn directive, missing %s)"
+                             % (f, ", ".join(missing)),
+                             "state the dual runtime model map near the spawn contract"))
             if "subagent_type" in txt:
                 banned = any(NEGATION_RE.search(ln) for ln in FORKBAN_RE.findall(txt))
                 if not banned:
@@ -171,7 +181,7 @@ def check_offload(root, plug, skills):
                                  "add: never subagent_type \"fork\" — forks inherit the seat model"))
     hook = os.path.join(plug, "hooks", "session-start.sh")
     if os.path.isfile(hook):
-        if not re.search(r"\bopus\b", read(hook), re.I):
+        if not CLAUDE_MODEL_RE.search(read(hook)):
             out.append(R(ID, "FAIL", law, "%s  (SessionStart carries no opus rule)" % rel(root, hook),
                          "echo the offload policy in the SessionStart anchor"))
     else:
@@ -788,18 +798,24 @@ def check_kernel(root, plug, skills):
     ID = "KERNEL-REVIEW"
     law = "the kernel surfaces are named where they are claimed, and carry the refuter law"
     out = []
-    cm = os.path.join(root, "CLAUDE.md")
+    foundations = [os.path.join(root, n) for n in ("AGENTS.md", "CLAUDE.md")
+                   if os.path.isfile(os.path.join(root, n))]
     # EXISTENCE IS os.path.isfile, NOT the read() sentinel: eval's read() returns "" on
     # failure, never None, so an `is None` test silently judged a MISSING CLAUDE.md as an
     # empty one and FAILed where it owed a SKIP. Caught by this check's own fixture in
     # v4.2.1 — the exact reason unfixtured checks are debt, not savings.
-    if not os.path.isfile(cm) or "refuter" not in skills:
-        return [R(ID, "SKIP", law, "no refuter skill / no CLAUDE.md — no kernel law here")]
-    txt = read(cm)
-    if KERNEL_MARK not in txt:
-        out.append(R(ID, "FAIL", law, "%s  (no %r block)" % (rel_p(root, cm), KERNEL_MARK),
-                     "name the kernel surfaces in CLAUDE.md"))
-    if KERNEL_MARK in txt:
+    if not foundations or "refuter" not in skills:
+        return [R(ID, "SKIP", law, "no refuter skill / no runtime foundation — no kernel law here")]
+    named = []
+    for foundation in foundations:
+        txt = read(foundation)
+        if KERNEL_MARK not in txt:
+            out.append(R(ID, "FAIL", law, "%s  (no %r block)"
+                         % (rel_p(root, foundation), KERNEL_MARK),
+                         "name the kernel surfaces in every shipped runtime foundation"))
+        else:
+            named.append(rel_p(root, foundation))
+    if named:
         rtxt = skills["refuter"][1]
         if KERNEL_MARK not in rtxt:
             out.append(R(ID, "FAIL", law,
@@ -807,7 +823,8 @@ def check_kernel(root, plug, skills):
                          % rel_p(root, os.path.join(skills["refuter"][0], "SKILL.md")),
                          "name the kernel list in refuter's SKILL.md"))
     if not any(r.status == "FAIL" for r in out):
-        out.insert(0, R(ID, "PASS", law, "kernel surfaces named in CLAUDE.md and refuter"))
+        out.insert(0, R(ID, "PASS", law, "kernel surfaces named in %s and refuter"
+                        % ", ".join(named)))
     return out
 
 
@@ -868,11 +885,11 @@ CHECKS = [check_network, check_kernel, check_release_surface,
 # behavior cases — opt-in, bounded, code-graded. NEVER an LLM judge.
 # ---------------------------------------------------------------------------
 def grade_offload_spawn_directive(text):
-    """PASS iff the answer names opus and never names sonnet/haiku as the spawn model."""
+    """PASS iff the answer names one supported explicit worker model and no downgrade."""
     if DOWNGRADE_RE.search(text):
         return False, "named a downgraded model for a spawn"
-    return (bool(re.search(r"\bopus\b", text, re.I)),
-            "opus named" if re.search(r"\bopus\b", text, re.I) else "no model named")
+    named = CLAUDE_MODEL_RE.search(text) or CODEX_MODEL_RE.search(text)
+    return bool(named), ("supported worker model named" if named else "no worker model named")
 
 
 def grade_graph_scanner_preference(text):
@@ -886,7 +903,7 @@ BEHAVIOR_CASES = {
     "offload-spawn-directive": {
         "prompt": "Spawn a lane to audit the release notes. Show the exact Agent call you would make.",
         "grader": grade_offload_spawn_directive,
-        "law": "OFFLOAD-POLICY — every offloaded job runs on explicit opus",
+        "law": "OFFLOAD-POLICY — every offloaded job uses the runtime's explicit worker",
     },
     "graph-scanner-preference": {
         "prompt": "How do the files in this repo connect? Answer with the first tool call you make.",
@@ -896,7 +913,7 @@ BEHAVIOR_CASES = {
 }
 
 
-def run_behavior(name):
+def run_behavior(name, surface="auto"):
     case = BEHAVIOR_CASES.get(name)
     if not case:
         sys.stderr.write("unknown case %r; have: %s\n"
@@ -904,7 +921,14 @@ def run_behavior(name):
         return 2
     print("BEHAVIOR CASE  %s" % name)
     print("law     : %s" % case["law"])
-    print("command : claude -p %r --model opus --max-turns 1" % case["prompt"])
+    if surface == "auto":
+        surface = "codex" if (os.environ.get("CODEX_THREAD_ID") or
+                              os.environ.get("CODEX_SANDBOX")) else "claude"
+    if surface == "codex":
+        print("command : run as a bounded Codex task with model gpt-5.6-sol: %r"
+              % case["prompt"])
+    else:
+        print("command : claude -p %r --model opus --max-turns 1" % case["prompt"])
     print("grader  : %s  (python regex over the returned text — never an LLM judge)"
           % case["grader"].__name__)
     print("run     : opt-in only. Not part of the ship gate; `eval.py check` never spends tokens.")
@@ -1018,11 +1042,12 @@ def main(argv):
     b = sub.add_parser("behavior", help="print an opt-in bounded model case (does not run it)")
     b.add_argument("--case", required=True)
     b.add_argument("--list", action="store_true")
+    b.add_argument("--surface", choices=("auto", "codex", "claude"), default="auto")
     ns = ap.parse_args(argv)
     if ns.cmd == "check":
         return run_check(os.path.abspath(ns.root), ns.json, ns.baseline)
     if ns.cmd == "behavior":
-        return run_behavior(ns.case)
+        return run_behavior(ns.case, ns.surface)
     ap.print_help()
     return 2
 

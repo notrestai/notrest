@@ -1,0 +1,20 @@
+{
+  "name": "notrest-codex-local",
+  "interface": {
+    "displayName": "Not Rest — Local Codex Build"
+  },
+  "plugins": [
+    {
+      "name": "notrest",
+      "source": {
+        "source": "local",
+        "path": "./plugins/notrest"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

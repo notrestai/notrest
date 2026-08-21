@@ -352,11 +352,12 @@ def parse_frontmatter(text):
 
 # ── target resolution ─────────────────────────────────────────────────────────────────
 class Target(object):
-    def __init__(self, root, mode, plugins, primary):
+    def __init__(self, root, mode, plugins, primary, surface="auto"):
         self.root = root
         self.mode = mode              # "repo" | "plugin"
         self.plugins = plugins        # every plugin dir carrying a .claude-plugin/plugin.json
         self.primary = primary        # the plugin dir that owns the skills
+        self.surface = self._surface(surface)
         self.marketplace = os.path.join(root, ".claude-plugin", "marketplace.json")
         if not os.path.isfile(self.marketplace):
             self.marketplace = None
@@ -369,6 +370,18 @@ class Target(object):
         self.coord_agents = self._first(os.path.join(root, "COORD-AGENTS.md"))
         self.ledger = self._first(os.path.join(root, "spend", "ledger.md"))
         self.candidates = self._first(os.path.join(root, "compile", "candidates.json"))
+
+    def _surface(self, requested):
+        if requested and requested != "auto":
+            return requested
+        if os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SANDBOX"):
+            return "codex"
+        if os.environ.get("CLAUDE_PLUGIN_ROOT") or os.environ.get("CLAUDE_CONFIG_DIR"):
+            return "claude"
+        if self.primary and os.path.isfile(os.path.join(self.primary, ".codex-plugin",
+                                                        "plugin.json")):
+            return "codex"
+        return "claude"
 
     @staticmethod
     def _first(*paths):
@@ -393,6 +406,9 @@ class Target(object):
     def manifest(self, plugin_dir):
         return os.path.join(plugin_dir, ".claude-plugin", "plugin.json")
 
+    def codex_manifest(self, plugin_dir):
+        return os.path.join(plugin_dir, ".codex-plugin", "plugin.json")
+
 
 def resolve(args):
     if args.plugin:
@@ -401,7 +417,7 @@ def resolve(args):
             return None, "no such directory: %s" % root
         if not os.path.isfile(os.path.join(root, ".claude-plugin", "plugin.json")):
             return None, "%s is not a plugin dir (no .claude-plugin/plugin.json)" % root
-        return Target(root, "plugin", [root], root), None
+        return Target(root, "plugin", [root], root, getattr(args, "surface", "auto")), None
 
     root = os.path.abspath(args.root) if args.root else None
     if root is None:
@@ -423,7 +439,7 @@ def resolve(args):
         return None, ("%s holds no plugin (expected plugins/*/.claude-plugin/plugin.json). "
                       "Point --root at the marketplace repo or use --plugin." % root)
 
-    tmp = Target(root, "repo", plugins, plugins[0])
+    tmp = Target(root, "repo", plugins, plugins[0], getattr(args, "surface", "auto"))
     primary = max(plugins, key=lambda p: len(tmp.skill_dirs(p)))
     mk, _ = jload(tmp.marketplace) if tmp.marketplace else (None, None)
     if isinstance(mk, dict) and mk.get("name"):
@@ -432,7 +448,7 @@ def resolve(args):
             if isinstance(man, dict) and man.get("name") == mk.get("name"):
                 primary = p
                 break
-    return Target(root, "repo", plugins, primary), None
+    return Target(root, "repo", plugins, primary, getattr(args, "surface", "auto")), None
 
 
 # ── checks ────────────────────────────────────────────────────────────────────────────
@@ -467,7 +483,7 @@ def check_frontmatter(t):
 
 
 def check_manifests(t):
-    detail, status = [], PASS
+    detail, status, fix = [], PASS, None
     versions = {}
     for p in t.plugins:
         man = t.manifest(p)
@@ -482,16 +498,63 @@ def check_manifests(t):
     name = primary_man.get("name")
     version = primary_man.get("version")
 
+    # The Codex package is a parallel adapter, never inferred from Claude compatibility.
+    # A source tree at v4.3+ must carry the native manifest, and the base versions agree.
+    cman = t.codex_manifest(t.primary)
+    cobj, cerr = jload(cman) if os.path.isfile(cman) else (None, "absent")
+    if cerr:
+        status = FAIL
+        detail.append("%s — native Codex manifest %s" % (t.rel(cman), cerr))
+        fix = "add a valid .codex-plugin/plugin.json; do not claim Codex through Claude compatibility alone"
+    else:
+        cver = cobj.get("version")
+        detail.append("%s = %s v%s" % (t.rel(cman), cobj.get("name"), cver))
+        required = ("name", "version", "description", "author", "interface")
+        absent = [k for k in required if not cobj.get(k)]
+        if cobj.get("name") != name or cver != version or absent:
+            status = FAIL
+            detail.append("CODEX MANIFEST MISMATCH: name=%s version=%s missing=%s"
+                          % (cobj.get("name"), cver, ",".join(absent) or "-"))
+            fix = ("make .codex-plugin/plugin.json name/version match the Claude manifest "
+                   "and include the required Codex interface fields")
+        if "hooks" in cobj:
+            status = FAIL
+            detail.append("Codex manifest declares unsupported hooks — Claude lifecycle hooks do not run there")
+            fix = "remove hooks from .codex-plugin/plugin.json and keep them in the Claude adapter"
+
+    codex_market = os.path.join(t.root, ".agents", "plugins", "marketplace.json")
+    if t.mode == "repo" and os.path.isfile(codex_market):
+        cmk, cmerr = jload(codex_market)
+        centry = next((e for e in (cmk or {}).get("plugins", [])
+                       if isinstance(e, dict) and e.get("name") == name), None)
+        if cmerr or not centry:
+            status = FAIL
+            detail.append("%s has no usable '%s' Codex entry" % (t.rel(codex_market), name))
+            fix = "repair the repo-local Codex marketplace entry"
+        else:
+            policy = centry.get("policy") or {}
+            source = centry.get("source") or {}
+            good = (source.get("source") == "local" and
+                    source.get("path") == "./plugins/%s" % os.path.basename(t.primary) and
+                    policy.get("installation") in ("AVAILABLE", "INSTALLED_BY_DEFAULT") and
+                    policy.get("authentication") in ("ON_INSTALL", "ON_USE") and
+                    bool(centry.get("category")))
+            detail.append("%s entry[%s] source=%s policy=%s/%s"
+                          % (t.rel(codex_market), name, source.get("path"),
+                             policy.get("installation"), policy.get("authentication")))
+            if not good:
+                status = FAIL
+                fix = "repair source.path, policy, and category in the Codex marketplace entry"
+
     if t.marketplace is None:
         detail.append("no marketplace.json under this target — cross-manifest match SKIPPED")
-        return status, detail, None
+        return status, detail, fix
 
     mk, err = jload(t.marketplace)
     if err:
         return FAIL, detail + ["%s is not valid JSON: %s" % (t.rel(t.marketplace), err)], \
             "repair the JSON (python3 -m json.tool .claude-plugin/marketplace.json)"
 
-    fix = None
     meta_v = (mk.get("metadata") or {}).get("version")
     entries = {e.get("name"): e for e in mk.get("plugins", []) if isinstance(e, dict)}
     entry_v = (entries.get(name) or {}).get("version")
@@ -750,6 +813,9 @@ def check_install_freshness(t):
     now; cache mode copies a published version and the question becomes version drift.
     Naming the wrong surface was the original defect: the check read git state and
     reported it as 'marketplace clone=...'."""
+    if t.surface == "codex":
+        return check_codex_install_freshness(t)
+
     man, _ = jload(t.manifest(t.primary))
     name = (man or {}).get("name")
     tree_v = (man or {}).get("version")
@@ -777,6 +843,38 @@ def check_install_freshness(t):
             status, detail, fix = freshness_cache(t, name, tree_v)
 
     return overlap_shadow(t, name, status, detail, fix)
+
+
+def check_codex_install_freshness(t):
+    """Read Codex's own plugin inventory. It proves the loaded id/version, not source-tree
+    identity; that limit is stated instead of borrowing Claude's cache vocabulary."""
+    obj, err = jload(t.codex_manifest(t.primary))
+    if err or not isinstance(obj, dict):
+        return FAIL, ["native Codex manifest unreadable: %s" % err], \
+            "repair .codex-plugin/plugin.json, then reinstall the local plugin"
+    name, tree_v = obj.get("name"), obj.get("version")
+    rc, out = run(["codex", "plugin", "list"], timeout=45)
+    if rc is None or rc != 0:
+        return SKIP, ["Codex inventory unavailable — codex plugin list exit %s: %s"
+                      % (rc, (out or "").strip()[:160])], None
+    rows = [ln.strip() for ln in out.splitlines() if ln.strip().startswith(name + "@")]
+    if not rows:
+        return WARN, ["runtime=codex · tree=v%s · no installed '%s@…' row" % (tree_v, name)], \
+            "install the repo-local Codex marketplace build, then start a new task"
+    enabled = [ln for ln in rows if " installed, enabled " in ln]
+    versions = []
+    for ln in enabled:
+        m = re.search(r"installed, enabled\s+([^\s]+)", ln)
+        if m:
+            versions.append(m.group(1))
+    detail = ["runtime=codex · tree=v%s · installed rows: %s"
+              % (tree_v, " | ".join(rows))]
+    base_versions = [v.split("+", 1)[0] for v in versions]
+    if tree_v in base_versions:
+        detail.append("Codex inventory carries the same base version; start a new task after updates")
+        return PASS, detail, None
+    return WARN, detail + ["INSTALL DRIFT — no enabled Codex row matches base v%s" % tree_v], \
+        "reinstall notrest from the confirmed local marketplace and start a new task"
 
 
 def overlap_shadow(t, name, status, detail, fix):
@@ -902,6 +1000,9 @@ def check_shadow_appside(t):
     WARN-GRADE BY CONSTRUCTION, never FAIL: it reports another application's state, which
     this repo does not control and doctor must not touch. A collision is a fact worth
     knowing, not a broken harness."""
+    if t.surface == "codex":
+        return SKIP, ["Claude desktop provisioning store is outside the Codex adapter"], None
+
     ours = set()
     for p in t.plugins:
         ours.update(os.path.basename(d) for d in t.skill_dirs(p))
@@ -956,6 +1057,9 @@ def check_token_budget(t):
     Every skill description is loaded into every session whether the skill fires or not.
     The number the CLI prints is the receipt; anything else is a guess, so when the CLI
     cannot be asked this check SKIPs and says which ids it tried."""
+    if t.surface == "codex":
+        return SKIP, ["Claude's always-on token receipt is not a Codex measurement; "
+                      "Codex skill descriptions remain front-matter checked"], None
     man, _ = jload(t.manifest(t.primary))
     name = (man or {}).get("name")
     if not name:
@@ -1007,6 +1111,9 @@ def check_hooks_fired(t):
     it leaves no error, no log, and no gap anyone notices. This looks for the marks a
     firing hook leaves on the estate. It is a heuristic and never FAILs: absence of a
     mark is absence of evidence (a fresh repo has none), not proof of a dead hook."""
+    if t.surface == "codex":
+        return SKIP, ["Codex v4.3 exposes no Claude lifecycle hooks; explicit harness "
+                      "actions and instruments carry the discipline"], None
     if not t.coord and not t.coord_agents:
         return SKIP, ["no COORD.md / COORD-AGENTS.md here — nothing a hook would have "
                       "written to look at"], None
@@ -1158,6 +1265,8 @@ def main(argv=None):
     chk = sub.add_parser("check", help="run every check and report")
     chk.add_argument("--root", help="repo root (default: the git root of the cwd)")
     chk.add_argument("--plugin", help="an installed plugin dir instead of a repo")
+    chk.add_argument("--surface", choices=("auto", "codex", "claude"), default="auto",
+                     help="runtime surface to diagnose (default: detect host/native manifest)")
     chk.add_argument("--json", action="store_true", help="machine output")
     args = ap.parse_args(argv)
     if args.cmd != "check":
@@ -1191,12 +1300,13 @@ def main(argv=None):
                   counts[SKIP], code))
 
     if args.json:
-        print(json.dumps({"root": target.root, "mode": target.mode, "verdict": verdict,
+        print(json.dumps({"root": target.root, "mode": target.mode,
+                          "surface": target.surface, "verdict": verdict,
                           "checks": results, "counts": counts, "summary": summary,
                           "exit": code}, indent=1))
         return code
 
-    print("doctor — %s (%s mode)" % (target.root, target.mode))
+    print("doctor — %s (%s mode, %s surface)" % (target.root, target.mode, target.surface))
     for r in results:
         print("%-5s %-18s %s" % (r["status"], r["check"], r["detail"][0] if r["detail"] else ""))
         for extra in r["detail"][1:]:

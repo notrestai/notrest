@@ -1,13 +1,34 @@
 ---
 name: sessionend
-description: Capture session state into four continuity files — START-HERE.md (ordered resume instructions), HANDOFF.md, STATE.md, and CLAUDE.md (the foundation, merged never clobbered) — verify a memoryless session could resume from them alone, then in multi-session environments open the live line to the successor (references/live-handoff-template.md). Use on /sessionend or when the user asks to end/wrap up the session, save state, or write a handoff. Works in Claude Code, Cowork, and chats.
+description: Capture task/session state into four continuity files — START-HERE.md, HANDOFF.md, STATE.md, and the runtime foundation (AGENTS.md on Codex, CLAUDE.md on Claude; merged, never clobbered) — verify a memoryless successor can resume, then open a live line when the host exposes one. Use on /sessionend or asks to wrap up, save state, or write a handoff.
 ---
 
 # Session End — Handoff & State Capture
 
+## Runtime adapter (applies to the whole skill)
+
+Set `FOUNDATION` to `AGENTS.md` on Codex and `CLAUDE.md` on Claude. Every unqualified
+`CLAUDE.md` instruction below means `FOUNDATION` on Codex. Use
+`references/agents-foundation-template.md` for Codex and
+`references/claude-foundation-template.md` for Claude. Do not create both unless the
+project explicitly serves both runtimes.
+
+Resolve `<plugin-root>` from this selected `SKILL.md` (two directories above this skill
+directory) and substitute its absolute path before running a command; never execute the
+placeholder literally. Claude may use `CLAUDE_PLUGIN_ROOT` as the same value.
+
+Codex task/thread tools replace Claude session tools when exposed. Never create a new task
+unless the user asked. If no live wire is available, the four files plus COORD are the
+handoff and the skill says so. Claude's SessionEnd hook is a Claude-only cushion; on Codex,
+run the explicit closing steps and never claim that hook fired.
+
 Run at the end of a working session to snapshot everything the *next* session needs to pick up exactly where this one stopped. It produces a small set of continuity files and — critically — a `START-HERE.md` that tells the next session what to read and what to do, in order. This is the bookend to the `oracle` intake: `oracle` loads context at the start, `sessionend` saves it at the end.
 
-**Each file has a distinct job — they don't overlap:** `CLAUDE.md` = the stable **foundation** (how you work + tooling + conventions + infrastructure + per-project pointers), auto-read by Claude Code at repo root; `HANDOFF.md` / `STATE.md` = this session's **volatile status** and decisions; `START-HERE.md` = the ordered **resume instructions**. A fifth file exists beside these four but is not written here: `COORD.md`, the hook-owned **per-prompt ledger** — written all session long as work lands, the tiebreaker when the status files disagree; sessionend only appends its closing line (Phase 3.6); the ledger is never compacted — past 500 lines it ROLLS into sealed volumes (`COORD-<NNN>.md`), a law the hook enforces. Volatile things never go in the foundation; the foundation is never restated in the status files.
+**Each file has a distinct job:** `FOUNDATION` is stable project instruction;
+`HANDOFF.md` / `STATE.md` hold volatile status and decisions; `START-HERE.md` is the ordered
+resume path; `COORD.md` is the append-only per-prompt trail and tiebreaker. On Claude the
+hook can roll and cushion it automatically; on Codex those closing actions are explicit.
+Volatile things never go in the foundation; the foundation is never restated in status.
 
 ## When to run
 
@@ -70,7 +91,7 @@ One-command closes, run after the files are written:
   tokens, the same spirit as the archivist re-scan. Guard each with a one-line existence
   check; **`sessionend` must never die on a missing sibling**:
   ```bash
-  G="${CLAUDE_PLUGIN_ROOT}/skills/graph/scripts/graph.py"
+  G="<plugin-root>/skills/graph/scripts/graph.py"
   if [ -f "$G" ]; then
     python3 "$G" scan  --root .            # the file graph, refreshed
     python3 "$G" river --root . --no-open  # the journey, banked at close
@@ -94,7 +115,7 @@ One-command closes, run after the files are written:
   a gate on this one's close.
 - **doctor** installed → bank a closing heartbeat, guarded exactly like the graph block above:
   ```bash
-  P="${CLAUDE_PLUGIN_ROOT}/skills/doctor/scripts/pulse.sh"
+  P="<plugin-root>/skills/doctor/scripts/pulse.sh"
   if [ -f "$P" ]; then bash "$P" --if-stale 1 --root .
   else echo "pulse.sh absent — pulse skipped"; fi
   ```
@@ -150,7 +171,7 @@ two cushion lines in a row."
 **Run the lint first — it is the mechanical floor under everything below** (script-only, zero
 model tokens):
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/sessionend/scripts/starthere_lint.py" \
+python3 "<plugin-root>/skills/sessionend/scripts/starthere_lint.py" \
   check --file START-HERE.md --root .
 ```
 Exit **0** clean · **5** warnings (advice, never a gate) · **6** a FAIL · **2** usage. **A FAIL
@@ -243,7 +264,7 @@ message it your setup questions before building. If closed, search its transcrip
 2. COORD.md — the ledger tail: the per-prompt trail with evidence, current to the
    last prompt even if this handoff is stale or the session died before sessionend
 3. STATE.md — decisions made + code/changes (newest at top)
-4. CLAUDE.md — the foundation: how you work + infrastructure (auto-read in Code)
+4. <FOUNDATION> — AGENTS.md on Codex or CLAUDE.md on Claude
 
 ## Then do this, in order
 1. <first action to resume>
@@ -296,8 +317,10 @@ The receipts. Add this session's dated entry; keep all prior entries below it.
 - <what's half-done and exactly where it stands; untested? say so>
 ```
 
-### `CLAUDE.md` — the foundation (update/merge, by the bundled template)
-The single, long-lived foundation file, auto-read by Claude Code at repo root. It holds what's stably true: how you work (protocol), tooling defaults, cross-project conventions, shared infrastructure, and short per-project pointers (including this repo's run/build/test specifics in its own project section). It is **not** volatile status — that's HANDOFF/STATE. Use the bundled **`references/claude-foundation-template.md`** as its canonical structure, and apply its discipline every time:
+### `FOUNDATION` — the runtime foundation (update/merge, by the bundled template)
+The single, long-lived foundation is `AGENTS.md` on Codex or `CLAUDE.md` on Claude. It
+holds what is stably true and auto-loadable for that runtime. It is **not** volatile status.
+Use the runtime template named at the top of this skill and apply its discipline every time:
 - **Earn-its-line test** — keep a line only if the next session would otherwise re-explain it, get it wrong, or burn tokens rediscovering it. Cut everything else; the foundation works by being small and solid, not comprehensive.
 - **Merge, never clobber** — update the existing file in place; preserve its history and the user's wording.
 - **Promote up** — if the same thing is true in two project sections, move it to Cross-Project Conventions (Part 3) or Shared Infrastructure (Part 4).
@@ -309,7 +332,8 @@ Update the **Last updated** date, and for the current project touch only its Par
 Give the user a short chat summary: what was captured, where the files are, and the one most important thing for next session. In a chat environment, present **all** files for download and remind them to re-upload next session. Don't paste the file contents into chat — point to them.
 
 ## Notes
-- Bookend to `oracle`: this session's `START-HERE.md` is what the next session (or the next `oracle` intake) reads to resume, and `CLAUDE.md` is the foundation it loads.
+- Bookend to `oracle`: this task/session's `START-HERE.md` is what the successor reads to
+  resume, and `FOUNDATION` is the stable instruction it loads.
 - Accuracy beats completeness. A short, true handoff is worth more than a long, embellished one.
 - Keep `STATE.md` from bloating: capture load-bearing decisions and snippets; reference files for the full detail rather than pasting everything.
 - The foundation (`CLAUDE.md`) grows slowly and gets pruned; the status files (`HANDOFF`/`STATE`) carry the churn. Keeping that split is what stops `CLAUDE.md` from rotting.
