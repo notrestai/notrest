@@ -166,3 +166,4 @@
 [2026-08-06 02:58Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=aad66d6f9380999cb
 [2026-08-06 03:07Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a114a3c45eeb10fbc
 [2026-08-06 03:12Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a53c6e0bf3d0dd230
+[2026-08-22 18:10Z] lane=subagent model=claude-opus-5 tokens=16281406 grade=observed purpose="auto-receipt: Round 1 complete. Work is in the working tree, uncommitted," calls=82 secs=682 agent=ae1449ff1af9bd4d0
