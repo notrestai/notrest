@@ -15,7 +15,9 @@ HOOKS="$(cd "$HERE/../../../hooks" && pwd)"
 EST="$(cd "$HERE/../../notrest/scripts" && pwd)/establish.py"
 SWARM="$(cd "$HERE/../../agentswarm/scripts" && pwd)/swarm.py"
 W="$(mktemp -d)"
-cleanup(){ pkill -f "estate-pulse.sh $W" 2>/dev/null; pkill -f "swarm.py watch --root $W" 2>/dev/null; sleep 0.3; rm -rf "$W"; }
+# pkill is ABSENT on this host, so the old reaper was a silent no-op that leaked every
+# process it claimed to reap. kill_matching (below) reads /proc and says when it cannot.
+cleanup(){ kill_matching "estate-pulse.sh $W"; kill_matching "swarm.py watch --root $W"; sleep 0.3; rm -rf "$W"; }
 trap cleanup EXIT INT TERM
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); echo "  PASS  $1"; }
@@ -23,6 +25,148 @@ no(){ FAIL=$((FAIL+1)); echo "  FAIL  $1"; }
 t(){ if [ "$2" = "$3" ]; then ok "$1 ($2)"; else no "$1 — expected [$3] got [$2]"; fi; }
 has(){ if grep -qF -- "$2" "$3" 2>/dev/null; then ok "$1"; else no "$1 — [$2] not in $3"; fi; }
 waitfor(){ for _ in $(seq 1 40); do [ -f "$1" ] && return 0; sleep 0.25; done; return 1; }
+
+# >>> S71-PROBES-BEGIN (extracted verbatim by pulse-layer-positive-controls.sh)
+# ── PROBE ACCEPTANCE (S71). An instrument that cannot run must SAY SO, never pass.
+# What this replaced, and why: the child-count checks below were written as
+#   pgrep -P $$ 2>/dev/null | wc -l | tr -d ' '   compared against "0"
+# On a host with no pgrep that pipeline prints "0" — EXACTLY the value the assertion
+# expects. A suppressed producer failure was indistinguishable from a true zero, so the
+# checks could not go red; driven with a real child spawned, the old probe still said 0.
+# The subject here is a PROCESS TREE and the only instrument on this host that holds it
+# is /proc. (SKILL.md:153's "ask the instrument, not pgrep" names `swarm.py report`, whose
+# population is the RECEIPTS LEDGER — a detached refresher never enters that corpus, so
+# its silence about one would not be evidence. Ask what would have put the subject in the
+# corpus at all.)
+# Contract for every probe below: a count/value on stdout and exit 0, or the REASON on
+# stderr and exit 3. Never silent, never suppressed.
+children_of() {   # children_of <pid> -> number of live children of <pid>
+  python3 - "$1" <<'PY'
+import os, sys
+pid = sys.argv[1]
+
+def _ppid(p):
+    with open("/proc/%s/stat" % p) as fh:
+        raw = fh.read()
+    return raw[raw.rindex(")") + 1:].split()[1]
+
+try:
+    kids = set()
+    tasks = "/proc/%s/task" % pid
+    for tid in os.listdir(tasks):
+        with open(os.path.join(tasks, tid, "children")) as fh:
+            kids.update(fh.read().split())
+except OSError as exc:
+    sys.stderr.write("children_of: cannot probe pid %s via /proc: %s\n" % (pid, exc))
+    raise SystemExit(3)
+
+# EXCLUDE THE PROBE'S OWN LINEAGE. Measuring a process tree from inside it adds a branch
+# to the thing measured: this python process, and the command-substitution subshell that
+# forked it, ARE children of the target while the probe runs. Driven 2026-08-26: without
+# this a childless script probes as 1, so the assertion could never be GREEN -- the exact
+# mirror of the defect being repaired. `pgrep -P $$` had the same flaw; it was invisible
+# only because pgrep never ran.
+try:
+    cur = str(os.getpid())
+    while cur != "1":
+        par = _ppid(cur)
+        kids.discard(cur)
+        if par == pid:
+            break
+        cur = par
+except (OSError, ValueError, IndexError):
+    pass          # the chain vanished mid-walk; the count printed is then a ceiling
+print(len(kids))
+PY
+}
+ppid_of() {       # ppid_of <pid> -> the parent pid of <pid>
+  python3 - "$1" <<'PY'
+import sys
+pid = sys.argv[1]
+try:
+    with open("/proc/%s/stat" % pid) as fh:
+        raw = fh.read()
+    # comm may contain spaces and parens, so PPID is the 2nd field AFTER the final ')'
+    print(raw[raw.rindex(")") + 1:].split()[1])
+except (OSError, ValueError, IndexError) as exc:
+    sys.stderr.write("ppid_of: cannot probe pid %s via /proc: %s\n" % (pid, exc))
+    raise SystemExit(3)
+PY
+}
+pids_matching() { # pids_matching <substring> -> pids whose cmdline contains <substring>
+  python3 - "$1" <<'PY'
+import os, sys
+pat = sys.argv[1]
+try:
+    entries = [p for p in os.listdir("/proc") if p.isdigit()]
+except OSError as exc:
+    sys.stderr.write("pids_matching: cannot read /proc: %s\n" % exc)
+    raise SystemExit(3)
+
+# NEVER MATCH SELF OR AN ANCESTOR. A cmdline search matches any process that merely
+# MENTIONS the pattern -- including this script, the shell that launched it, and any
+# editor or heredoc carrying the text on its command line. Driven 2026-08-26: an earlier
+# build of the reaper below matched the invoking shell and KILLED IT (exit 144). The old
+# `pkill -f` form had exactly this hazard and was saved only by pkill being absent.
+# A reaper must never kill the tree it is running inside.
+def _ppid(q):
+    with open("/proc/%s/stat" % q) as fh:
+        raw = fh.read()
+    return raw[raw.rindex(")") + 1:].split()[1]
+
+mine = set()
+cur = str(os.getpid())
+try:
+    while cur and cur != "0":
+        mine.add(cur)
+        if cur == "1":
+            break
+        cur = _ppid(cur)
+except (OSError, ValueError, IndexError):
+    pass          # a partial chain still excludes everything walked so far
+me = str(os.getpid())
+for p in entries:
+    try:
+        with open("/proc/%s/cmdline" % p, "rb") as fh:
+            cmd = fh.read().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        continue      # exited between listdir and open - a race, not a probe failure
+    if pat in cmd and p not in mine:
+        print(p)
+PY
+}
+count_in() {      # count_in <literal> <file> -> occurrences of <literal> in <file>
+  local rc
+  if [ ! -f "$2" ]; then echo "count_in: no such file: $2" >&2; return 3; fi
+  # -c DIRECTLY ON A FILE is the clean form; a composite (... | grep -c .) loses NUL-bearing
+  # lines silently. `command grep` bypasses the seat's ugrep wrapper; NEVER backslash-grep.
+  command grep -c -F -- "$1" "$2"; rc=$?
+  # grep -c exits 1 when the count is zero and STILL prints 0 - a real count, not a failure.
+  case "$rc" in 0|1) return 0 ;; *) echo "count_in: grep exit $rc on $2" >&2; return 3 ;; esac
+}
+# A check whose PROBE can fail has THREE outcomes, not two: PASS, FAIL, and
+# PROBE UNAVAILABLE - which is reported as a FAIL, because a check that did not run is
+# not a check that passed. DECLINED (loud) and SKIPPED (silent) are both distinct from a
+# true negative, and neither is a green.
+tprobe() {        # tprobe <label> <expected> <probe-command> [args...]
+  local label="$1" want="$2"; shift 2
+  local got rc
+  got="$("$@")"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    no "$label - PROBE UNAVAILABLE ($1 exit $rc): this check DID NOT RUN"
+    return
+  fi
+  t "$label" "$(printf '%s' "$got" | tr -d ' ')" "$want"
+}
+kill_matching() { # best-effort reaper; pkill is ABSENT on this host (and is a shell
+                  # function in an interactive seat, which a script never inherits)
+  local p
+  for p in $(pids_matching "$1" || true); do
+    [ -e "/proc/$p" ] || continue
+    kill "$p" || echo "  note: could not kill $p" >&2
+  done
+}
+# <<< S71-PROBES-END
 
 E="$W/estate"; mkdir -p "$E"; ( cd "$E" && git init -q ) >/dev/null 2>&1; : > "$E/README.md"
 python3 "$EST" establish --root "$E" >/dev/null 2>&1
@@ -49,7 +193,9 @@ d=json.load(open(sys.argv[1]))['instruments']
 print(all('exit' in v and 'verdict' in v and 'secs' in v for v in d.values()) and len(d)==4)" "$E/pulse/pulse.json")" "True"
 
 echo "── THE LEDGER IS NOT THE PULSE"
-t "estate-pulse never writes COORD" "$(grep -c '\[pulse\]' "$E/COORD.md" 2>/dev/null || true)" "0"
+# Was: grep -c '\[pulse\]' ... 2>/dev/null || true — a missing COORD.md printed nothing and
+# `|| true` swallowed the exit 2, so the check could not say WHY it had no count.
+tprobe "estate-pulse never writes COORD" "0" count_in "[pulse]" "$E/COORD.md"
 COORDCK="$(cksum < "$E/COORD.md")"
 
 echo "── debounce: a swarm landing five lanes produces ONE refresh"
@@ -163,28 +309,46 @@ echo "── TRAP LAW: the spawner's process tree must be clean"
 rm -rf "$E/pulse"
 bash "$HOOKS/estate-pulse.sh" "$E" lane-stop        # daemonizing path, not foreground
 sleep 1
-t "a spawned refresher is NOT a child of its spawner" "$(pgrep -P $$ 2>/dev/null | wc -l | tr -d ' ')" "0"
+tprobe "a spawned refresher is NOT a child of its spawner" "0" children_of $$
 # THE PROOF IS THE PPID: "backgrounded" is not "detached". A survivor must be reparented
 # to init (ppid 1), never held by this fixture or any ancestor of it.
-PPIDS="$(for q in $(pgrep -f "estate-pulse.sh $E" 2>/dev/null); do ps -o ppid= -p "$q" 2>/dev/null | tr -d ' '; done | sort -u | tr '\n' ',')"
-case "${PPIDS:-none}" in
-  none|1,|1) ok "any surviving refresher is reparented to init (ppid=${PPIDS:-none})" ;;
-  *) no "a refresher survived with ppid=${PPIDS} — detach did not reparent" ;;
-esac
+# The old form collapsed THREE outcomes into one PASS: "reparented", "no survivors", and
+# "the probe never ran". They are now three different sentences.
+if ! SURV="$(pids_matching "estate-pulse.sh $E")"; then
+  no "surviving refreshers are reparented to init - PROBE UNAVAILABLE (pids_matching): this check DID NOT RUN"
+elif [ -z "$SURV" ]; then
+  ok "no refresher survived the spawn window (nothing left to reparent)"
+else
+  BAD=""; PPIDS=""
+  for q in $SURV; do
+    if ! pp="$(ppid_of "$q")"; then
+      no "surviving refresher $q - PROBE UNAVAILABLE (ppid_of exit 3): this check DID NOT RUN"
+      BAD="probe"; break
+    fi
+    PPIDS="$PPIDS$pp,"
+    [ "$pp" = "1" ] || BAD="$BAD $q(ppid=$pp)"
+  done
+  if [ -z "$BAD" ]; then ok "every surviving refresher is reparented to init (ppids=$PPIDS)"
+  elif [ "$BAD" != "probe" ]; then no "a refresher survived still parented:$BAD - detach did not reparent"
+  fi
+fi
 for _ in $(seq 1 40); do [ -f "$E/pulse/pulse.json" ] && break; sleep 0.25; done
 t "…and it still did its work after reparenting" \
   "$([ -f "$E/pulse/pulse.json" ] && echo y || echo n)" "y"
-( cd "$E" && python3 "$SWARM" watch --root "$E" --once >/dev/null 2>&1 )
-t "watch --once leaves no children behind" "$(pgrep -P $$ 2>/dev/null | wc -l | tr -d ' ')" "0"
-( cd "$E" && python3 "$SWARM" watch --root "$E" >/dev/null 2>&1 ); sleep 1
-WP="$(pgrep -f "swarm.py watch --root $E" 2>/dev/null | head -1)"
-if [ -n "$WP" ]; then
-  t "a daemonized watcher is reparented to init" "$(ps -o ppid= -p "$WP" 2>/dev/null | tr -d ' ')" "1"
-  pkill -f "swarm.py watch --root $E" 2>/dev/null
-else
+( cd "$E" && python3 "$SWARM" watch --root "$E" --once ) > "$W/watch-once.log" 2>&1
+tprobe "watch --once leaves no children behind" "0" children_of $$
+( cd "$E" && python3 "$SWARM" watch --root "$E" ) > "$W/watchd.log" 2>&1; sleep 1
+if ! WPS="$(pids_matching "swarm.py watch --root $E")"; then
+  no "a daemonized watcher is reparented to init - PROBE UNAVAILABLE (pids_matching): this check DID NOT RUN"
+elif [ -z "$WPS" ]; then
   ok "the watcher self-terminated (no corpses to watch)"
+else
+  for wp in $WPS; do
+    tprobe "a daemonized watcher (pid $wp) is reparented to init" "1" ppid_of "$wp"
+  done
+  kill_matching "swarm.py watch --root $E"
 fi
-t "…and it is not a child of this fixture" "$(pgrep -P $$ 2>/dev/null | wc -l | tr -d ' ')" "0"
+tprobe "…and it is not a child of this fixture" "0" children_of $$
 
 echo "── the watcher: history is not a running lane"
 LD="$W/fakeproj"; mkdir -p "$LD"
