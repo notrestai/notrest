@@ -33,10 +33,48 @@ GIT_ROOT="${NR_ESTATE_ROOT:-}"
 # script and stdin is free. Note: the env carrier has the ~1 MB ARG_MAX ceiling —
 # a payload above it silently drops the entry (harmless: SubagentStop payloads
 # carry only paths/ids, orders of magnitude under the limit).
-export GIT_ROOT PAYLOAD
+NR_HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+export GIT_ROOT PAYLOAD NR_HOOK_DIR
 python3 <<'PY' 2>/dev/null || true
 import os, sys, re, json, fcntl
 from datetime import datetime, timezone
+
+
+def _tasks_bases():
+    """Host-portable `<tmp>/claude-<uid>` bases — SHARED WITH THE SWARM WATCHER.
+
+    S37. This hook and swarm.py each carried their own copy of the constant
+    `/private/tmp/claude-501`, and the copy was wrong on this host in both. The fix is
+    not a corrected constant in two files — that is the same defect with a newer value.
+    The watcher's `tasks_bases()` is IMPORTED here so the two cannot drift apart again.
+
+    The local probe below runs only if that import fails, and it DERIVES rather than
+    hardcodes, so even the fallback cannot reintroduce a foreign host's path. The hook's
+    silence law still governs: any failure here yields an empty list and the scrape
+    simply finds nothing, which is the honest outcome rather than a wrong one.
+    """
+    hd = os.environ.get("NR_HOOK_DIR", "")
+    if hd:
+        sp = os.path.join(hd, "..", "skills", "agentswarm", "scripts")
+        if sp not in sys.path:
+            sys.path.insert(0, sp)
+    try:
+        from swarm import tasks_bases
+        return tasks_bases()
+    except Exception:
+        pass
+    import tempfile as _tf
+    uid = getattr(os, "getuid", lambda: None)()
+    out = []
+    if uid is None:
+        return out
+    for t in (os.environ.get("TMPDIR"), _tf.gettempdir(), "/tmp", "/private/tmp"):
+        if not t:
+            continue
+        c = os.path.join(t.rstrip("/") or "/", "claude-%d" % uid)
+        if os.path.isdir(c) and c not in out:
+            out.append(c)
+    return out
 
 try:
     git_root = os.environ.get("GIT_ROOT", "").strip()
@@ -114,17 +152,18 @@ try:
                 if os.path.isfile(alt):
                     return alt
             # THE SESSION TASKS DIR (2026-08-05). A lane spawned by the Agent tool may
-            # transcribe only to /private/tmp/claude-501/<slug>/<session>/tasks/<id>.output
+            # transcribe only to <tmp>/claude-<uid>/<slug>/<session>/tasks/<id>.output
             # — the same discovery gap that made the watcher read `watching 0`. One
             # discovery, two consumers: the watcher sweeps it, and so does this scrape.
             try:
                 slug = "-" + os.path.realpath(os.environ.get("GIT_ROOT", "")).lstrip(
                     "/").replace("/", "-")
-                tb = os.path.join("/private/tmp/claude-501", slug)
-                for sess in (os.listdir(tb) if os.path.isdir(tb) else []):
-                    cand = os.path.join(tb, sess, "tasks", "%s.output" % aid)
-                    if os.path.isfile(cand):
-                        return cand
+                for _base in _tasks_bases():
+                    tb = os.path.join(_base, slug)
+                    for sess in (os.listdir(tb) if os.path.isdir(tb) else []):
+                        cand = os.path.join(tb, sess, "tasks", "%s.output" % aid)
+                        if os.path.isfile(cand):
+                            return cand
             except OSError:
                 pass
         return tp if tp else ""
@@ -419,7 +458,36 @@ try:
         # COORD-AGENTS write above.
         try:
             sledger = safe(os.path.join(git_root, "spend", "ledger.md"))
-            if sledger and os.path.isfile(sledger):
+            # ── (S37) A RECEIPT THAT CANNOT RECORD THE AUDITED FIELD MUST NOT BE
+            # WRITTEN AS A RECEIPT.
+            #
+            # This ledger exists to make the HARD offload rule ("every lane is opus")
+            # CHECKABLE rather than asserted, and `model` is the single field the rule
+            # is audited on. A row whose model is unknown does not weakly support the
+            # rule — it cannot bear on it at all, while still counting as a line in a
+            # file whose length reads as coverage. Measured before this change: 2,093
+            # of 2,234 rows were `model=? tokens=unknown`, and 12 of 12 sampled hollow
+            # ids resolved to NO artifact anywhere — not under the corrected tasks path,
+            # not in the transcript store. Fixing the path (above) recovers almost none
+            # of them; only refusing to write the row stops the inflation.
+            #
+            # WHY SILENCE AND NOT AN EXPLICIT `UNRESOLVED` GRADE, which was the other
+            # option on the table: spend.py's `classify()` reads the MODEL token, and
+            # its UNKNOWN_MODELS set is {"", "?", "-", "unknown", "none", "null"}. A row
+            # reading `model=unresolved` therefore falls through to the final branch and
+            # is judged a **violation** — a lane whose transcript merely went missing
+            # would be recorded as one that BROKE the offload rule. That converts a
+            # coverage-inflation defect into a false accusation, which is strictly worse
+            # than the defect. An UNRESOLVED grade needs spend.py taught the token
+            # first; that file is outside this commission's TOUCH-ONLY scope.
+            #
+            # The skipped count is not lost by staying silent: this hook still writes
+            # one COORD-AGENTS.md line per completed lane, so lanes-stopped minus
+            # receipts-written is the skip count, derivable from two ledgers already on
+            # disk without inventing a third artifact to keep in sync.
+            _model_known = str(model).strip().lower() not in (
+                "", "?", "-", "unknown", "none", "null")
+            if sledger and os.path.isfile(sledger) and _model_known:
                 marker = f" agent={agent_id}"
                 purpose = "" if snippet == "?" else snippet[:60]
                 purpose = re.sub(r"\s+", " ", purpose).replace('"', "'").strip()
