@@ -503,14 +503,35 @@ def sweep(root, started=None):
             state, why = "done", ""
         elif not detector_ok:
             state, why = "unknown", "  (liveness unreadable)"
+        elif host is None and not hosts:
+            # RULED (Director, 2026-08-26): FAILING TO RECOGNISE A HOST IS **UNKNOWN**, NOT
+            # **DEAD**. If the recognition predicate matched NOTHING AT ALL, the detector has
+            # not established that this lane's host is gone -- it has established that it
+            # could not find one, AND THOSE ARE DIFFERENT FACTS that render identically as
+            # silence unless they are split. Host recognition rests on basename(arg0) and a
+            # cwd/cmdline match, so a seat launched via a wrapper, a shim, or from another
+            # cwd is invisible to it -- and under a single state every lane beneath such a
+            # seat goes quiet WITH A CONFIDENT REASON STRING ATTACHED.
+            # AN ALERT THAT NEVER FIRES CANNOT BE NOTICED, WHEREAS ONE THAT FIRES FOREVER
+            # EVENTUALLY GETS SOMEONE'S ATTENTION. So this branch HOLDS the alert.
+            state, why = "unresolvable", "  (no host process recognised at all -- not a finding that this lane is dead)"
         elif host is None:
-            state, why = "dead-host", "  (no live host predates its last write)"
+            # Hosts WERE recognised; none of them predates this lane's last write. That is a
+            # real determination rather than a failure to look, so it may resolve to dead.
+            state, why = "dead-host", "  (%d host(s) recognised, none predates its last write)" % len(hosts)
         else:
             active += 1
             state, why = "running", "  host=pid %s" % host["pid"]
         lines.append("  %-19s %-9s calls=%-4d idle=%dm%02ds%s"
                      % (r["agent"][:19], state, r["calls"],
                         r["idle_secs"] // 60, r["idle_secs"] % 60, why))
+        if (detector_ok and host is None and not hosts and not r["receipted"]
+                and r["idle_secs"] >= STALL_SECS):
+            alerts.append("ALERT STALL-UNRESOLVABLE %s — frozen %dm with no receipt, and the "
+                          "detector RECOGNISED NO HOST PROCESS AT ALL. This is NOT a finding "
+                          "that the lane is dead: the recognition predicate found nothing to "
+                          "judge it against. The alert is HELD rather than resolved."
+                          % (r["agent"][:19], r["idle_secs"] // 60))
         if (detector_ok and host is not None and not r["receipted"]
                 and r["idle_secs"] >= STALL_SECS):
             alerts.append("ALERT STALL %s — no transcript growth for %dm, no receipt, and "
