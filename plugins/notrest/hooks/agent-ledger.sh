@@ -34,6 +34,23 @@ GIT_ROOT="${NR_ESTATE_ROOT:-}"
 # a payload above it silently drops the entry (harmless: SubagentStop payloads
 # carry only paths/ids, orders of magnitude under the limit).
 NR_HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+# ── (S50) THE IMPORT ABOVE IS RIGHT AND IT IS NOT FREE.
+# `_tasks_bases()` imports the watcher's resolver rather than keeping a second copy of it --
+# a corrected constant in two files is the same defect with a newer value, so the import stays.
+# But importing a module makes CPython write `__pycache__/` NEXT TO IT, and that module lives
+# inside the plugin repo. This hook fires on every subagent stop, so the running install was
+# dirtying its own git working tree continuously.
+#
+# That is worse than untidiness HERE specifically: the running install IS a working tree, and a
+# seat seeing unexplained dirt in it cannot tell harmless bytecode from someone's uncommitted
+# work without stopping to look. The estate paid 119 irreversible ledger rows this afternoon for
+# a neighbouring confusion.
+#
+# STOPS THE WRITE rather than hiding it -- a .gitignore would have hidden the dirt and left the
+# write in place, and hiding a write is not the same as not writing.
+# MEASURED COST: ~2 ms per hook fire (41 ms vs 38 ms over the cached path, n=2 each) -- the
+# module is recompiled every fire instead of being read back from disk.
+export PYTHONDONTWRITEBYTECODE=1
 export GIT_ROOT PAYLOAD NR_HOOK_DIR
 python3 <<'PY' 2>/dev/null || true
 import os, sys, re, json, fcntl
