@@ -144,8 +144,30 @@ CANONICAL_BODIES = {1: BODY_V1, 2: BODY_V2}
 # ⛔ ITS BOUND, STATED WHERE IT IS IMPLEMENTED: this guard is only as complete as this
 # list. A future clause that is stricter in some way nobody enumerated here is NOT
 # protected, and this comment is the only thing that says so.
+# ⛔ MEMBERSHIP FOLLOWS **STATUS**, NOT **LAYOUT** (Architecture Master, 2026-08-26).
+#
+# A clause earns a row here by being OWNER-RATIFIED, and it is enumerated by RULE
+# IDENTITY. It is never protected by happening to share a block with a clause that
+# already has a row. That accident is how the width law below was protected before this
+# entry existed, and:
+#
+#   a rule at the estate's strongest status depending on a neighbour's sentence for its
+#   protection is an accident wearing a guarantee's clothes.
+#
+# So the question when a clause is proposed for this list is NOT "is it strict?" and NOT
+# "does it sit near something we already guard?" — it is "what status did the owner give
+# it?". Declining to protect an owner-ratified rule would be an owner's call to make;
+# protecting one is not.
+#
+# This rides ALONGSIDE the completeness note above, and they say different things: that
+# one says the list can be SHORT; this one says how a clause EARNS ITS ROW.
 STRICTER_CLAUSES = (
     ("unconditional offload rule", re.compile(r"Offload HARD RULE", re.I)),
+    # Owner-ratified 2026-08-12 (R73 + R73-A). Keyed on the rule's IDENTITY and
+    # deliberately not on its date or rule ids, so a re-ratification does not silently
+    # drop the protection. Matched against the clause as it is actually written inside
+    # the markers, not a hand-typed approximation of it.
+    ("owner-ratified width law", re.compile(r"Width law\s*\(OWNER-RATIFIED", re.I)),
 )
 
 
