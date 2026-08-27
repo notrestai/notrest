@@ -219,7 +219,22 @@ def cmd_report(a):
     violations = buckets["violation"]
     legacy = buckets["legacy-violation"]
     unverifiable = buckets["unverifiable"]
-    offload_checked = len(buckets["compliant"]) + len(violations) + len(unverifiable)
+    # ── (S38) THE HEADLINE NUMBER MUST BE THE ONE THAT CARRIES THE CLAIM.
+    #
+    # `offload_checked` summed the UNVERIFIABLE entries — the ones that by definition
+    # could not be checked — into a figure printed under the word "checked", and
+    # "checked" is the word an auditor reads as COVERAGE. The disclosure already
+    # existed further down (`UNVERIFIABLE (N)`, listed, kept out of the token totals
+    # and shares, never counted as violations), and the headline silently re-absorbed
+    # it: A SKIP DECLARED AND THEN UNDONE BY A SUMMATION.
+    #
+    # The three numbers are kept apart so no single figure can carry a claim its
+    # evidence does not support. `offload_entries` still exposes the total for anyone
+    # who wants volume — volume is a fine thing to report, as long as it is not
+    # wearing the word that means coverage.
+    offload_evidenced = len(buckets["compliant"]) + len(violations)
+    offload_unverifiable = len(unverifiable)
+    offload_entries = offload_evidenced + offload_unverifiable
     verdict = "VIOLATION" if (violations or legacy) else "CLEAN"
 
     if a.json:
@@ -240,7 +255,9 @@ def cmd_report(a):
                                "gated": False,
                                "note": "the seat's own consumption, self-estimated; "
                                        "informational, excluded from tokens_known"},
-            "offload_checked": offload_checked,
+            "offload_evidenced": offload_evidenced,
+            "offload_unverifiable": offload_unverifiable,
+            "offload_entries": offload_entries,
             "violations": [e["raw"] for e in violations],
             "legacy_violations": [e["raw"] for e in legacy],
             "unverifiable_entries": [e["raw"] for e in unverifiable],
@@ -269,7 +286,9 @@ def cmd_report(a):
         for e in seat_est:
             print("  " + e["raw"])
 
-    print(f"offload lanes: {offload_checked} checked under {POLICY_NAME} · "
+    print(f"offload lanes: {offload_evidenced} evidenced · "
+          f"{offload_unverifiable} unverifiable · {offload_entries} entries "
+          f"under {POLICY_NAME} · "
           f"{len(buckets['pre-policy'])} pre-policy (dated on/before {POLICY_DATE}, "
           f"lawful at the time) · cross-vendor lanes: {len(buckets['cross-vendor'])}, exempt · "
           f"seat lanes: {len(buckets['seat'])}, rule N/A")
@@ -291,8 +310,14 @@ def cmd_report(a):
               f"({len(violations)} offload entries on an unsupported worker model, "
               f"{len(legacy)} legacy)")
         sys.exit(4)
+    # CLEAN is a verdict about the entries that could be judged. Saying it over a
+    # count that includes the unjudgeable would make the verdict stronger the emptier
+    # the ledger got — the defect this whole line exists to report on.
     print(f"routing: CLEAN — {POLICY_NAME} "
-          f"({offload_checked} offload entries checked, 0 violations)")
+          f"({offload_evidenced} offload entries evidenced, 0 violations"
+          + (f"; {offload_unverifiable} unverifiable — routing NOT provable for those, "
+             f"and they are not evidence of cleanliness" if offload_unverifiable else "")
+          + ")")
 
 
 def main():
