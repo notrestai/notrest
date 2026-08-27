@@ -407,6 +407,58 @@ def tasks_bases():
     return out
 
 
+# ── DEAD-BY-MARKER (S83, ruled ADOPT) ────────────────────────────────────────────────
+# A lane whose transcript ENDS IN A TERMINAL MARKER was interrupt-killed. That is a THIRD
+# fact, and it must never collapse into either of the two the watcher already had:
+#   done   = receipted; the lane finished and paid its receipt.
+#   stall  = frozen and unreceipted; SOMETHING MIGHT STILL BE THERE, so probe/resume/stop.
+#   DEAD-BY-MARKER = the transcript says it was killed. Nothing to probe. Clearable.
+# ⛔ TWO STATES THAT LOOK IDENTICAL FROM THE OUTSIDE HAVE BEEN THIS ESTATE'S WHOLE FINDING
+# REPEATEDLY, so this one is labelled separately and says so in the clearing line.
+#
+# The marker set is DERIVED FROM THE POPULATION, not from the one lane that prompted this:
+# censused across 157 subagent transcripts on this host, exactly one ends in a bracketed
+# terminal marker, and it is the interrupt form below. The set is narrow ON PURPOSE -- an
+# arbitrary bracketed tail would match ordinary content like "[unverified]".
+DEAD_MARKERS = (
+    "[Request interrupted by user]",
+    "[Request interrupted by user for tool use]",
+)
+
+
+def dead_by_marker(path):
+    """True when the transcript's LAST record is a terminal marker.
+
+    Reads the tail only. Handles both transcript shapes this watcher sweeps: JSONL records
+    (classic store) and the tasks-dir `.output` files. A file that cannot be read or parsed
+    returns False -- ⛔ NOT-DETERMINED IS NEVER REPORTED AS DEAD, because a lane wrongly
+    called dead stops being watched, which is the expensive direction of this error.
+    """
+    try:
+        with open(path, "rb") as fh:
+            try:
+                fh.seek(-65536, os.SEEK_END)
+            except OSError:
+                fh.seek(0)
+            tail = fh.read().decode("utf-8", "replace")
+    except OSError:
+        return False
+    lines = [ln for ln in tail.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    try:
+        rec = json.loads(lines[-1])
+    except Exception:
+        return lines[-1].strip() in DEAD_MARKERS
+    msg = rec.get("message") if isinstance(rec, dict) else None
+    content = msg.get("content") if isinstance(msg, dict) else None
+    if isinstance(content, str):
+        return content.strip() in DEAD_MARKERS
+    if isinstance(content, list) and content and isinstance(content[-1], dict):
+        return str(content[-1].get("text") or "").strip() in DEAD_MARKERS
+    return False
+
+
 def transcript_sources(root):
     """[(label, path, agent_id)] across EVERY location a lane may transcribe to.
 
@@ -487,7 +539,8 @@ def live_lanes(root, receipted, started=None):
         by_loc[label] = by_loc.get(label, 0) + 1
         rows.append({"agent": agent, "calls": calls or 0, "loc": label,
                      "idle_secs": int(now - mtime),
-                     "receipted": agent in receipted, "path": path})
+                     "receipted": agent in receipted, "path": path,
+                     "dead_marker": dead_by_marker(path)})
     rows.sort(key=lambda r: r["idle_secs"])
     return rows, len(rows), history, by_loc
 
@@ -554,6 +607,13 @@ def sweep(root, started=None):
             host = lane_host_for(r, hosts)
         if r["receipted"]:
             state, why = "done", ""
+        elif r["dead_marker"]:
+            # S83: the transcript ITSELF says this lane was interrupted. That is an
+            # UNSHARED WITNESS -- it does not depend on the process table, so it holds even
+            # when the liveness detector is broken, which is why it sits above that branch.
+            # ⛔ SEPARATELY LABELLED: never "done" (it did not finish and paid no receipt)
+            # and never "stall" (there is nothing left to probe, resume or stop).
+            state, why = "dead-marker", "  (DEAD-BY-MARKER: transcript ends in a terminal marker)"
         elif not detector_ok:
             state, why = "unknown", "  (liveness unreadable)"
         elif host is None and not hosts:
@@ -578,7 +638,17 @@ def sweep(root, started=None):
         lines.append("  %-19s %-9s calls=%-4d idle=%dm%02ds%s"
                      % (r["agent"][:19], state, r["calls"],
                         r["idle_secs"] // 60, r["idle_secs"] % 60, why))
+        if r["dead_marker"] and not r["receipted"]:
+            # The clearing line. It names the predicate so a reader can tell WHY this lane
+            # stopped being watched -- an alert that vanishes without saying why is the
+            # silence this watcher exists to refuse.
+            alerts.append("CLEARED DEAD-BY-MARKER %s — its transcript ends in a terminal "
+                          "marker, so it was interrupted, not stalled: nothing to probe, "
+                          "resume or stop. Idle %dm. This lane is NOT receipted and its "
+                          "spend is therefore unrecorded — that debt stands separately."
+                          % (r["agent"][:19], r["idle_secs"] // 60))
         if (detector_ok and host is None and not hosts and not r["receipted"]
+                and not r["dead_marker"]
                 and r["idle_secs"] >= STALL_SECS):
             alerts.append("ALERT STALL-UNRESOLVABLE %s — frozen %dm with no receipt, and the "
                           "detector RECOGNISED NO HOST PROCESS AT ALL. This is NOT a finding "
@@ -586,6 +656,7 @@ def sweep(root, started=None):
                           "judge it against. The alert is HELD rather than resolved."
                           % (r["agent"][:19], r["idle_secs"] // 60))
         if (detector_ok and host is not None and not r["receipted"]
+                and not r["dead_marker"]
                 and r["idle_secs"] >= STALL_SECS):
             alerts.append("ALERT STALL %s — no transcript growth for %dm, no receipt, and "
                           "its host process IS LIVE (pid %s, up %s); probe, resume or stop it"
