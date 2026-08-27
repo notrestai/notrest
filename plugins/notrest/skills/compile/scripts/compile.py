@@ -798,14 +798,62 @@ def owner_today(it):
 
 def query_tokens(slug, cands):
     """The slug's tokens — from the scan when the slug is a known candidate (its core
-    and signature are what actually clustered), from the slug itself otherwise, so an
-    unscanned or hand-named workflow still gets a contract."""
+    and signature are what actually clustered), from the slug itself otherwise. The
+    fallback is now reachable ONLY for a candidate that exists but clustered on an
+    empty token set: `cmd_contract` refuses before it gets here when the scan holds no
+    candidate for the slug at all (see `find_candidate`)."""
     for c in cands:
         if slug in (c.get("slug"), c.get("alias")):
             q = set(c.get("core") or []) | set(c.get("signature") or [])
             if q:
                 return q, c
     return set(tokens(slug.replace("-", " "))), None
+
+
+def find_candidate(slug, cands):
+    """The scanned candidate this slug names, or None.
+
+    Deliberately separate from `query_tokens`: "did the scan cluster this?" is a fact
+    about the scan, "what do we search for?" is a fact about the tokens, and folding
+    them together made a candidate with an empty token set indistinguishable from a
+    slug the scan never saw. Only the first question may gate a contract."""
+    for c in cands:
+        if slug in (c.get("slug"), c.get("alias")):
+            return c
+    return None
+
+
+def refuse_no_candidate(slug, cands, scanned, out, root):
+    """No scanned candidate — print the refusal, emit NOTHING usable, return 3.
+
+    A contract is a claim about a CLUSTER the scanner found. With no candidate there
+    is no cluster, only a grep over the slug's own words — and a filled table reads as
+    a finding whatever banner sits above it. This script used to print that warning and
+    then hand over the table anyway; a caveat above a confident document is read as a
+    caveat, so the document is the answer. Nothing goes to stdout here: a redirect must
+    produce an empty file, not a document with a disclaimer at the top."""
+    w = sys.stderr.write
+    w(f"[compile] REFUSED — no scanned candidate named {slug!r}: there is nothing to "
+      "reconstruct a contract from, and a pre-filled table would be the invention this "
+      "skill exists to prevent. No contract written.\n")
+    if scanned:
+        known = sorted({c.get("slug") for c in cands if c.get("slug")}
+                       | {c.get("alias") for c in cands if c.get("alias")})
+        w(f"[compile] the scan at {(out / CANDIDATES_JSON).as_posix()} holds "
+          f"{len(cands)} candidate(s):\n")
+        for k in known:
+            w(f"[compile]     {k}\n")
+        w("[compile] use one of those slugs (or an alias) verbatim, or re-run "
+          f"`scan --root {root.as_posix()}` if this workflow is newer than the scan.\n")
+    else:
+        w(f"[compile] no scan on disk — {(out / CANDIDATES_JSON).as_posix()} is absent "
+          "or unreadable.\n")
+        w(f"[compile] run `scan --root {root.as_posix()}` first, then name a candidate "
+          "it produced.\n")
+    w("[compile] a hand-named slug is NOT contractable: the scan is what makes a row "
+      "set a cluster instead of a grep, and a pre-filled table over a grep is "
+      "manufactured evidence for whatever you happened to type.\n")
+    return 3
 
 
 def cmd_contract(a):
@@ -818,7 +866,17 @@ def cmd_contract(a):
             cands = json.loads(raw).get("candidates", [])
         except Exception:
             cands = []
-    q, cand = query_tokens(a.slug, cands)
+
+    # REFUSE TO FILL. Asked before any mining: if the scan holds no candidate for this
+    # slug there is nothing to reconstruct a contract FROM, and the only safe output is
+    # no output. This is checked against the candidate itself, never against the row
+    # count — a real candidate whose cluster comes back empty is a different condition
+    # and keeps its own exit below.
+    cand = find_candidate(a.slug, cands)
+    if cand is None:
+        return refuse_no_candidate(a.slug, cands, bool(cands), out, root)
+
+    q, _cand = query_tokens(a.slug, cands)
     if not q:
         print(f"[compile] {a.slug!r} yields no searchable tokens — name the candidate "
               f"with words the ledgers contain, or run scan first")
@@ -869,10 +927,10 @@ def cmd_contract(a):
                     "below as shared vocabulary until a COORD line says otherwise)"
                     if cand.get("weak_source") else ""))
     else:
-        b.append(f"No scanned candidate named `{a.slug}` — rows below were mined by matching "
-                 f"the slug's own tokens (`{', '.join(sorted(q))}`), so the row set is a "
-                 f"grep, not a cluster. Run `scan` and use the candidate slug for the "
-                 f"clustered evidence set.")
+        # Unreachable: the gate above returns 3 when there is no candidate. Kept as a
+        # raise, not as a banner, because the banner that used to live here IS the
+        # defect — it announced the row set was a grep and then printed it as a table.
+        raise AssertionError("contract reached the builder with no scanned candidate")
     b += ["", CONTRACT_HEADER, CONTRACT_RULE]
     for i, it in enumerate(rows, 1):
         text = it.text.replace("|", "\\|")
