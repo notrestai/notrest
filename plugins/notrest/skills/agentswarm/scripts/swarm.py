@@ -36,6 +36,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -357,12 +358,62 @@ def project_slug(root):
     return "-" + os.path.realpath(root).lstrip("/").replace("/", "-")
 
 
+def tasks_bases():
+    """Every plausible `<tmp>/claude-<uid>` base ON THIS HOST, most specific first.
+
+    S37. `/private/tmp/claude-501` was hardcoded here AND in the agent-ledger hook:
+    ONE discovery, TWO consumers, and it was a **Mac** path — `/private/tmp` does not
+    exist on this Linux host and 501 is not this uid. Both consumers therefore searched
+    a directory that could not exist and found nothing, silently and confidently.
+
+    Two properties this resolver has that the constant did not:
+      · DERIVED, not asserted — the tmp dir comes from TMPDIR/gettempdir and the uid
+        from the running process, so it is right on both hosts without a second
+        constant to keep in sync.
+      · PROBED — a base is returned only if it is on disk, so a wrong guess yields an
+        empty list rather than a confident zero. The distinction matters here more than
+        most places: this estate has already ruled that failing to recognise something
+        is UNKNOWN, not DEAD.
+
+    The uid-mismatch fallback (any `claude-*` sibling) covers a tree written by another
+    account — a container/host uid split — where asserting absence would be wrong.
+    """
+    tmps = []
+    for t in (os.environ.get("TMPDIR"), tempfile.gettempdir(), "/tmp", "/private/tmp"):
+        if not t:
+            continue
+        t = t.rstrip("/") or "/"
+        if t not in tmps:
+            tmps.append(t)
+    uid = getattr(os, "getuid", lambda: None)()
+    out = []
+    if uid is not None:
+        for t in tmps:
+            c = os.path.join(t, "claude-%d" % uid)
+            if os.path.isdir(c) and c not in out:
+                out.append(c)
+    if not out:
+        for t in tmps:
+            try:
+                names = sorted(os.listdir(t))
+            except OSError:
+                continue
+            for n in names:
+                if not n.startswith("claude-"):
+                    continue
+                c = os.path.join(t, n)
+                if os.path.isdir(c) and c not in out:
+                    out.append(c)
+    return out
+
+
 def transcript_sources(root):
     """[(label, path, agent_id)] across EVERY location a lane may transcribe to.
 
     LIVE FINDING 2026-08-05: the first real swarm under the new laws read `watching 0`
     and self-terminated seconds after dispatch. Its lanes were transcribing to the
-    SESSION TASKS DIR — `/private/tmp/claude-501/<slug>/<session>/tasks/<agent-id>.output`
+    SESSION TASKS DIR — `<tmp>/claude-<uid>/<slug>/<session>/tasks/<agent-id>.output`
+    (resolved by `tasks_bases()`; it was hardcoded to the Mac path until S37)
     — not to `~/.claude/projects/<slug>/**/subagents/`. The disclosed limit ("a lane
     transcribing elsewhere is invisible") turned out to cover the PRIMARY case: lanes
     spawned by the Agent tool in this harness's own sessions. Both locations are now
@@ -385,8 +436,10 @@ def transcript_sources(root):
                         seen[aid] = 1
                         out.append(("classic", os.path.join(d, fn), aid))
 
-    tasks_base = os.path.join("/private/tmp/claude-501", slug)
-    if os.path.isdir(tasks_base):
+    for base in tasks_bases():
+        tasks_base = os.path.join(base, slug)
+        if not os.path.isdir(tasks_base):
+            continue
         try:
             sessions = os.listdir(tasks_base)
         except OSError:
@@ -452,7 +505,7 @@ def sweep(root, started=None):
     lines.append("# notrest swarm watch — machine-written, derived, disposable")
     lines.append("# watching %d transcript(s) this poller can SEE — %d from the classic "
                  "store (~/.claude/projects/<slug>/**/subagents), %d from the session tasks "
-                 "dir (/private/tmp/claude-501/<slug>/*/tasks); deduped by agent id"
+                 "dir (<tmp>/claude-<uid>/<slug>/*/tasks); deduped by agent id"
                  % (watched, by_loc.get("classic", 0), by_loc.get("tasks", 0)))
     lines.append("# unreceipted-history: %d (older than %dh and never receipted — shown "
                  "here, never alerted: old work is not a running lane)"

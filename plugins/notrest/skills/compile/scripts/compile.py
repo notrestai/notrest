@@ -154,12 +154,18 @@ SPEND_RE = re.compile(
 
 
 class Item:
-    __slots__ = ("family", "ref", "ts", "text", "toks", "sig", "meta")
+    # S81: `seq` is the INGESTION POSITION -- the order read_coord walked the volumes
+    # (sealed, then archive, then the active COORD.md) and the lines within them. An
+    # append-only file's TRUE order is positional; its stamps can contradict it, and a
+    # composed stamp then reorders lines that cannot have moved. Order keys on `seq`;
+    # `ts` stays for display and for spans, where it is bounded instead.
+    __slots__ = ("family", "ref", "ts", "text", "toks", "sig", "meta", "seq")
 
-    def __init__(self, family, ref, ts, text, meta=None):
+    def __init__(self, family, ref, ts, text, meta=None, seq=0):
         self.family = family
         self.ref = ref
         self.ts = ts
+        self.seq = seq
         self.text = re.sub(r"\s+", " ", text).strip()
         self.toks = tokens(self.text)
         self.sig = frozenset()
@@ -174,6 +180,23 @@ def _read(p):
         return p.read_text(encoding="utf-8", errors="replace")
     except Exception:
         return None
+
+
+def _stamp_positions(families):
+    """S81: stamp each item with its INGESTION POSITION within its family.
+
+    An append-only file's true order is POSITIONAL; a composed stamp can assert an
+    order that contradicts it, and sorting by the stamp then moves lines that cannot
+    have moved. Position is recoverable here because read_coord walks the volumes in
+    order (sealed oldest-first, then archive, then the active COORD.md) and the lines
+    within each in order. Cross-family order was never positional -- those are
+    different files -- so `seq` is per-family and the sort carries family as a
+    tiebreak. This repairs the CONSUMER; no stamp anywhere is rewritten.
+    """
+    for fam in families.values():
+        for n, it in enumerate(fam):
+            it.seq = n
+    return families
 
 
 def read_coord(root):
@@ -621,8 +644,8 @@ def cmd_scan(a):
     out.mkdir(parents=True, exist_ok=True)
     notes = []
 
-    families = {"coord": read_coord(root), "agents": read_agents(root),
-                "spend": read_spend(root)}
+    families = _stamp_positions({"coord": read_coord(root), "agents": read_agents(root),
+                                 "spend": read_spend(root)})
     sources = [
         {"name": "COORD.md", "present": (root / "COORD.md").is_file(),
          "items": sum(1 for i in families["coord"] if i.ref.startswith("COORD.md"))},
@@ -882,8 +905,8 @@ def cmd_contract(a):
               f"with words the ledgers contain, or run scan first")
         return 2
 
-    families = {"coord": read_coord(root), "agents": read_agents(root),
-                "spend": read_spend(root)}
+    families = _stamp_positions({"coord": read_coord(root), "agents": read_agents(root),
+                                 "spend": read_spend(root)})
     all_items = [it for v in families.values() for it in v]
     # A short query must not match on one weak word; a rich one must not demand all of
     # them (a ledger line records part of a ritual, never the whole vocabulary).
@@ -893,9 +916,13 @@ def cmd_contract(a):
         hits = q & set(it.toks)
         if len(hits) >= need:
             scored.append((len(hits), it))
-    scored.sort(key=lambda p: (-p[0], p[1].ts, p[1].ref))
+    scored.sort(key=lambda p: (-p[0], p[1].seq, p[1].family, p[1].ref))  # S81: positional tiebreak
     rows = [it for _s, it in scored[: a.max_rows]]
-    rows.sort(key=lambda it: (it.ts, it.ref))          # Step 1 walks in TIME order
+    # S81: was `(it.ts, it.ref)` -- "Step 1 walks in TIME order". A future-stamped line
+    # sorted AFTER lines it positionally precedes (driven: ingestion [1,2,3,4] became
+    # [1,3,2,4]). Position is the append-only truth and it is already carried, so order
+    # keys on it. NOT a stamp repair: the record is untouched.
+    rows.sort(key=lambda it: (it.seq, it.family, it.ref))   # Step 1 walks in POSITIONAL order
     known_refs = {e.get("ref") for e in (cand or {}).get("evidence", [])}
 
     if not rows:
@@ -963,7 +990,16 @@ def cmd_contract(a):
         got = families[fam]
         matched = sum(1 for it in rows if it.family == fam)
         b.append(f"| {label} (`{path}`) | {'yes' if got else 'NO'} | {len(got)} | {matched} |")
-    span = f"{rows[0].ts} … {rows[-1].ts}" if rows else "—"
+    # S81: the span is a claim about TIME, not about order, so it is BOUNDED rather than
+    # re-keyed: a stamp in the future is not evidence of when anything happened, and an
+    # unbounded span "can END on a day that never happened". Excluded stamps are DISCLOSED,
+    # never silently dropped -- a filtered corpus that does not say so is the founding species.
+    _now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    _plaus = [it.ts for it in rows if it.ts <= _now]
+    _future = len(rows) - len(_plaus)
+    span = (f"{min(_plaus)} … {max(_plaus)}" if _plaus else "—")
+    if _future:
+        span += f" (⛔ {_future} row(s) carry a stamp in the FUTURE and are excluded from the span)"
     b += ["",
           f"- **Span covered:** {span} (the matched rows' own timestamps — not the ledgers').",
           f"- **Matched {len(rows)} of {len(scored)} matching entries** "
