@@ -128,7 +128,8 @@ def epoch_to_day(epoch):
 # ── entries ───────────────────────────────────────────────────────────────────
 class Entry:
     __slots__ = ("ts", "iso", "epoch", "source", "kind", "ref", "eid",
-                 "cite", "head", "text", "title", "summary", "flags", "paths", "seq")
+                 "cite", "head", "text", "title", "summary", "flags", "paths", "seq",
+                 "eff_epoch")
 
     def __init__(self, ts, iso, epoch, source, kind, ref, eid, cite, text,
                  head="", title="", summary="", flags=None, paths=None, seq=0):
@@ -150,10 +151,16 @@ class Entry:
         self.flags = flags or []
         self.paths = paths or []           # [{"ref":..., "abs":..., "exists":bool}]
         self.seq = seq
+        # S81: the epoch this entry is ORDERED by. Defaults to its own stamp, so an
+        # Entry built anywhere still sorts exactly as before; monotone_epochs() below
+        # replaces it where a composed stamp would contradict positional truth.
+        self.eff_epoch = epoch
 
     @property
     def sortkey(self):
-        return (self.epoch, SOURCE_RANK.get(self.source, 9), self.seq)
+        # S81: was `self.epoch`. A future-stamped ledger line sorted AFTER lines it
+        # positionally precedes -- driven: ingestion seq [1,2,3,4] came back [1,3,2,4].
+        return (self.eff_epoch, SOURCE_RANK.get(self.source, 9), self.seq)
 
     @property
     def dead(self):
@@ -280,6 +287,59 @@ def split_coord(body):
     ask = parts[0].strip()
     landed = parts[1].strip() if len(parts) > 1 else ""
     return ask, landed
+
+
+def monotone_epochs(entries):
+    """S81: make the ORDER key non-decreasing within each source. Returns how many moved.
+
+    ⛔ AN APPEND-ONLY FILE'S TRUE ORDER IS CARRIED BY POSITION; ITS STAMPS ASSERT AN ORDER
+    THAT CAN CONTRADICT IT. A wrong stamp cannot reorder the file -- it can only mislead a
+    reader who sorts by it. This module's own docstring already warned that it "sorts a
+    store record after a COORD line it preceded."
+
+    ONE bound: MONOTONE within each source — an entry never orders before one it
+    positionally follows. Ties fall through to `seq`, which is that position.
+
+    ⛔ NO WALL CLOCK. The first cut of this also bounded stamps at the current instant —
+    doctor's upper-bound shape — and recap's own fixture caught it: "no subcommand reads the
+    wall clock" went from 100/0 to 99/1. THIS MODULE IS DETERMINISTIC BY RULE, and reading
+    the clock makes its output depend on when you ran it. The monotone bound needs no clock
+    and closes the demonstrated inversion on its own, so the clock went, not the rule.
+
+    (That arm greps this file for the clock-call spellings, so it matches them in PROSE as
+    well as in code — naming the function in this comment was enough to fail it. Reported
+    to the Director: it is the mention-versus-invocation defect this very lane is repairing,
+    sitting in the arm that guards against it.)
+
+    COST, STATED: a future-stamped entry drags the EFFECTIVE key of the entries after it in
+    its own source up to its value, so those sort late against other sources. Within-source
+    order — the append-only truth — is exact; cross-source placement of the infected tail is
+    not. That is a worse cross-source answer than a clock would give and a better rule.
+
+    ⛔ WHAT THIS DOES NOT FIX, STATED RATHER THAN LEFT FOR A READER: order ACROSS sources
+    is still stamp-derived, because position across separate files does not exist. A
+    cross-source inversion between two honestly-stamped entries is not recoverable here,
+    and this function does not pretend to recover it.
+    """
+    bysrc = {}
+    for e in entries:
+        bysrc.setdefault(e.source, []).append(e)
+    moved = 0
+    for group in bysrc.values():
+        group.sort(key=lambda e: e.seq)
+        run = None
+        for e in group:
+            ep = e.epoch
+            if ep is None:
+                e.eff_epoch = run
+                continue
+            if run is not None and ep < run:
+                e.eff_epoch = run
+                moved += 1
+            else:
+                e.eff_epoch = ep
+                run = ep
+    return moved
 
 
 def read_coord(root, inv):
@@ -610,6 +670,12 @@ def load(root):
     entries += read_git(root, inv)
     entries += read_spend(root, inv)
     entries += read_findings(root, inv)
+    clamped = monotone_epochs(entries)
+    if clamped:
+        inv.append({"source": "STAMP-ORDER", "path": "-", "present": True,
+                    "note": ("%d entr(y/ies) carry a stamp that contradicts their position in an "
+                             "append-only source; ordered by position and DISCLOSED here, never "
+                             "silently re-stamped" % clamped)})
     entries.sort(key=lambda e: e.sortkey)
     return entries, inv, read_extras(root)
 

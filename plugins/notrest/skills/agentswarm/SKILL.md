@@ -243,6 +243,18 @@ estates whose right answer is known by construction (a green lane, both kinds of
 degraded receipt, and an old receipt whose calls/secs must be *derived* from its transcript),
 plus both exit codes, the rework pairing, `--json` key stability and byte-identical re-runs.
 
+Arm: `bash <agentswarm-skill>/scripts/dead-by-marker-arm.sh` — the born-red arm for
+**DEAD-BY-MARKER** (S83). A lane whose transcript ends in a terminal marker was
+interrupt-killed, which is a THIRD state and must never collapse into `done` (receipted, it
+finished and paid) or `stall` (frozen, something might still be there — probe, resume or
+stop). The arm plants a marker-terminated lane and asserts the sweep labels it `dead-marker`
+and clears it; its **negative control** is the assertion that matters — an equally idle,
+equally unreceipted lane with **no** marker must **still alert**, because a change that
+silenced every alert would otherwise pass every positive assertion and look like a fix. Every
+stamp is computed from `date -u` at run time: a fixture carrying a literal stamp has an expiry
+and flips silently as the clock moves. It refuses to judge a lane it cannot find —
+COULD-NOT-TEST at exit 2, never a pass over an absent subject.
+
 ## The model rule (owner-set 2026-07-15, absolute — regardless of what the seat is)
 
 **Every offloaded job runs on Opus.** Set `model: "opus"` explicitly — the alias, which

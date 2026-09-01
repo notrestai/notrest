@@ -122,6 +122,60 @@ BODY_V2 = """## notrest protocol
 
 CANONICAL_BODIES = {1: BODY_V1, 2: BODY_V2}
 
+# ── STRICTNESS REGRESSION GUARD (S57).
+#
+# An upgrade REPLACES the managed span. The existing net catches HAND-EDITS inside the
+# markers and banks them — but it does not catch the case where the CANONICAL body of the
+# older version asserts something STRICTER than the newer one. That block is "untouched",
+# so it takes the safe-to-replace path silently, and a rule an estate relies on is
+# weakened by an upgrade nobody read.
+#
+# The live instance: v1 says the offload rule is UNCONDITIONAL ("every spawned lane sets
+# model opus ... omitting the model is a violation, not a default"). v2 makes delegation
+# CONDITIONAL ("delegate only when the user asks or the host policy permits it"). An
+# estate that adopted v1 deliberately, and enforces it with a session hook, would have
+# that override quietly relaxed by `establish`.
+#
+# Each entry is (label, pattern). A regression is: PRESENT in the body being replaced and
+# ABSENT from the body replacing it. The guard is DECLARATIVE on purpose — it does not try
+# to reason about what "stricter" means, because a tool that infers rule semantics is a
+# tool that will infer them wrongly.
+#
+# ⛔ ITS BOUND, STATED WHERE IT IS IMPLEMENTED: this guard is only as complete as this
+# list. A future clause that is stricter in some way nobody enumerated here is NOT
+# protected, and this comment is the only thing that says so.
+# ⛔ MEMBERSHIP FOLLOWS **STATUS**, NOT **LAYOUT** (Architecture Master, 2026-08-26).
+#
+# A clause earns a row here by being OWNER-RATIFIED, and it is enumerated by RULE
+# IDENTITY. It is never protected by happening to share a block with a clause that
+# already has a row. That accident is how the width law below was protected before this
+# entry existed, and:
+#
+#   a rule at the estate's strongest status depending on a neighbour's sentence for its
+#   protection is an accident wearing a guarantee's clothes.
+#
+# So the question when a clause is proposed for this list is NOT "is it strict?" and NOT
+# "does it sit near something we already guard?" — it is "what status did the owner give
+# it?". Declining to protect an owner-ratified rule would be an owner's call to make;
+# protecting one is not.
+#
+# This rides ALONGSIDE the completeness note above, and they say different things: that
+# one says the list can be SHORT; this one says how a clause EARNS ITS ROW.
+STRICTER_CLAUSES = (
+    ("unconditional offload rule", re.compile(r"Offload HARD RULE", re.I)),
+    # Owner-ratified 2026-08-12 (R73 + R73-A). Keyed on the rule's IDENTITY and
+    # deliberately not on its date or rule ids, so a re-ratification does not silently
+    # drop the protection. Matched against the clause as it is actually written inside
+    # the markers, not a hand-typed approximation of it.
+    ("owner-ratified width law", re.compile(r"Width law\s*\(OWNER-RATIFIED", re.I)),
+)
+
+
+def strictness_regressions(old_body, new_body):
+    """Clauses asserted by `old_body` that `new_body` drops. Empty list = safe."""
+    return [label for label, pat in STRICTER_CLAUSES
+            if pat.search(old_body or "") and not pat.search(new_body or "")]
+
 SURFACE_FILES = {"claude": "CLAUDE.md", "codex": "AGENTS.md"}
 SURFACE_LABELS = {"claude": "CLAUDE-BLOCK", "codex": "AGENTS-BLOCK"}
 
@@ -707,7 +761,7 @@ def cmd_check(args):
     return code
 
 
-def write_foundation(root, surface, failures):
+def write_foundation(root, surface, failures, allow_weakening=False):
     """One runtime-foundation half of establish. Returns the 'wrote' descriptions."""
     filename = SURFACE_FILES[surface]
     label = SURFACE_LABELS[surface]
@@ -779,6 +833,22 @@ def write_foundation(root, surface, failures):
         # found and bank a copy when they differ; an UNKNOWN version can never be proven
         # untouched, so it is treated as edited.
         old_body = txt[m.end():c.start()].strip("\r\n")
+
+        # ⛔ S57: REFUSE TO WEAKEN. Checked BEFORE the hand-edit backup path, because the
+        # dangerous case is the one where the block is perfectly canonical and therefore
+        # looks safe to replace. The estate's law is the fixed point; the tool bends to it.
+        dropped = strictness_regressions(old_body, CANONICAL_BODIES[PROTOCOL_VERSION])
+        if dropped and not allow_weakening:
+            emit(WARN, label, "REFUSED the v%d -> v%d upgrade: it would drop the %s this "
+                 "block already asserts, and %s is left exactly as it was. Re-run with "
+                 "--allow-protocol-weakening if the estate has decided to relax it."
+                 % (found, PROTOCOL_VERSION, " and ".join(dropped), filename))
+            # Counted, not silent: the tool did NOT do what it was asked to do, and an
+            # operator reading only the exit code must not read that as success.
+            failures.append("%s (protocol upgrade refused: would weaken %s)"
+                            % (filename, ", ".join(dropped)))
+            return wrote
+
         canon = CANONICAL_BODIES.get(found)
         if canon is None or old_body.strip() != canon.strip():
             bak = target + ".notrest-v%d.bak" % found
@@ -859,7 +929,8 @@ def cmd_establish(args):
     # ── 2. Runtime foundation — AGENTS.md on Codex, CLAUDE.md on Claude, or both when
     # explicitly requested. The same versioned block and byte-preservation laws apply.
     for runtime in selected_surfaces(surface):
-        wrote += write_foundation(root, runtime, failures)
+        wrote += write_foundation(root, runtime, failures,
+                                  allow_weakening=getattr(args, 'allow_protocol_weakening', False))
 
     # ── 3. git. Never initialized uninvited: `git init` changes what a directory IS, and
     # that is the owner's decision, not a side effect of establishing a ledger.
@@ -917,6 +988,9 @@ def main(argv=None):
                    help="foundation surface to write")
     e.add_argument("--git-init", action="store_true",
                    help="also run `git init` (and nothing else) when the root is not a repo")
+    e.add_argument("--allow-protocol-weakening", action="store_true",
+                   help="permit a protocol upgrade that DROPS a stricter clause the existing "
+                        "block asserts (refused by default; the estate's law is the fixed point)")
     n = sub.add_parser("continuation",
                        help="read-only: the packet a successor seat needs to continue")
     n.add_argument("--root", help="project root (default: git root, else a marked cwd)")

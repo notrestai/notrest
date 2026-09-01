@@ -30,11 +30,13 @@ Exit: 0 all green · 5 monoliths and/or degraded receipts present · 6 no usable
 """
 
 import argparse
+import errno
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -312,15 +314,21 @@ def cmd_report(args):
         # above reads the estate and is reproducible; this reads the PROCESS TABLE, whose
         # ages tick and whose rows come and go. Marked so a reader (and a fixture) knows
         # which half is the reproducible reading and which is a live probe.
-        bg = background_inventory()
-        print("\n  background: %d notrest process(es) live  [LIVE — not part of the "
-              "byte-identical reading above]" % len(bg))
-        for b in bg:
-            print("    pid %-7s ppid %-6s age %-11s %s%s"
-                  % (b["pid"], b["ppid"], b["age"], b["cwd"],
-                     ("  [" + " ".join(b["flags"]) + "]") if b["flags"] else ""))
-        if not bg:
-            print("    (none — no refreshers or watchers running for any project)")
+        bg, bg_err = background_reading()
+        if bg_err:
+            print("\n  background: UNKNOWN  [LIVE — not part of the byte-identical "
+                  "reading above]")
+            print("    DETECTOR-BROKEN — %s" % bg_err)
+            print("    an unreadable process table is NOT a count of zero")
+        else:
+            print("\n  background: %d notrest process(es) live  [LIVE — not part of the "
+                  "byte-identical reading above]" % len(bg))
+            for b in bg:
+                print("    pid %-7s ppid %-6s age %-11s %s%s"
+                      % (b["pid"], b["ppid"], b["age"], b["cwd"],
+                         ("  [" + " ".join(b["flags"]) + "]") if b["flags"] else ""))
+            if not bg:
+                print("    (none — no refreshers or watchers running for any project)")
         print("\nswarm: %s — %d lane(s), %d monolith(s), %d degraded receipt(s) (exit %d)"
               % (verdict, rep["lanes"], rep["band_monolith"], rep["receipts_degraded"], code))
     return (EXIT_FLAGGED if (rep["band_monolith"] or rep["receipts_degraded"]) else EXIT_OK)
@@ -350,12 +358,114 @@ def project_slug(root):
     return "-" + os.path.realpath(root).lstrip("/").replace("/", "-")
 
 
+def tasks_bases():
+    """Every plausible `<tmp>/claude-<uid>` base ON THIS HOST, most specific first.
+
+    S37. `/private/tmp/claude-501` was hardcoded here AND in the agent-ledger hook:
+    ONE discovery, TWO consumers, and it was a **Mac** path — `/private/tmp` does not
+    exist on this Linux host and 501 is not this uid. Both consumers therefore searched
+    a directory that could not exist and found nothing, silently and confidently.
+
+    Two properties this resolver has that the constant did not:
+      · DERIVED, not asserted — the tmp dir comes from TMPDIR/gettempdir and the uid
+        from the running process, so it is right on both hosts without a second
+        constant to keep in sync.
+      · PROBED — a base is returned only if it is on disk, so a wrong guess yields an
+        empty list rather than a confident zero. The distinction matters here more than
+        most places: this estate has already ruled that failing to recognise something
+        is UNKNOWN, not DEAD.
+
+    The uid-mismatch fallback (any `claude-*` sibling) covers a tree written by another
+    account — a container/host uid split — where asserting absence would be wrong.
+    """
+    tmps = []
+    for t in (os.environ.get("TMPDIR"), tempfile.gettempdir(), "/tmp", "/private/tmp"):
+        if not t:
+            continue
+        t = t.rstrip("/") or "/"
+        if t not in tmps:
+            tmps.append(t)
+    uid = getattr(os, "getuid", lambda: None)()
+    out = []
+    if uid is not None:
+        for t in tmps:
+            c = os.path.join(t, "claude-%d" % uid)
+            if os.path.isdir(c) and c not in out:
+                out.append(c)
+    if not out:
+        for t in tmps:
+            try:
+                names = sorted(os.listdir(t))
+            except OSError:
+                continue
+            for n in names:
+                if not n.startswith("claude-"):
+                    continue
+                c = os.path.join(t, n)
+                if os.path.isdir(c) and c not in out:
+                    out.append(c)
+    return out
+
+
+# ── DEAD-BY-MARKER (S83, ruled ADOPT) ────────────────────────────────────────────────
+# A lane whose transcript ENDS IN A TERMINAL MARKER was interrupt-killed. That is a THIRD
+# fact, and it must never collapse into either of the two the watcher already had:
+#   done   = receipted; the lane finished and paid its receipt.
+#   stall  = frozen and unreceipted; SOMETHING MIGHT STILL BE THERE, so probe/resume/stop.
+#   DEAD-BY-MARKER = the transcript says it was killed. Nothing to probe. Clearable.
+# ⛔ TWO STATES THAT LOOK IDENTICAL FROM THE OUTSIDE HAVE BEEN THIS ESTATE'S WHOLE FINDING
+# REPEATEDLY, so this one is labelled separately and says so in the clearing line.
+#
+# The marker set is DERIVED FROM THE POPULATION, not from the one lane that prompted this:
+# censused across 157 subagent transcripts on this host, exactly one ends in a bracketed
+# terminal marker, and it is the interrupt form below. The set is narrow ON PURPOSE -- an
+# arbitrary bracketed tail would match ordinary content like "[unverified]".
+DEAD_MARKERS = (
+    "[Request interrupted by user]",
+    "[Request interrupted by user for tool use]",
+)
+
+
+def dead_by_marker(path):
+    """True when the transcript's LAST record is a terminal marker.
+
+    Reads the tail only. Handles both transcript shapes this watcher sweeps: JSONL records
+    (classic store) and the tasks-dir `.output` files. A file that cannot be read or parsed
+    returns False -- ⛔ NOT-DETERMINED IS NEVER REPORTED AS DEAD, because a lane wrongly
+    called dead stops being watched, which is the expensive direction of this error.
+    """
+    try:
+        with open(path, "rb") as fh:
+            try:
+                fh.seek(-65536, os.SEEK_END)
+            except OSError:
+                fh.seek(0)
+            tail = fh.read().decode("utf-8", "replace")
+    except OSError:
+        return False
+    lines = [ln for ln in tail.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    try:
+        rec = json.loads(lines[-1])
+    except Exception:
+        return lines[-1].strip() in DEAD_MARKERS
+    msg = rec.get("message") if isinstance(rec, dict) else None
+    content = msg.get("content") if isinstance(msg, dict) else None
+    if isinstance(content, str):
+        return content.strip() in DEAD_MARKERS
+    if isinstance(content, list) and content and isinstance(content[-1], dict):
+        return str(content[-1].get("text") or "").strip() in DEAD_MARKERS
+    return False
+
+
 def transcript_sources(root):
     """[(label, path, agent_id)] across EVERY location a lane may transcribe to.
 
     LIVE FINDING 2026-08-05: the first real swarm under the new laws read `watching 0`
     and self-terminated seconds after dispatch. Its lanes were transcribing to the
-    SESSION TASKS DIR — `/private/tmp/claude-501/<slug>/<session>/tasks/<agent-id>.output`
+    SESSION TASKS DIR — `<tmp>/claude-<uid>/<slug>/<session>/tasks/<agent-id>.output`
+    (resolved by `tasks_bases()`; it was hardcoded to the Mac path until S37)
     — not to `~/.claude/projects/<slug>/**/subagents/`. The disclosed limit ("a lane
     transcribing elsewhere is invisible") turned out to cover the PRIMARY case: lanes
     spawned by the Agent tool in this harness's own sessions. Both locations are now
@@ -378,8 +488,10 @@ def transcript_sources(root):
                         seen[aid] = 1
                         out.append(("classic", os.path.join(d, fn), aid))
 
-    tasks_base = os.path.join("/private/tmp/claude-501", slug)
-    if os.path.isdir(tasks_base):
+    for base in tasks_bases():
+        tasks_base = os.path.join(base, slug)
+        if not os.path.isdir(tasks_base):
+            continue
         try:
             sessions = os.listdir(tasks_base)
         except OSError:
@@ -427,7 +539,8 @@ def live_lanes(root, receipted, started=None):
         by_loc[label] = by_loc.get(label, 0) + 1
         rows.append({"agent": agent, "calls": calls or 0, "loc": label,
                      "idle_secs": int(now - mtime),
-                     "receipted": agent in receipted, "path": path})
+                     "receipted": agent in receipted, "path": path,
+                     "dead_marker": dead_by_marker(path)})
     rows.sort(key=lambda r: r["idle_secs"])
     return rows, len(rows), history, by_loc
 
@@ -445,31 +558,110 @@ def sweep(root, started=None):
     lines.append("# notrest swarm watch — machine-written, derived, disposable")
     lines.append("# watching %d transcript(s) this poller can SEE — %d from the classic "
                  "store (~/.claude/projects/<slug>/**/subagents), %d from the session tasks "
-                 "dir (/private/tmp/claude-501/<slug>/*/tasks); deduped by agent id"
+                 "dir (<tmp>/claude-<uid>/<slug>/*/tasks); deduped by agent id"
                  % (watched, by_loc.get("classic", 0), by_loc.get("tasks", 0)))
     lines.append("# unreceipted-history: %d (older than %dh and never receipted — shown "
                  "here, never alerted: old work is not a running lane)"
                  % (history, WATCH_WINDOW // 3600))
-    bg = background_inventory()
-    lines.append("# background: %d notrest process(es) live%s"
-                 % (len(bg), "".join("\n#   pid %s ppid %s age %s %s%s"
-                    % (b["pid"], b["ppid"], b["age"], b["cwd"],
-                       ("  [" + " ".join(b["flags"]) + "]") if b["flags"] else "")
-                    for b in bg)))
+    # LIVENESS IS MEASURED, NOT INFERRED. STALL used to mean "unreceipted and quiet",
+    # which is a statement about the LEDGER, not about the lane — so a lane that died
+    # before its receipt landed alerted forever and no seat could ever clear it. An alert
+    # that cannot be satisfied is the mirror of a rule that cannot fail. The 2026-08-05
+    # DISCOVERY WINDOW narrowed the population that defect could appear in; it did not
+    # remove the defect, and narrowing is not fixing. STALL now requires a POSITIVELY
+    # IDENTIFIED LIVE HOST PROCESS for the lane.
+    procs, det_err = process_table()
+    control_ok, control_detail = (False, det_err or "control not run")
+    if not det_err:
+        control_ok, control_detail = detector_control(procs)
+    detector_ok = (not det_err) and control_ok
+    bg, bg_err = background_reading(procs, det_err)
+    hosts = lane_hosts(root, procs) if detector_ok else []
+    if detector_ok:
+        lines.append("# background: %d notrest process(es) live%s"
+                     % (len(bg), "".join("\n#   pid %s ppid %s age %s %s%s"
+                        % (b["pid"], b["ppid"], b["age"], b["cwd"],
+                           ("  [" + " ".join(b["flags"]) + "]") if b["flags"] else "")
+                        for b in bg)))
+        lines.append("# lane hosts: %d live claude process(es) bound to this estate%s"
+                     % (len(hosts), "".join("\n#   pid %s up %s started %s %s"
+                        % (h["pid"], fmt_age(h["age_secs"]),
+                           datetime.fromtimestamp(h["start"], timezone.utc)
+                           .strftime("%Y-%m-%dT%H:%M:%SZ"), h["cwd"] or "?")
+                        for h in hosts)))
+        lines.append("# liveness detector: OK — %s" % control_detail)
+    else:
+        why = bg_err or control_detail or det_err
+        lines.append("# background: UNKNOWN — the liveness detector is broken, and an "
+                     "unreadable process table is not a zero")
+        lines.append("# lane hosts: UNKNOWN")
+        lines.append("# liveness detector: DETECTOR-BROKEN — %s" % why)
+        alerts.append("ALERT DETECTOR-BROKEN — process state is unreadable (%s). STALL is "
+                      "NOT evaluated this sweep, and the receipt heuristic is NOT used as "
+                      "a fallback: with liveness unknown, a lane's state is UNKNOWN, never "
+                      "assumed. Fix the detector, then read again." % why)
     lines.append("")
     for r in rows:
+        host = None
+        if detector_ok and not r["receipted"]:
+            host = lane_host_for(r, hosts)
         if r["receipted"]:
-            state = "done"
+            state, why = "done", ""
+        elif r["dead_marker"]:
+            # S83: the transcript ITSELF says this lane was interrupted. That is an
+            # UNSHARED WITNESS -- it does not depend on the process table, so it holds even
+            # when the liveness detector is broken, which is why it sits above that branch.
+            # ⛔ SEPARATELY LABELLED: never "done" (it did not finish and paid no receipt)
+            # and never "stall" (there is nothing left to probe, resume or stop).
+            state, why = "dead-marker", "  (DEAD-BY-MARKER: transcript ends in a terminal marker)"
+        elif not detector_ok:
+            state, why = "unknown", "  (liveness unreadable)"
+        elif host is None and not hosts:
+            # RULED (Director, 2026-08-26): FAILING TO RECOGNISE A HOST IS **UNKNOWN**, NOT
+            # **DEAD**. If the recognition predicate matched NOTHING AT ALL, the detector has
+            # not established that this lane's host is gone -- it has established that it
+            # could not find one, AND THOSE ARE DIFFERENT FACTS that render identically as
+            # silence unless they are split. Host recognition rests on basename(arg0) and a
+            # cwd/cmdline match, so a seat launched via a wrapper, a shim, or from another
+            # cwd is invisible to it -- and under a single state every lane beneath such a
+            # seat goes quiet WITH A CONFIDENT REASON STRING ATTACHED.
+            # AN ALERT THAT NEVER FIRES CANNOT BE NOTICED, WHEREAS ONE THAT FIRES FOREVER
+            # EVENTUALLY GETS SOMEONE'S ATTENTION. So this branch HOLDS the alert.
+            state, why = "unresolvable", "  (no host process recognised at all -- not a finding that this lane is dead)"
+        elif host is None:
+            # Hosts WERE recognised; none of them predates this lane's last write. That is a
+            # real determination rather than a failure to look, so it may resolve to dead.
+            state, why = "dead-host", "  (%d host(s) recognised, none predates its last write)" % len(hosts)
         else:
             active += 1
-            state = "running"
-        lines.append("  %-19s %-8s calls=%-4d idle=%dm%02ds"
+            state, why = "running", "  host=pid %s" % host["pid"]
+        lines.append("  %-19s %-9s calls=%-4d idle=%dm%02ds%s"
                      % (r["agent"][:19], state, r["calls"],
-                        r["idle_secs"] // 60, r["idle_secs"] % 60))
-        if not r["receipted"] and r["idle_secs"] >= STALL_SECS:
-            alerts.append("ALERT STALL %s — no transcript growth for %dm and no receipt; "
-                          "probe, resume or stop it"
+                        r["idle_secs"] // 60, r["idle_secs"] % 60, why))
+        if r["dead_marker"] and not r["receipted"]:
+            # The clearing line. It names the predicate so a reader can tell WHY this lane
+            # stopped being watched -- an alert that vanishes without saying why is the
+            # silence this watcher exists to refuse.
+            alerts.append("CLEARED DEAD-BY-MARKER %s — its transcript ends in a terminal "
+                          "marker, so it was interrupted, not stalled: nothing to probe, "
+                          "resume or stop. Idle %dm. This lane is NOT receipted and its "
+                          "spend is therefore unrecorded — that debt stands separately."
                           % (r["agent"][:19], r["idle_secs"] // 60))
+        if (detector_ok and host is None and not hosts and not r["receipted"]
+                and not r["dead_marker"]
+                and r["idle_secs"] >= STALL_SECS):
+            alerts.append("ALERT STALL-UNRESOLVABLE %s — frozen %dm with no receipt, and the "
+                          "detector RECOGNISED NO HOST PROCESS AT ALL. This is NOT a finding "
+                          "that the lane is dead: the recognition predicate found nothing to "
+                          "judge it against. The alert is HELD rather than resolved."
+                          % (r["agent"][:19], r["idle_secs"] // 60))
+        if (detector_ok and host is not None and not r["receipted"]
+                and not r["dead_marker"]
+                and r["idle_secs"] >= STALL_SECS):
+            alerts.append("ALERT STALL %s — no transcript growth for %dm, no receipt, and "
+                          "its host process IS LIVE (pid %s, up %s); probe, resume or stop it"
+                          % (r["agent"][:19], r["idle_secs"] // 60,
+                             host["pid"], fmt_age(host["age_secs"])))
         if not r["receipted"] and r["calls"] >= MONO_CALLS:
             alerts.append("ALERT MONOLITH-IN-PROGRESS %s — %d live calls past the %d band "
                           "while still running; the NEXT contract for this work splits further"
@@ -479,47 +671,275 @@ def sweep(root, started=None):
 
 BG_PATTERNS = ("estate-pulse.sh", "swarm.py watch")
 
+# A LANE IS NOT AN OS PROCESS. Measured on the real estate 2026-08-26: a lane that was
+# actively running at the moment of the reading held NO file descriptor on its own
+# transcript, named itself in NO command line, and owned NO pid — subagents run inside the
+# `claude` process that owns their session. So per-lane liveness is not on offer from this
+# host, and the finest grain that IS real is THE LANE'S HOST: a live claude process for
+# this estate that was already running when the lane last wrote. Coarser than per-lane,
+# and it is still a MEASUREMENT of process state rather than an inference drawn from a
+# missing receipt.
+HOST_ARG0 = "claude"
 
-def background_inventory():
-    """Live notrest background processes: what is actually running, how old, and where.
-    Answers "is anything still going?" with a reading instead of pgrep archaeology —
-    and flags the two species that bite: ancient survivors, and workers whose cwd is a
-    temp/fixture path (a wedged sandbox child, which is how a working lane got killed
-    on 2026-08-05). Best-effort by construction: ps output is the only source."""
+
+def fmt_age(secs):
+    """[[dd-]hh:]mm:ss — the shape ps prints, so one flag rule serves both readers."""
+    s = int(max(0, secs))
+    d, s = divmod(s, 86400)
+    h, s = divmod(s, 3600)
+    m, s = divmod(s, 60)
+    if d:
+        return "%d-%02d:%02d:%02d" % (d, h, m, s)
+    if h:
+        return "%02d:%02d:%02d" % (h, m, s)
+    return "%02d:%02d" % (m, s)
+
+
+def etime_secs(etime):
+    """ps etime is [[dd-]hh:]mm:ss. None when it is not."""
+    try:
+        days = 0
+        if "-" in etime:
+            d, etime = etime.split("-", 1)
+            days = int(d)
+        bits = [int(b) for b in etime.split(":")]
+        while len(bits) < 3:
+            bits.insert(0, 0)
+        return days * 86400 + bits[0] * 3600 + bits[1] * 60 + bits[2]
+    except (ValueError, IndexError):
+        return None
+
+
+def proc_table_from_proc():
+    """(rows, err) from /proc. Every row carries an absolute START EPOCH, because the
+    liveness question is not "how old is it" but "was it already running then"."""
     rows = []
+    if not os.path.isdir("/proc"):
+        return rows, "/proc is not present"
+    try:
+        hz = os.sysconf("SC_CLK_TCK")
+        btime = None
+        with open("/proc/stat", "r") as f:
+            for line in f:
+                if line.startswith("btime "):
+                    btime = int(line.split()[1])
+                    break
+        if not btime or not hz:
+            return rows, "/proc/stat carries no usable btime — a process cannot be aged"
+        entries = os.listdir("/proc")
+    except (OSError, ValueError, AttributeError) as e:
+        return rows, "/proc unreadable: %s" % e
+    now = time.time()
+    for name in entries:
+        if not name.isdigit():
+            continue
+        base = "/proc/" + name
+        try:
+            with open(base + "/cmdline", "rb") as f:
+                cmd = f.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+            with open(base + "/stat", "rb") as f:
+                stat = f.read().decode("utf-8", "replace")
+        except (OSError, IOError):
+            continue                      # it exited between the listing and the read
+        if not cmd:
+            continue                      # kernel thread, never a lane host
+        rp = stat.rfind(")")
+        fields = stat[rp + 2:].split() if rp >= 0 else []
+        try:
+            ppid = fields[1]
+            start = btime + int(fields[19]) / float(hz)
+        except (IndexError, ValueError):
+            continue
+        try:
+            cwd = os.readlink(base + "/cwd")
+        except OSError:
+            cwd = ""
+        rows.append({"pid": name, "ppid": ppid, "start": start,
+                     "age_secs": max(0.0, now - start), "cmd": cmd, "cwd": cwd})
+    if not rows:
+        return rows, "/proc listed no readable processes"
+    return rows, ""
+
+
+def proc_table_from_ps():
+    """(rows, err) from ps, for hosts that have it. No cwd: ps does not carry one."""
     try:
         out = subprocess.run(["ps", "-eo", "pid=,ppid=,etime=,command="],
                              stdout=subprocess.PIPE, timeout=10
                              ).stdout.decode("utf-8", "replace")
-    except (OSError, subprocess.SubprocessError):
-        return rows
+    except (OSError, subprocess.SubprocessError) as e:
+        return [], "ps unavailable: %s" % e
+    rows, now = [], time.time()
     for line in out.splitlines():
-        if not any(pat in line for pat in BG_PATTERNS):
-            continue
-        if " -eo " in line or "grep " in line:
-            continue
         parts = line.split(None, 3)
         if len(parts) < 4:
             continue
         pid, ppid, etime, cmd = parts
-        cwd = ""
-        for tok in cmd.split():
-            if tok.startswith("/") and os.path.isdir(tok):
-                cwd = tok
+        if not pid.isdigit():
+            continue
+        secs = etime_secs(etime)
+        rows.append({"pid": pid, "ppid": ppid,
+                     "start": (now - secs) if secs is not None else 0.0,
+                     "age_secs": secs if secs is not None else 0.0,
+                     "cmd": cmd, "cwd": ""})
+    if not rows:
+        return rows, "ps returned no parseable rows"
+    return rows, ""
+
+
+def process_table():
+    """(rows, err) — the live process table, /proc first, ps second.
+
+    WHY /proc FIRST: measured 2026-08-26 on this estate's own host, `ps` DOES NOT EXIST.
+    The previous reader shelled out to ps only, swallowed the OSError, and returned [] —
+    so the watcher printed "background: 0 notrest process(es) live" while a `swarm.py
+    watch` was running four feet away. A detector that cannot tell EMPTY from BLIND is
+    not a detector, and every caller here now receives the reason as well as the rows."""
+    # A RAISE IS A STARVED DETECTOR, NOT A CRASH. The watcher's job is to say "I cannot
+    # see" — an escaping exception kills the sweep and takes the honest DETECTOR-BROKEN
+    # report with it, which is the loudest possible way to say nothing.
+    try:
+        rows, err = proc_table_from_proc()
+        if rows:
+            return rows, ""
+    except Exception as e:                                   # noqa: BLE001 — see above
+        rows, err = [], "/proc reader raised: %r" % (e,)
+    try:
+        rows2, err2 = proc_table_from_ps()
+        if rows2:
+            return rows2, ""
+    except Exception as e:                                   # noqa: BLE001 — see above
+        rows2, err2 = [], "ps reader raised: %r" % (e,)
+    return [], "%s; %s" % (err or "no /proc rows", err2 or "no ps rows")
+
+
+def detector_control(rows):
+    """POSITIVE CONTROL on the process table. It runs on EVERY sweep and it GATES the
+    whole liveness reading — nothing below is believed unless this passes.
+
+      ARM A, must be SEEN:   this interpreter's own pid. It is live by construction; a
+                             table that cannot see the process doing the looking sees
+                             nothing, which is exactly how the ps-less blindness hid.
+      ARM B, must be ABSENT: a pid proven not to exist right now — kill(pid, 0) raising
+                             ESRCH and no /proc entry. Without arm B a table that simply
+                             said yes to everything would pass arm A.
+
+    THE ARMS ARE PROVEN DISTINCT BEFORE ANYTHING ELSE IS PROVEN: a control whose two arms
+    are the same object tests nothing and passes. Arm B is drawn from pids above our own
+    and re-drawn until it differs, the equality is refused explicitly, and both numbers
+    are reported so a reader can see for themselves that they are two different objects.
+
+    Returns (ok, detail)."""
+    live = os.getpid()
+    dead = None
+    for cand in range(live + 1, live + 8192):
+        if cand == live:
+            continue                      # never let the arms collapse
+        if os.path.exists("/proc/%d" % cand):
+            continue
+        try:
+            os.kill(cand, 0)
+            continue                      # it exists — not provably absent
+        except OSError as e:
+            if getattr(e, "errno", None) == errno.ESRCH:
+                dead = cand
                 break
+            continue                      # EPERM: exists but is not ours
+    if dead is None:
+        return False, ("control could not draw a provably-absent pid to contrast with "
+                       "%d — the second arm is unavailable, so the control is vacuous"
+                       % live)
+    if dead == live:
+        return False, ("control arms collapsed onto the same pid %d — two arms that are "
+                       "one object test nothing" % live)
+    seen = set(r["pid"] for r in rows)
+    a_ok = str(live) in seen
+    b_ok = str(dead) not in seen
+    detail = ("arms are distinct objects: live=%d vs provably-absent=%d · saw-itself=%s · "
+              "absent-stayed-absent=%s · %d process(es) enumerated"
+              % (live, dead, a_ok, b_ok, len(rows)))
+    return (a_ok and b_ok), detail
+
+
+def background_reading(procs=None, err=None):
+    """(rows, err) — the background inventory AND why it is empty when it is empty.
+
+    Live notrest background processes: what is actually running, how old, and where.
+    Flags the two species that bite: ancient survivors, and workers whose cwd is a
+    temp/fixture path (a wedged sandbox child, which is how a working lane got killed on
+    2026-08-05). Empty-with-an-error is a REFUSAL TO ANSWER, never a zero."""
+    if procs is None:
+        procs, err = process_table()
+    if err:
+        return [], err
+    ok, detail = detector_control(procs)
+    if not ok:
+        return [], "positive control FAILED: " + detail
+    out = []
+    for p in procs:
+        line = p["cmd"]
+        if not any(pat in line for pat in BG_PATTERNS):
+            continue
+        if " -eo " in line or "grep " in line:
+            continue
+        cwd = p["cwd"]
+        if not cwd:
+            for tok in line.split():
+                if tok.startswith("/") and os.path.isdir(tok):
+                    cwd = tok
+                    break
         flags = []
-        # etime is [[dd-]hh:]mm:ss — a dash or 3 colon-groups means >= a day
-        if "-" in etime or etime.count(":") >= 2:
+        if p["age_secs"] >= 86400:
             flags.append("ANCIENT>24h")
-        low = (cwd or cmd).lower()
+        low = (cwd or line).lower()
         if any(k in low for k in ("/tmp", "/var/folders", "fixture", "/t/tmp.")):
             flags.append("TEMP/FIXTURE-CWD")
-        if ppid.strip() not in ("1",):
-            flags.append("PARENTED(ppid=%s)" % ppid.strip())
-        rows.append({"pid": pid, "ppid": ppid, "age": etime,
-                     "cwd": cwd or "?", "flags": flags,
-                     "cmd": cmd[:110]})
+        if str(p["ppid"]).strip() not in ("1",):
+            flags.append("PARENTED(ppid=%s)" % str(p["ppid"]).strip())
+        out.append({"pid": p["pid"], "ppid": p["ppid"], "age": fmt_age(p["age_secs"]),
+                    "cwd": cwd or "?", "flags": flags, "cmd": line[:110],
+                    "start": p["start"]})
+    return out, ""
+
+
+def background_inventory():
+    """Rows only, for callers that already handle the empty case themselves. Prefer
+    background_reading(): this shape cannot distinguish 'nothing running' from 'blind'."""
+    rows, _err = background_reading()
     return rows
+
+
+def lane_hosts(root, procs):
+    """Live processes that could be RUNNING a lane of this estate: the `claude` CLI, bound
+    to this estate by cwd or by the root naming itself on the command line."""
+    root = os.path.realpath(root)
+    out = []
+    for p in procs:
+        cmd = p["cmd"]
+        arg0 = cmd.split(" ", 1)[0]
+        if os.path.basename(arg0) != HOST_ARG0:
+            continue
+        cwd = os.path.realpath(p["cwd"]) if p["cwd"] else ""
+        if cwd != root and root not in cmd:
+            continue
+        out.append(p)
+    return out
+
+
+def lane_host_for(row, hosts, now=None):
+    """The live host that could still be running this lane: one that was ALREADY RUNNING
+    when the lane last wrote. A host that started AFTER the lane's final byte cannot be
+    the process that wrote it, so it cannot be the process still running it.
+
+    No such host -> the lane's host is GONE. The lane is dead or finished, and a lane with
+    no live host is NOT A STALL: it is the unclearable alert this predicate exists to
+    stop raising. Returns the host row, or None."""
+    last_write = (now or time.time()) - row["idle_secs"]
+    best = None
+    for h in hosts:
+        if h["start"] <= last_write and (best is None or h["start"] > best["start"]):
+            best = h
+    return best
 
 
 def daemonize():

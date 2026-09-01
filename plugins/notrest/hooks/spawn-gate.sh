@@ -93,17 +93,20 @@ case "$STYPE" in
     ;;
 esac
 
-# ── RULE 2 · THE MODEL MUST BE EXPLICIT, AND IT MUST BE OPUS.
+# ── RULE 2 · THE MODEL MUST BE EXPLICIT: OPUS OR SONNET (owner-amended 2026-08-30).
+# Opus default; sonnet lawful for lanes the brief declares mechanical/DRAFT-tier — the tier
+# discipline lives in the estate's audit layer (CLAUDE.md spine block), not in this hook,
+# which cannot read briefs. Haiku and omitted models remain refused at the door.
 NORM="$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')"
 case "$NORM" in
-  *opus*) exit 0 ;;                      # lawful: the only passing case
+  *opus*|*sonnet*) exit 0 ;;             # lawful: explicit opus or sonnet
   "")
     [ -n "$OVERRIDE" ] && overridden "model omitted on \"$DESC\""
     block "notrest spawn gate: this Agent/Task call sets NO model — omitting it is a violation, not a default. It would silently inherit the seat's model and bill its credit." "$FIX"
     ;;
   *)
     [ -n "$OVERRIDE" ] && overridden "model=$MODEL on \"$DESC\""
-    block "notrest spawn gate: model=\"$MODEL\" — the offload law is explicit Opus only (owner-set 2026-07-15). sonnet/haiku lanes are refused at the door rather than audited after the burn." "$FIX"
+    block "notrest spawn gate: model=\"$MODEL\" — the offload law allows explicit opus or sonnet only (owner-amended 2026-08-30; was opus-only 2026-07-15). haiku and other models are refused at the door rather than audited after the burn." "$FIX"
     ;;
 esac
 

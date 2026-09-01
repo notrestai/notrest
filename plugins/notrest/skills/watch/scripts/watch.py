@@ -391,6 +391,16 @@ def next_due(row):
         d = datetime.strptime(last, "%Y-%m-%d").date()
     except ValueError:
         return date.min, "unparsable Last checked %r" % last
+    # S81: AN UPPER BOUND, doctor's shape. `Last checked` in the FUTURE is not evidence
+    # that anything was checked -- but it pushes next_due past every `nd <= now` test, so
+    # the row falls out of BOTH the due list and the held list and vanishes from the
+    # output entirely. ⛔ A WATCH THAT NEVER FIRES IS INDISTINGUISHABLE FROM A WATCH WITH
+    # NOTHING TO REPORT. An unparsable stamp is already treated as due-now (date.min); a
+    # future one is no better evidence, so it is treated the same and SAYS WHY.
+    # NOT FIRING TODAY: measured at this seat, the live watchlist's 2 rows are both dated
+    # in the past. This closes a latent gap; it does not close a live defect.
+    if d > date.today():
+        return date.min, "Last checked %r is in the FUTURE — not evidence of a check" % last
     return d + timedelta(days=days), ""
 
 
