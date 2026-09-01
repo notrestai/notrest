@@ -8,7 +8,12 @@
 # Usage: fable-launcher.sh [initial prompt ...]     (defaults to the kickoff pointer)
 set -eu
 
-export ANTHROPIC_API_KEY="PASTE-REAL-KEY-HERE"     # ← PASTE-REAL-KEY (owner only)
+# The key lives OUTSIDE the tree (map thread 11: a credential placeholder in a
+# git-tracked file is the shape the secret screens exist to catch). Owner creates it
+# once: printf 'sk-ant-...' > ~/.notrest/fable-key && chmod 600 ~/.notrest/fable-key
+NOTREST_KEYFILE="${NOTREST_HOME:-$HOME/.notrest}/fable-key"
+[ -r "$NOTREST_KEYFILE" ] || { echo "fable-launcher: no key at $NOTREST_KEYFILE — create it (owner only, chmod 600)" >&2; exit 3; }
+export ANTHROPIC_API_KEY="$(cat "$NOTREST_KEYFILE")"
 
 PRIMARY="claude-fable-5"
 FALLBACK="opus"                                     # harness-resolved latest Opus

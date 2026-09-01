@@ -93,6 +93,67 @@ elif [ -z "$REPO_ROOT" ] && [ "$PWD" != "$HOME" ] && [ "$PWD" != "/" ]; then
     fi
   done
 fi
+# ── AUTO-CONTINUATION (owner-ordered, v4.5). A new session in an ESTABLISHED estate
+# should arrive already knowing where the build stands — nobody types /notrest to find
+# out what the last session did. A SessionStart hook's stdout IS session context, so the
+# hook injects the packet itself.
+#
+# THE GATE IS CHEAP ON PURPOSE. `establish.py check` would answer "is this established?"
+# authoritatively, but it would run python at EVERY session start in EVERY project just
+# to decide whether to run python. So the gate is two file tests the hook can afford: a
+# COORD.md, and a runtime foundation carrying a protocol marker. Both true is close
+# enough to established that the packet is worth its cost; the packet itself then applies
+# the real laws (containment, PASS states) and simply prints nothing when they fail.
+#
+# OPT-OUT: an estate that does not want this creates `.notrest-quiet` at its root and the
+# packet is suppressed — the nudges stay. Some estates are noisy, and an injection nobody
+# can turn off is a tax rather than a service. The test is `-e` OR `-L`, never `-f`: `-f`
+# is FALSE for a directory named .notrest-quiet and FALSE for a dangling symlink, so both
+# of those silently failed to opt the estate out. Anything present under that name — file,
+# directory, live symlink, dangling symlink — is the owner saying no.
+#
+# SILENT ON FAILURE, ALWAYS. A missing, broken or unreadable establish.py, a refusal, an
+# escaping ledger, a run that hangs — every one of them injects NOTHING and the session
+# continues on the ordinary nudges. A convenience that can break a session start is not a
+# convenience.
+NR_QUIET="${REPO_ROOT:-/nonexistent}/.notrest-quiet"
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/COORD.md" ] && [ ! -e "$NR_QUIET" ] && [ ! -L "$NR_QUIET" ]; then
+  NR_FOUNDED=""
+  for NR_F in CLAUDE.md AGENTS.md; do
+    if [ -f "$REPO_ROOT/$NR_F" ] && grep -q '<!-- notrest:protocol v' "$REPO_ROOT/$NR_F" 2>/dev/null; then
+      NR_FOUNDED=1; break
+    fi
+  done
+  if [ -n "$NR_FOUNDED" ]; then
+    # hooks/ and skills/ are siblings in the plugin; resolved from THIS script's own
+    # directory so it works from a skills-dir runtime, a marketplace install, or a copy.
+    NR_EST="$(cd "$(dirname "$0")" && pwd)/../skills/notrest/scripts/establish.py"
+    NR_BRIEF=""; NR_RC=1
+    if [ -f "$NR_EST" ]; then
+      # A WALL-CLOCK BOUND on the only unbounded thing this hook does. establish.py caps
+      # what it reads, but a stalled filesystem or a pathological repo must not hold a
+      # session start open; `timeout` is absent on stock macOS, so use it when present and
+      # accept the unbounded call when it is not.
+      if command -v timeout >/dev/null 2>&1; then
+        NR_BRIEF="$(timeout 5 python3 "$NR_EST" continuation --brief --root "$REPO_ROOT" 2>/dev/null)"
+      else
+        NR_BRIEF="$(python3 "$NR_EST" continuation --brief --root "$REPO_ROOT" 2>/dev/null)"
+      fi
+      NR_RC=$?
+    fi
+    # THE GATE IS THE EXIT CODE, and then the TERMINATOR — never "did it print something".
+    # establish.py prints its REFUSALS on stdout too ("NOT ESTABLISHED — … carries no
+    # continuable estate", an escaping ledger), so a non-empty test injected refusals and
+    # crash-truncated half-packets under a "this estate has a live build" preamble. Exit 0
+    # says the run succeeded; the END marker says the packet arrived WHOLE. Nothing quoted
+    # inside the packet can forge that marker: every data line is prefixed, so only this
+    # script's own output can sit at column 0.
+    if [ "$NR_RC" -eq 0 ] && printf '%s\n' "$NR_BRIEF" | grep -q '^notrest BRIEF PACKET END$'; then
+      echo "[notrest] AUTO-CONTINUATION — this estate has a live build; you are its successor session. The brief packet follows; operate under the protocol from this turn (tier-0 verify only: doctor+eval+git vs the packet's claims; the trail wins over any recollection; bank one line when your first work lands). Full packet: /notrest."
+      printf '%s\n' "$NR_BRIEF"
+    fi
+  fi
+fi
 # ── cockpit (2026-08-04 — the owner's field note: the cockpit did exactly what they
 # wanted and NOTHING SURFACED IT; no session opened it and no project remembered
 # wanting it. Presence is not display, the same way presence is not establishment).

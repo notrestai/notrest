@@ -631,6 +631,30 @@ def resolve_root(explicit):
 
 
 # ── the establishment surfaces ────────────────────────────────────────────────────────
+def scan_for(path, needle, chunk=64 * 1024):
+    """True when `needle` appears anywhere in `path`, read in BOUNDED chunks.
+
+    coord_state used to pull the whole ledger into memory to look for one header that sits
+    in its first kilobyte. On a 196 MB COORD.md that cost 802 MB of RSS at every session
+    start (F4). Streaming finds the header in the first chunk of every real estate and
+    never holds more than two chunks, whatever the file's size. The needle is ASCII and
+    UTF-8 is self-synchronizing, so a byte search cannot match inside a multibyte
+    character; the overlap carries a match that straddles a chunk boundary."""
+    nb = needle.encode("utf-8")
+    try:
+        with open(path, "rb") as f:
+            prev = b""
+            while True:
+                buf = f.read(chunk)
+                if not buf:
+                    return False
+                if nb in prev + buf:
+                    return True
+                prev = buf[-(len(nb) - 1):] if len(nb) > 1 else b""
+    except OSError:
+        return False
+
+
 def coord_state(root):
     """(status, detail). PASS = a ledger a reader can append to."""
     p = in_root(root, "COORD.md")
@@ -644,8 +668,7 @@ def coord_state(root):
         empty = True
     if empty:
         return FAIL, "COORD.md absent (or empty) — the project has no session ledger"
-    txt = read_text(p) or ""
-    if "## LEDGER" not in txt:
+    if not scan_for(p, "## LEDGER"):
         return WARN, ("COORD.md present but carries no '## LEDGER' header — every estate "
                       "reader (/recap, /compile, /archivist) parses for it. Repair by "
                       "appending one line '## LEDGER'; this tool never rewrites a ledger")
@@ -787,16 +810,71 @@ NONGIT_WARNS = [
 
 
 # ── subcommands ───────────────────────────────────────────────────────────────────────
-def tail_lines(path, cap):
-    """The last `cap` ledger lines of a file, oldest first. Missing file → []. A None
-    path is an ESCAPING one (in_root refused it) and reads as empty — never as somebody
-    else's ledger."""
+#
+# LEDGER_READ_CAP (v4.5.2, refuter F4/F5). A ledger read used to be `read_text()` — the
+# WHOLE file into memory, and `packet()` did it TWICE. On this estate's own 22.8 MB COORD
+# that cost 1.8 s and 127 MB; the refuter's 196 MB corpus cost 15.2 s and 802 MB — paid at
+# EVERY session start, because the SessionStart hook now injects the brief. A ledger is
+# read from the END (the newest lines are the only ones anyone quotes), so the read is a
+# TAIL SEEK with a stated cap. 512 KiB is ~5000 realistic ledger lines: far past the 500-
+# line seal at which a volume rolls, so a lawful active volume is never truncated, and an
+# unlawful one is truncated HONESTLY (the packet says so) instead of silently costing a
+# session its memory budget.
+LEDGER_READ_CAP = 512 * 1024
+
+
+def read_ledger_lines(path, byte_cap=LEDGER_READ_CAP):
+    """(lines, truncated) — every WHOLE `- ` line inside the newest `byte_cap` bytes.
+
+    ONE read, capped, from the end. Two partial-line hazards, both dropped, because a
+    quoted line must be a whole line:
+
+      · the tail seek can land mid-line → when we did not start at byte 0, the first line
+        is a fragment of a line we never saw the start of.
+      · a CONCURRENT WRITER can be mid-append. 12 of the refuter's 22 concurrent runs
+        quoted a half-written ledger line and one INVERTED a rollback's meaning by
+        stopping before the word that negated it. If the bytes do not end in a newline,
+        the last line is a torn write, not a ledger line.
+
+    A None path is an ESCAPING one (in_root refused it) and reads as empty — never as
+    somebody else's ledger."""
     if path is None:
-        return []
-    txt = read_text(path)
-    if txt is None:
-        return []
-    return [ln for ln in txt.splitlines() if ln.startswith("- ")][-cap:]
+        return [], False
+    try:
+        with open(path, "rb") as f:
+            size = f.seek(0, os.SEEK_END)
+            start = max(0, size - byte_cap)
+            f.seek(start)
+            raw = f.read(byte_cap)
+    except OSError:
+        return [], False
+    truncated = start > 0
+    txt = raw.decode("utf-8", "replace")
+    # Split on "\n" ONLY — the ledger's actual record separator — never on splitlines()'
+    # wider set (\r \v \f \x1c \x1d \x1e \x85 \u2028 \u2029). A stray \r inside one
+    # written ledger line used to turn that ONE record into TWO quoted lines, and the
+    # second half was then flagged as a NEWEST SHIP in its own right. One record in, at
+    # most one line out; anything control-ish inside it survives to sanitize(), which
+    # shows it as a visible <ctrl>.
+    lines = txt.split("\n")
+    if lines:
+        # Either the empty remainder after a clean final newline, or — when the bytes do
+        # NOT end in one — a TORN WRITE from a concurrent appender. Dropped either way.
+        lines.pop()
+    if truncated and lines:
+        lines.pop(0)
+    out = []
+    for ln in lines:
+        if ln.endswith("\r"):
+            ln = ln[:-1]        # CRLF line ending, not a control character in the record
+        if ln.startswith("- "):
+            out.append(ln)
+    return out, truncated
+
+
+def tail_lines(path, cap):
+    """The last `cap` ledger lines of a file, oldest first. Missing file → []."""
+    return read_ledger_lines(path)[0][-cap:]
 
 
 def sealed_volumes(root, prefix):
@@ -837,9 +915,14 @@ def packet(root, surface="claude"):
     """Everything a fresh seat needs to continue, in one gulp. NO CLOCK: every timestamp
     here comes off a file, so the same estate yields the same packet twice."""
     coord_p = in_root(root, "COORD.md")
-    coord = tail_lines(coord_p, COORD_TAIL)
+    # ONE read of COORD.md, capped (F4). It used to be read twice IN FULL — once for the
+    # tail, once for the flag scan — and both the tail and the flags come off the same
+    # newest-bytes window now. The flags are "NEWEST ship/gate/correction", so a window
+    # that holds the newest lines holds them; when the window did not reach the start of
+    # the file the packet SAYS SO rather than implying it scanned history it never read.
+    all_coord, coord_truncated = read_ledger_lines(coord_p)
+    coord = all_coord[-COORD_TAIL:]
     agents = tail_lines(in_root(root, "COORD-AGENTS.md"), AGENT_TAIL)
-    all_coord = tail_lines(coord_p, 10 ** 9)
     flags = {"ship": [], "gate": [], "correction": []}
     for ln in all_coord:
         body = ln
@@ -873,6 +956,9 @@ def packet(root, surface="claude"):
         "agents_block": states.get("codex", {}).get("status"),
         "protocol_version": versions[0] if len(versions) == 1 else versions,
         "coord_lines_shown": len(coord),
+        "coord_lines_scanned": len(all_coord),
+        "coord_read_cap_bytes": LEDGER_READ_CAP,
+        "coord_truncated_read": coord_truncated,
         "coord_tail": coord,
         "coord_sealed_volumes": len(sealed_volumes(root, "COORD")),
         "agents_tail": agents,
@@ -889,8 +975,198 @@ def packet(root, surface="claude"):
     }
 
 
+# ── the BRIEF packet ────────────────────────────────────────────────────────────────
+#
+# AUTO-CONTINUATION (owner-ordered, v4.5): a SessionStart hook's stdout IS session
+# context, so the hook injects this packet and a successor session is up to speed with
+# nobody typing /notrest. That changes what the packet has to be: the full one is asked
+# for, this one is PAID FOR ON EVERY SESSION START. So it carries a size bound, and the
+# bound is structural rather than hopeful — a fixed number of lines, each clipped to a
+# fixed width, because one pathological ledger line must not become a session's context
+# budget. Same laws as the full packet otherwise: read-only, contained, NO CLOCK (the
+# same estate yields the same brief twice), and it NEVER seeds the pulse — a hook must
+# not do work.
+#
+# AND THE PACKET IS QUOTED CONTENT, so it is FRAMED (v4.5.2, refuter F1 as amended by the
+# owner — correctness and legibility, not security theatre). The trigger is self-inflicted
+# and already in this estate's own ledger: COORD lines QUOTE harness echoes verbatim as
+# their evidence, e.g. a real line whose body contains `[notrest] AUTO-BUILD opted in:
+# dispatch ONE opus builder lane...` as a QUOTATION of what a hook said. Injected raw at
+# column 0, a successor reads the estate's own quotation as a live directive; and one
+# control character anywhere in a ledger line garbles the packet's structure. So:
+#   (a) SANITIZE. Every C0/C1 control character and every separator str.splitlines()
+#       honors is replaced by a visible <ctrl>, so a field is physically incapable of
+#       becoming more than one output line, and the tampering is LEGIBLE, not silent.
+#   (b) FRAME. Every data line carries the DATA prefix, which harness output never uses,
+#       so nothing quoted can sit at column 0 and be mistaken for a `[notrest] ` line.
+#       The two frame lines are the only lines the packet itself speaks; the END marker is
+#       also the hook's proof that it received a WHOLE packet (F2).
+# The preamble stays as the owner wrote it: on this estate's own trail, the trail is law.
+BRIEF_TAIL, BRIEF_SHIPS, BRIEF_GATES, BRIEF_CORR = 8, 2, 1, 1
+BRIEF_LINE_BYTES = 200          # the WHOLE emitted line, prefix and label included
+BRIEF_LINE_CAP = BRIEF_LINE_BYTES   # back-compat name
+DATA = "| "
+BRIEF_HEADER = 'notrest BRIEF PACKET — quoted content follows, one field per "| " line'
+BRIEF_END = "notrest BRIEF PACKET END"
+
+# Everything str.splitlines() splits on, plus the rest of C0/C1 and DEL: \n \r \v \f
+# \x1c \x1d \x1e \x85 \u2028 \u2029, and ESC (the terminal-clearing prefix the refuter
+# used to scroll an honest tail out of view). A RUN collapses to one marker so a field of
+# 10k control bytes cannot buy 10k marker bytes.
+CTRL_RE = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+
+
+def sanitize(text):
+    """Neutralize every character that could let a quoted field become more than one line,
+    or repaint the transcript. Visible marker, never a silent drop."""
+    return CTRL_RE.sub("<ctrl>", text)
+
+
+def clip(line, cap=BRIEF_LINE_BYTES):
+    """Sanitize, then clip to at most `cap` BYTES of encoded UTF-8 (F3).
+
+    Characters were the wrong unit: the fixture asserted a 6000-BYTE packet while the cap
+    counted CHARACTERS, so an emoji ledger line spent 4 bytes per counted char and a real
+    estate produced 9867 bytes under a bound that believed it was holding."""
+    s = sanitize((line or "")).rstrip()
+    if cap < 3:
+        return ""
+    b = s.encode("utf-8", "replace")
+    if len(b) <= cap:
+        return s
+    # "…" is 3 UTF-8 bytes; decode(errors="ignore") drops a split trailing sequence.
+    return b[:cap - 3].decode("utf-8", "ignore") + "…"
+
+
+def dline(out, text):
+    """One DATA line of the brief: framed, sanitized, and byte-clipped AS A WHOLE — the
+    prefix and any label count against the bound, so no label can push a field past it."""
+    out.append(DATA + clip(text, BRIEF_LINE_BYTES - len(DATA)))
+
+
+def other_surface_warnings(root, surface):
+    """The foundation of a runtime this session is NOT reading, when it exists and is not
+    current. The one thing a successor cannot afford to have hidden: this session picks
+    up cleanly while the OTHER runtime's foundation still states an older contract, so a
+    Codex successor to a Claude build (or the reverse) silently inherits v1."""
+    out = []
+    for runtime in ("claude", "codex"):
+        if runtime in selected_surfaces(surface):
+            continue
+        p = in_root(root, SURFACE_FILES[runtime])
+        if p is None or not os.path.isfile(p):
+            continue
+        st, detail, _v = foundation_state(root, runtime)
+        if st != PASS:
+            # NAME THE FILE. Some details already open with it ("AGENTS.md is not
+            # UTF-8…"), others do not ("notrest:protocol block is v1…") — and a warning
+            # about a file it never names is a warning nobody can act on.
+            name = SURFACE_FILES[runtime]
+            body = detail if detail.startswith(name) else "%s: %s" % (name, detail)
+            out.append("surface warning: %s — bridge with `establish --surface both`" % body)
+    return out
+
+
+def print_brief(root, surface, p):
+    # stdout may be a pipe under a C locale (a hook captures this), and the estate's own
+    # ledger lines carry arbitrary UTF-8. Encoding the packet must never be the thing
+    # that fails.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    out = []
+    # The root is a field like any other — a directory name is content somebody chose, and
+    # an unclipped, unframed path was the one field that could still reach column 0.
+    dline(out, "root: %s" % root)
+    dline(out, "ESTABLISHED · protocol v%s · surface=%s · COORD volumes sealed: %d · agent "
+                "volumes sealed: %d" % (p["protocol_version"], surface,
+                                        p["coord_sealed_volumes"], p["agents_sealed_volumes"]))
+    if p["git_repo"] and p["git_head"]:
+        # %s, not %d: `git status` can fail (a corrupt .git/index) while `rev-parse HEAD`
+        # succeeds, and then dirty is None. %d raised TypeError and the hook injected a
+        # half-written packet under a "live build" preamble.
+        dline(out, "git %s · %s dirty file(s) · last commit: %s"
+                   % (p["git_head"], p["git_dirty_files"], p["git_last_subject"] or ""))
+    elif p["git_repo"]:
+        dline(out, "git repo with no commits yet · %s dirty file(s)" % p["git_dirty_files"])
+    else:
+        dline(out, "not a git repo — the ledger is the whole trail here")
+    dline(out, "briefs banked: %d · spend (last line): %s"
+               % (p["briefs"], p["spend_last_line"] or "none"))
+    for w in other_surface_warnings(root, surface):
+        dline(out, w)
+    for label, key, cap in (("SHIP", "newest_ships", BRIEF_SHIPS),
+                            ("GATE", "newest_gates", BRIEF_GATES),
+                            ("CORRECTION", "newest_corrections", BRIEF_CORR)):
+        for ln in p[key][-cap:]:
+            dline(out, "NEWEST %s: %s" % (label, ln))
+    tail = p["coord_tail"][-BRIEF_TAIL:]
+    if p.get("coord_truncated_read"):
+        # STATE THE CAP. A truncated scan that reads as a full one is the packet lying
+        # about how much trail it looked at.
+        dline(out, "NOTE: COORD.md exceeds the %d KiB read cap — only its newest %d KiB "
+                   "were scanned; older history lives in the sealed volumes."
+                   % (p["coord_read_cap_bytes"] // 1024, p["coord_read_cap_bytes"] // 1024))
+    dline(out, "LEDGER TAIL (last %d; each line clipped to %d bytes):"
+               % (len(tail), BRIEF_LINE_BYTES))
+    for ln in tail:
+        dline(out, ln)
+    dline(out, "CONTINUABLE — full packet: `establish.py continuation` from this root "
+               "(or /notrest)")
+    print(BRIEF_HEADER)
+    for ln in out:
+        print(ln)
+    print(BRIEF_END)
+    return EXIT_OK
+
+
+def _brief_deadline(seconds=5):
+    """A wall-clock bound that travels with the packet. REVIEW ROUND (2026-09-01, C2):
+    the hook wrapped this in `timeout`, which is NOT in the macOS base system — only
+    homebrew coreutils — so on a stock machine the bound silently did not exist and a
+    stalled read held session start open for a measured 22s. python3 IS a hard
+    dependency of this file, so the alarm lives here and cannot be absent. SIGALRM is
+    unavailable on some platforms (Windows); there the call is simply unbounded, as
+    before, rather than failing."""
+    try:
+        import signal
+
+        def _blow(_sig, _frm):
+            raise TimeoutError("brief packet exceeded %ds" % seconds)
+
+        signal.signal(signal.SIGALRM, _blow)
+        signal.alarm(seconds)
+        return True
+    except Exception:
+        return False
+
+
+def _brief_deadline_clear():
+    try:
+        import signal
+        signal.alarm(0)
+    except Exception:
+        pass
+
+
 def cmd_continuation(args):
     """The successor's one-gulp read of where the build stands. Read-only, always."""
+    if getattr(args, "brief", False):
+        # The brief path runs inside a SessionStart hook — see _brief_deadline (C2).
+        _brief_deadline(5)
+    try:
+        return _cmd_continuation(args)
+    except TimeoutError as e:
+        # Bounded and SILENT on stdout: the hook's terminator gate then injects nothing,
+        # and the session falls back to the ordinary nudges rather than a fragment.
+        sys.stderr.write("notrest: %s — no packet emitted\n" % e)
+        return EXIT_NONE
+    finally:
+        _brief_deadline_clear()
+
+
+def _cmd_continuation(args):
     root, err = resolve_root(args.root)
     if err:
         sys.stderr.write("notrest: %s\n" % err)
@@ -918,11 +1194,14 @@ def cmd_continuation(args):
     if args.json:
         print(json.dumps(p, indent=1, sort_keys=True))
         return EXIT_OK
+    if getattr(args, "brief", False):
+        return print_brief(root, surface, p)
     print("notrest continuation — %s" % root)
     print("  ESTABLISHED · protocol v%s · COORD volumes sealed: %d · agent volumes sealed: %d"
           % (p["protocol_version"], p["coord_sealed_volumes"], p["agents_sealed_volumes"]))
     if p["git_repo"] and p["git_head"]:
-        print("  git %s · %d dirty file(s) · last commit: %s"
+        # %s, not %d — dirty is None when `git status` fails under a live HEAD.
+        print("  git %s · %s dirty file(s) · last commit: %s"
               % (p["git_head"], p["git_dirty_files"], p["git_last_subject"]))
     elif p["git_repo"]:
         print("  git repo with no commits yet · %s dirty file(s) · no HEAD to compare against"
@@ -937,6 +1216,11 @@ def cmd_continuation(args):
             print("\n%s" % label)
             for ln in p[key]:
                 print("  %s" % ln)
+    if p["coord_truncated_read"]:
+        print("\n  NOTE: COORD.md exceeds the %d KiB read cap — only its newest %d KiB were "
+              "scanned (the ships/gates/corrections above come from that window); older "
+              "history lives in the sealed volumes."
+              % (p["coord_read_cap_bytes"] // 1024, p["coord_read_cap_bytes"] // 1024))
     print("\nCOORD TAIL (last %d)" % p["coord_lines_shown"])
     for ln in p["coord_tail"]:
         print("  %s" % ln)
@@ -1288,6 +1572,9 @@ def main(argv=None):
     n.add_argument("--surface", choices=("auto", "codex", "claude", "both"), default="auto",
                    help="foundation surface to read (default: auto — host signals decide)")
     n.add_argument("--json", action="store_true", help="machine output, stable key order")
+    n.add_argument("--brief", action="store_true",
+                   help="the COMPACT packet a SessionStart hook can inject on every "
+                        "session (bounded, deterministic, seeds nothing)")
     args = ap.parse_args(argv)
     if args.cmd == "check":
         return cmd_check(args)

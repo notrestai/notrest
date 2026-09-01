@@ -1,5 +1,37 @@
 # Changelog — the notrest harness
 
+## 4.6.0 — 2026-09-01
+
+**Opening a session in your own project IS resuming it.**
+
+- **AUTO-CONTINUATION.** A new session in an established estate is handed the trail
+  itself: `continuation --brief` emits a compact packet (this repo: 18 lines, ~800
+  tokens) and the SessionStart hook injects it, so a successor starts knowing the build's
+  state, git position, newest ship/gate/correction and the last eight ledger lines
+  without anyone typing `/notrest`. `.notrest-quiet` silences one estate; the full packet
+  stays one command away.
+- **It ships behind three refuter rounds, and they earned it.** Round one found a live
+  context-injection path: control characters inside a single ledger record split it into
+  extra output lines and MINTED a convincing fake harness directive — and the estate's own
+  trail quotes harness echoes verbatim as evidence, so this was self-inflicted, not
+  hypothetical. Records now split on `\n` alone, every control character renders a visible
+  `<ctrl>`, and every data line is framed `| ` so nothing quoted can reach column 0 or wear
+  a `[notrest] ` prefix. Also closed: refusals and half-packets injecting under a "live
+  build" banner (the hook now gates on exit code AND a packet terminator), a `%d`-on-`None`
+  crash in BOTH packets, a byte budget blown 64% by ordinary emoji, and torn concurrent
+  reads that quoted a half-written line and inverted a rollback's meaning.
+- **Session start got 137x faster on a large ledger** — 13.71s / 902 MB → 0.10s / 18.4 MB
+  (one bounded tail seek plus a chunked `## LEDGER` scan replacing two full reads), and the
+  wall-clock bound now lives inside `establish.py`: the hook wrapped it in `timeout`, which
+  is not in the macOS base system, so on a stock machine the bound silently did not exist
+  and a stalled read held session start open for a measured 22 seconds.
+- **Two vacuous passes killed, one in the block written to end vacuous passes.** The arm
+  certifying the byte bound passed under the un-repaired code because every corpus line was
+  long enough to trip the character cap too; it now carries a discriminating line (126
+  chars / 426 bytes) and the named mutation fails it. A fixture setup step that promised to
+  "commit the one file by name" committed nothing at all. And a 1-in-3 flake was traced to
+  `establish`'s detached pulse writer racing the arm's own `git add -A`.
+
 ## 4.5.1 — 2026-09-01
 
 **The map, and one law on every surface.**

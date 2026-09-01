@@ -65,6 +65,18 @@ private) — stronger than the F1 gitignore fix and closes the refuter's PLAUSIB
 that a lane could write it; (d) receipts gain evidence fingerprints (output sha256, PATH,
 shell resolution). Touches briefs, hooks, and the gate: kernel round, refuter required.
 
+## 9 · Director → agentswarm consolidation (owner question, seat-assessed 2026-09-01)
+The owner asked whether director/actionplan/stepbystep/critic/researcher could be replaced
+by the swarm + model judgment. Seat verdict, from this session's own evidence: the four
+CONTRACT skills stay — their value is falsifiable grammars and mechanical lints (plan_lint,
+runbook_lint, the verdict/label grammars) that no delivery arrangement replaces; "let the
+model decide" the WHAT is the confident-claim failure mode, while the model deciding the
+HOW is already encoded (tieredswarm's measured gate, proven by the D-arm). DIRECTOR is the
+real overlap: sequential orchestration the seat+lanes already do. Candidate: fold its
+doctrine into agentswarm as a sequential-pipeline section, keep director.py verify as an
+instrument (sha-checked hand-offs are structural proof a summarizer cannot fake), retire
+the verb. Skill-count change across five surfaces — schedule after the workshop.
+
 ## Also carried
 - Cross-runtime pickup ritual made explicit in the notrest SKILL continuation section
   (`--surface both` as the one-time bridge; Codex takes the files-only mentor fallback;

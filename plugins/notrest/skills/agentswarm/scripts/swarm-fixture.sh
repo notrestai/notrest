@@ -215,6 +215,58 @@ for _ in $(seq 1 40); do
 done
 t "…and self-terminates once every lane has receipted" "${GONE:-no}" "1"
 
+# ══ v4.5 · THE VERDICT WINDOWS; THE HISTORY STAYS REPORTED ═══════════════════════════
+#
+# GATE ROT, owner-found on the real estate 2026-09-01: `report` judged ALL 199 lanes ever
+# receipted, 87 of them degraded — and a degraded receipt is an APPEND-ONLY row in an
+# append-only ledger. It can never heal. FLAGGED/exit 5 could therefore never clear
+# again, whatever the estate did next, which is exactly the alert-that-fires-forever the
+# harness's own WARN-never-blocks law calls rot: a gauge nobody can satisfy is a gauge
+# nobody reads. The verdict now runs on RECENT practice; the totals stay on the page.
+VW="$W/verdict"; mkdir -p "$VW/spend"
+vled(){ { echo "# ledger"; cat; } > "$VW/spend/ledger.md"; }
+vrun(){ python3 "$SW" report --root "$VW" > "$W/v.txt" 2>&1; echo $?; }
+
+# an OLD degraded lane (June) + a RECENT green one (September). Anchored on the newest
+# receipt, the June row is outside the verdict window — history, not current practice.
+vled <<'EOF'
+[2026-06-01 10:00Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " calls=? secs=? agent=ancientdegraded
+[2026-09-01 10:00Z] lane=subagent model=claude-opus-5 tokens=1000 grade=observed purpose="auto-receipt: fine" calls=12 secs=240 agent=freshgreen
+EOF
+t "an UNHEALABLE old degraded row no longer holds the gauge red (exit 0)" "$(vrun)" "0"
+has "…and the verdict says which window it judged" "verdict over the last" "$W/v.txt"
+has "…while the all-time history is still reported, not hidden" "all-time" "$W/v.txt"
+t "…all-time still counts the old lane (history is never dropped)" \
+  "$(grep -c 'ancientdegraded' "$W/v.txt")" "1"
+has "…and the summary line carries both readings" "all-time: 2 lane(s)" "$W/v.txt"
+
+# the same estate plus a degraded lane INSIDE the window: current practice is red, and
+# the gauge must say so.
+vled <<'EOF'
+[2026-06-01 10:00Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " calls=? secs=? agent=ancientdegraded
+[2026-09-01 10:00Z] lane=subagent model=claude-opus-5 tokens=1000 grade=observed purpose="auto-receipt: fine" calls=12 secs=240 agent=freshgreen
+[2026-09-01 11:00Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " calls=? secs=? agent=freshdegraded
+EOF
+t "a degraded lane INSIDE the window still flags (exit 5)" "$(vrun)" "5"
+has "…and the verdict counts it in the recent reading" "1 degraded" "$W/v.txt"
+# a monolith inside the window flags too — the window narrows WHO is judged, never WHAT
+vled <<'EOF'
+[2026-06-01 10:00Z] lane=subagent model=claude-opus-5 tokens=9000 grade=observed purpose="auto-receipt: fat" calls=60 secs=300 agent=ancientmono
+[2026-09-01 10:00Z] lane=subagent model=claude-opus-5 tokens=1000 grade=observed purpose="auto-receipt: fine" calls=12 secs=240 agent=freshgreen
+EOF
+t "an old MONOLITH outside the window does not flag either (exit 0)" "$(vrun)" "0"
+vled <<'EOF'
+[2026-09-01 10:00Z] lane=subagent model=claude-opus-5 tokens=1000 grade=observed purpose="auto-receipt: fine" calls=12 secs=240 agent=freshgreen
+[2026-09-01 11:00Z] lane=subagent model=claude-opus-5 tokens=9000 grade=observed purpose="auto-receipt: fat" calls=60 secs=300 agent=freshmono
+EOF
+t "a monolith INSIDE the window flags (exit 5)" "$(vrun)" "5"
+
+# --json must carry both readings too, or a machine consumer sees only one of them
+python3 "$SW" report --root "$VW" --json > "$W/v.json" 2>&1
+t "--json carries the windowed verdict counts" "$(J "$W/v.json" verdict_lanes)" "2"
+t "--json still carries the all-time lane total" "$(J "$W/v.json" lanes)" "2"
+t "--json names the verdict window in days" "$(J "$W/v.json" verdict_window_days)" "14"
+
 # ══ v4.5 · NESTED-LANE RECEIPT FIDELITY (docket 7) ══════════════════════════════════
 #
 # ROOT CAUSE, live-proven on this estate 2026-08-31: the depth-2 lane

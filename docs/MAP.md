@@ -530,3 +530,18 @@ Gap candidates for the owner's review. Each is stated with the evidence that pro
     `hooks.json` registers 9 scripts across 8 events. The three numbers are all defensible but
     none of them is written down anywhere, so "how many hooks does notrest have" has three
     answers depending on which instrument you ask.
+
+
+## Canon rulings (2026-09-01, closing the map's own loose threads)
+
+**The hook count.** Canonical number: **11 lifecycle hooks** — the scripts eval's
+HOOK-CONTRACT counts. `estate-root.sh` is a sourced library (every hook's shared resolver,
+never fired by an event), and `gate-check.py` is an instrument the Stop hook *runs*, not a
+hook. `hooks.json` registers 7 events; two events carry matcher-split entries, which is why
+"registered entries" undercounts scripts. When three numbers disagree, cite this paragraph.
+
+**ROUTE-CONFORMANCE stays SKIP by convention.** No `routed to /<skill>` line has ever been
+banked, so the check has no data. The convention going forward: when a seat deliberately
+FOLLOWS a router nudge, its COORD line for that work includes `routed to /<skill>`; when it
+deliberately overrides, nothing is owed. The check is WARN-grade by design and a permanent
+SKIP is honest absence, not a defect.

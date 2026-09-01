@@ -25,10 +25,17 @@ Apply in order. The first rule that fires decides; do not skip to the shape.
 2. **Flat solo opus by default.** For judgment work that fits in one lane's context, one
    opus lane, reading directly, is the measured winner — ~40% cheaper than the best tiered
    arm *and* deeper. Default means default: tiering needs a reason stated out loud.
-3. **Tier only for (a) payloads that exceed one lane's context, or (b) wide parallelism
-   with a lean fan-in.** Both of these are `[unmeasured]` — they are the regimes the
-   pattern was born in and neither has been benchmarked. Say `[unmeasured]` when you
-   invoke this rule; it is an argument, not a receipt.
+3. **Tier only for (a) payloads that exceed one lane's context, (b) wide parallelism
+   with a lean fan-in, or (c) LOCAL MODELS CALLED AS TOOLS.** (a) and (b) are
+   `[unmeasured]` — say so when you invoke them; an argument is not a receipt. (c) is
+   `[operator-reported]` (the owner, 2026-09-01) and its economics genuinely invert the
+   four-round result: a local model reached as a *tool call* (ollama-style, from inside
+   the lane) pays neither the ~20k-token harness boot every cloud subagent paid in the
+   benchmark nor per-token API rates — breadth becomes free, and the lane keeps the
+   judgment. Two honesty rules travel with (c): a local model's output is
+   `[model-opinion]`-grade material, never evidence (the gpt lane's law, same reason);
+   and local calls are invisible to the spawn-gate and the spend ledger — the lane's
+   own return must say which local model did the reading, or the tiering is unauditable.
 4. **Sonnet workers only under a declared mechanical/DRAFT tier.** The dispatching text
    must carry that declaration verbatim, per the owner's 2026-08-30 amendment. Round B is
    why: sonnet workers on judgment material were dominated on **both** axes — more tokens

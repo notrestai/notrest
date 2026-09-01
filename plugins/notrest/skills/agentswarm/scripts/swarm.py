@@ -6,6 +6,8 @@ to tell whether either was working. This reads the receipts the estate already w
 answers one question: **were the lanes the right size?**
 
     report [--root .] [--window 7d] [--json]
+      totals are all-time (or --window); the VERDICT and the exit code run
+      on the last REPORT_WINDOW_DAYS only — see that constant for why.
 
 Joins `spend/ledger.md` (the receipts) with `COORD-AGENTS.md` (the transcript pointers)
 and `briefs/` (the banked commissions), one row per lane, then bands each lane by the two
@@ -41,6 +43,23 @@ import time
 from datetime import datetime, timedelta, timezone
 
 EXIT_OK, EXIT_USAGE, EXIT_FLAGGED, EXIT_NODATA = 0, 2, 5, 6
+
+# ── THE VERDICT WINDOW (owner-ordered 2026-09-01) ────────────────────────────────────
+#
+# GATE ROT, found on this estate's own ledger: `report` judged EVERY lane ever
+# receipted — 199 of them, 87 carrying a degraded receipt — and `spend/ledger.md` is
+# APPEND-ONLY BY LAW. A degraded row can never be corrected, so FLAGGED/exit 5 could
+# never clear again no matter what the estate did next. That is an alert which fires
+# forever on something nobody can fix, and the harness's own WARN-never-blocks doctrine
+# names the consequence: a gate that is permanently red trains the override reflex, and
+# a habitually-overridden gate is worse than no gate.
+#
+# The split: HISTORY IS STILL REPORTED — every all-time total stays on the page, and the
+# rows are still listed — but only lanes inside this window move the verdict and the
+# exit code. The gauge exists to describe CURRENT decomposition practice; an unhealable
+# row from July is history, not practice. Like every other window here it is anchored on
+# the NEWEST RECEIPT rather than the wall clock, so the reading stays reproducible.
+REPORT_WINDOW_DAYS = 14
 
 GREEN_CALLS, GREEN_SECS = 30, 10 * 60
 MONO_CALLS, MONO_SECS = 45, 15 * 60
@@ -224,10 +243,28 @@ def build(root, window_days):
     gates, corrections = rework(root, receipts)
     monoliths = [r for r in receipts if r["band"] == "MONOLITH"]
     degraded = [r for r in receipts if r["degraded"]]
+
+    # The verdict subset. An explicit --window narrower than the verdict window governs
+    # (the caller asked for a narrower reading and gets it); a wider one does NOT widen
+    # the verdict, because the whole point is that old rows cannot hold the gauge red.
+    vdays = window_days if (window_days and window_days < REPORT_WINDOW_DAYS) \
+        else REPORT_WINDOW_DAYS
+    if newest:
+        vcut = newest - timedelta(days=vdays)
+        vrecent = [r for r in receipts if r["when"] and r["when"] >= vcut]
+    else:
+        vrecent = list(receipts)
+    vmono = [r for r in vrecent if r["band"] == "MONOLITH"]
+    vdeg = [r for r in vrecent if r["degraded"]]
+
     return {
         "root": root,
         "window_days": window_days,
         "window_anchor": newest.strftime("%Y-%m-%d %H:%MZ") if newest else None,
+        "verdict_window_days": vdays,
+        "verdict_lanes": len(vrecent),
+        "verdict_monolith": len(vmono),
+        "verdict_degraded": len(vdeg),
         "lanes": len(receipts),
         "band_green": sum(1 for r in receipts if r["band"] == "GREEN"),
         "band_wide": sum(1 for r in receipts if r["band"] == "WIDE"),
@@ -292,7 +329,7 @@ def cmd_report(args):
                      "yes" if r["brief"] else "no", r["band"], r["why"],
                      " [derived]" if r["derived"] else ""))
         print()
-        print("  lanes: %d · green %d · wide %d · MONOLITH %d · unknown %d"
+        print("  lanes: %d · green %d · wide %d · MONOLITH %d · unknown %d  [all-time]"
               % (rep["lanes"], rep["band_green"], rep["band_wide"],
                  rep["band_monolith"], rep["band_unknown"]))
         print("  calls/lane: median %s · p90 %s · max %s"
@@ -305,11 +342,19 @@ def cmd_report(args):
               "over-decomposition, not progress")
         if rep["receipts_degraded"]:
             print("  DEGRADED RECEIPTS: %d of %d carry model=? or tokens=unknown — the "
-                  "band cannot see those lanes" % (rep["receipts_degraded"], rep["lanes"]))
-        verdict = ("FLAGGED" if (rep["band_monolith"] or rep["receipts_degraded"])
-                   else "IN BAND")
-        code = (EXIT_FLAGGED if (rep["band_monolith"] or rep["receipts_degraded"])
-                else EXIT_OK)
+                  "band cannot see those lanes  [all-time]"
+                  % (rep["receipts_degraded"], rep["lanes"]))
+        print("  verdict over the last %dd: %d lanes, %d monoliths, %d degraded · "
+              "all-time: %d lanes, %d monoliths, %d degraded"
+              % (rep["verdict_window_days"], rep["verdict_lanes"],
+                 rep["verdict_monolith"], rep["verdict_degraded"],
+                 rep["lanes"], rep["band_monolith"], rep["receipts_degraded"]))
+        print("    only in-window lanes move the verdict: the ledger is append-only, so "
+              "a degraded row from months ago can never heal and must not hold the gauge "
+              "red forever. The history above stays visible.")
+        flagged = bool(rep["verdict_monolith"] or rep["verdict_degraded"])
+        verdict = "FLAGGED" if flagged else "IN BAND"
+        code = EXIT_FLAGGED if flagged else EXIT_OK
         # LIVE SECTION — deliberately OUTSIDE the byte-identical guarantee. Everything
         # above reads the estate and is reproducible; this reads the PROCESS TABLE, whose
         # ages tick and whose rows come and go. Marked so a reader (and a fixture) knows
@@ -329,9 +374,13 @@ def cmd_report(args):
                          ("  [" + " ".join(b["flags"]) + "]") if b["flags"] else ""))
             if not bg:
                 print("    (none — no refreshers or watchers running for any project)")
-        print("\nswarm: %s — %d lane(s), %d monolith(s), %d degraded receipt(s) (exit %d)"
-              % (verdict, rep["lanes"], rep["band_monolith"], rep["receipts_degraded"], code))
-    return (EXIT_FLAGGED if (rep["band_monolith"] or rep["receipts_degraded"]) else EXIT_OK)
+        print("\nswarm: %s — last %dd: %d lane(s), %d monolith(s), %d degraded "
+              "receipt(s) · all-time: %d lane(s), %d monolith(s), %d degraded (exit %d)"
+              % (verdict, rep["verdict_window_days"], rep["verdict_lanes"],
+                 rep["verdict_monolith"], rep["verdict_degraded"],
+                 rep["lanes"], rep["band_monolith"], rep["receipts_degraded"], code))
+    return (EXIT_FLAGGED if (rep["verdict_monolith"] or rep["verdict_degraded"])
+            else EXIT_OK)
 
 
 # ---------------------------------------------------------------- the watcher

@@ -1,16 +1,16 @@
 {
  "W1": {
-  "at": "2026-07-26",
+  "at": "2026-09-01",
   "etag": "",
   "last-modified": "",
-  "sha256": "4d6d2e39e280d778",
+  "sha256": "7f4bab7d9d00a0d7",
   "url": "https://code.claude.com/docs/en/plugins-reference"
  },
  "W2": {
-  "at": "2026-07-26",
+  "at": "2026-09-01",
   "etag": "",
   "last-modified": "",
-  "sha256": "2f232b1c5bd070b9",
+  "sha256": "46546aa5fff99383",
   "url": "https://code.claude.com/docs/en/hooks"
  }
 }
