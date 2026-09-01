@@ -55,6 +55,16 @@ at depth 2 is exact — the gate refuses unlawful nested spawns — but a `/spen
 under-counts layer 3. Fix belongs in the agent-ledger hook's receipt writer (kernel:
 refuter round).
 
+## 8 · Commission gates — unlazy-inspired (owner pointed at leonxlnx/unlazy, 2026-09-01)
+Turn done-when prose into mechanism, four pieces as one round: (a) commissions in
+`briefs/` carry executable `CHECK:`/`EXPECT:` blocks so the builder's contract is
+runnable by the gate itself; (b) a Stop/completion hook that blocks a "done" claim while
+a declared gate is red — the vacuous-pass killer applied to the claim, not just the ship;
+(c) the auto-build authorization marker moves OUTSIDE the repo (~/.notrest/ style, owner-
+private) — stronger than the F1 gitignore fix and closes the refuter's PLAUSIBLE finding
+that a lane could write it; (d) receipts gain evidence fingerprints (output sha256, PATH,
+shell resolution). Touches briefs, hooks, and the gate: kernel round, refuter required.
+
 ## Also carried
 - Cross-runtime pickup ritual made explicit in the notrest SKILL continuation section
   (`--surface both` as the one-time bridge; Codex takes the files-only mentor fallback;
