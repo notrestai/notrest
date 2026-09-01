@@ -1,5 +1,9 @@
 # 4.4 docket — owner-approved 2026-08-21
 
+> **Naming note (2026-08-31):** v4.4.0 shipped without these items (it carried the
+> owner's hardening sweep + the ship-gate battery fixes). Everything below now
+> targets the next kernel round (4.5+). Content unchanged.
+
 Source: the two v4.3.0 ship-time refuter rounds (finding lane + review-the-fix lane, both
 transcripts under `briefs/`; ship `f6aab09`). Owner approved docketing 2026-08-21. Items 1,
 4, 5 touch `establish.py` — **kernel: each ships only through a refuter round.**

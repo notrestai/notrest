@@ -1,5 +1,47 @@
 # Changelog — the notrest harness
 
+## 4.4.0 — 2026-08-31
+
+**The owner's hardening sweep lands, and the battery that gated it caught what the sweep's
+own fixtures could not.**
+
+Upstream work (18 commits, merged and released here): the spend headline now counts only
+what was evidenced, never the unverifiable (S38); the agent-ledger hook stops writing
+bytecode into its own repo and refuses a receipt it cannot make honest (S50); compile's
+`contract` refuses to fill from a grep when no scanned candidate exists; swarm's watcher
+gains measured liveness with host-gating, the DEAD-BY-MARKER third state (S83), and
+stamp-order fixes (S81); the offload law is amended — explicit sonnet lanes are lawful for
+mechanical/DRAFT-tier briefs (owner, 2026-08-30), opus stays the default, haiku and
+omitted models stay refused at the door.
+
+Ship-gate battery findings, all fixed in this release:
+
+- **swarm.py liveness control failed by construction on macOS** — on a `/proc`-less host
+  the snapshot's own short-lived `ps` child was drawn as the "provably absent" control
+  arm, turning every sweep into DETECTOR-BROKEN (exit 5 on an empty estate). Candidates
+  present in the snapshot are re-drawn, capped so the filter stays falsifiable.
+- **The watch daemon self-terminated in ~1.5s** while claiming "every known lane
+  receipted": its quiet predicate counted only host-recognised running lanes, which
+  host-gating makes zero in any estate without a recognisable host. The predicate now
+  matches the footer — nothing running AND nothing unreceipted left in the window
+  (dead-marker lanes excluded: nothing will ever receipt them).
+- **Two fixtures asserted superseded contracts** and were brought to the code: compile's
+  unscanned-root arms (refusal, not a grep-table) and swarm's frozen-lane arm
+  (STALL-UNRESOLVABLE under host-gating). Compile's masked empty-rows exit got its own
+  arm — it had been passing through the refusal gate for the wrong reason.
+- **dead-by-marker-arm.sh had never run on any machine but its author's** — a hardcoded
+  `/home/dev` subject path (exit 2 everywhere else) and GNU-only `touch -d @epoch` aging
+  (silently inert on BSD/macOS, leaving every lane 0s idle so no stall alert could ever
+  fire). Both portable now; the arm's negative control runs for real: 5 ok / 0 red.
+
+`docs/DOCKET-4.4.md` joins the golden release surface: it is a durable docs surface
+that will carry per-release retarget notes, and RELEASE-SURFACE correctly refused the
+unregistered edit until it was named here.
+
+Battery at ship: 30 fixtures green, 22/22 py_compile, eval 0, doctor 5 (the app-side
+packs WARN, owner-panel only). The 4.4 defect docket (docs/DOCKET-4.4.md) is NOT in this
+release — those items now target the next kernel round.
+
 ## 4.3.0 — 2026-08-06
 
 **Codex is now a first-class runtime adapter, not a Claude package that happens to load.**

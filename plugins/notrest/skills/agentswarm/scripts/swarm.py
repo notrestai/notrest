@@ -601,6 +601,13 @@ def sweep(root, started=None):
                       "a fallback: with liveness unknown, a lane's state is UNKNOWN, never "
                       "assumed. Fix the detector, then read again." % why)
     lines.append("")
+    # Lanes that can still receipt hold the watcher open (2026-08-31 battery finding:
+    # the daemon self-terminated in ~1.5s with a footer claiming every lane was
+    # receipted, because `active` counts only host-recognised RUNNING lanes and the
+    # 2026-08-26 host-gating makes that zero in any estate without a recognisable
+    # host). A dead-marker lane is excluded: its transcript says terminal, nothing
+    # will ever receipt it, and a watcher held open by the unreceiptable is immortal.
+    unreceipted_actionable = 0
     for r in rows:
         host = None
         if detector_ok and not r["receipted"]:
@@ -635,6 +642,8 @@ def sweep(root, started=None):
         else:
             active += 1
             state, why = "running", "  host=pid %s" % host["pid"]
+        if not r["receipted"] and state != "dead-marker":
+            unreceipted_actionable += 1
         lines.append("  %-19s %-9s calls=%-4d idle=%dm%02ds%s"
                      % (r["agent"][:19], state, r["calls"],
                         r["idle_secs"] // 60, r["idle_secs"] % 60, why))
@@ -666,7 +675,8 @@ def sweep(root, started=None):
             alerts.append("ALERT MONOLITH-IN-PROGRESS %s — %d live calls past the %d band "
                           "while still running; the NEXT contract for this work splits further"
                           % (r["agent"][:19], r["calls"], MONO_CALLS))
-    return lines + ([""] + alerts if alerts else []), alerts, active
+    return (lines + ([""] + alerts if alerts else []), alerts, active,
+            unreceipted_actionable)
 
 
 BG_PATTERNS = ("estate-pulse.sh", "swarm.py watch")
@@ -832,6 +842,8 @@ def detector_control(rows):
     Returns (ok, detail)."""
     live = os.getpid()
     dead = None
+    seen = set(r["pid"] for r in rows)
+    collisions = 0
     for cand in range(live + 1, live + 8192):
         if cand == live:
             continue                      # never let the arms collapse
@@ -842,6 +854,21 @@ def detector_control(rows):
             continue                      # it exists — not provably absent
         except OSError as e:
             if getattr(e, "errno", None) == errno.ESRCH:
+                # ESRCH now but PRESENT in the snapshot = alive when the table was read,
+                # dead since. On a /proc-less host the snapshot itself spawns a
+                # short-lived `ps` child at the very next pid, so the FIRST candidate is
+                # routinely this measurement artifact — the control failed by
+                # construction on every macOS --once run until the 2026-08-31 battery
+                # caught it. Such a pid is not provably-absent-throughout: re-draw.
+                # MANY such pids is a different fact — a table full of entries that no
+                # longer exist is itself broken — so the re-draw is capped and the cap
+                # is a FAIL, which keeps this selection filter falsifiable.
+                if str(cand) in seen:
+                    collisions += 1
+                    if collisions > 8:
+                        return False, ("table lists %d pid(s) that no longer exist — "
+                                       "the snapshot is stale or invented" % collisions)
+                    continue
                 dead = cand
                 break
             continue                      # EPERM: exists but is not ours
@@ -852,12 +879,12 @@ def detector_control(rows):
     if dead == live:
         return False, ("control arms collapsed onto the same pid %d — two arms that are "
                        "one object test nothing" % live)
-    seen = set(r["pid"] for r in rows)
     a_ok = str(live) in seen
     b_ok = str(dead) not in seen
     detail = ("arms are distinct objects: live=%d vs provably-absent=%d · saw-itself=%s · "
-              "absent-stayed-absent=%s · %d process(es) enumerated"
-              % (live, dead, a_ok, b_ok, len(rows)))
+              "absent-stayed-absent=%s · drawn past %d snapshot collision(s) · "
+              "%d process(es) enumerated"
+              % (live, dead, a_ok, b_ok, collisions, len(rows)))
     return (a_ok and b_ok), detail
 
 
@@ -979,22 +1006,21 @@ def cmd_watch(args):
     if not args.once and not args.foreground:
         daemonize()
     if args.once:
-        lines, alerts, _active = sweep(root, started)
+        lines, alerts, _active, _unrec = sweep(root, started)
         write(lines)
         return EXIT_FLAGGED if alerts else EXIT_OK
 
     quiet, seen = 0, {}
     while True:
-        lines, alerts, active = sweep(root, started)
+        lines, alerts, active, unrec = sweep(root, started)
         write(lines)
         sig = {}
         for l in lines:
             if l.startswith("  "):
                 sig[l[:40]] = l
-        if sig == seen and not active:
-            quiet += 1
-        elif not active:
-            # nothing inside the discovery window at all: there is no swarm to watch.
+        if not active and not unrec:
+            # Nothing running AND nothing left that could still receipt — the window is
+            # empty, or every remaining lane is receipted or terminally marked.
             quiet += 1
         else:
             quiet = 0
@@ -1002,7 +1028,8 @@ def cmd_watch(args):
         # SELF-TERMINATION: every lane receipted and nothing grew for QUIET_ROUNDS polls.
         # A watcher that outlives its swarm is a background process nobody asked for.
         if quiet >= QUIET_ROUNDS:
-            write(lines + ["", "# watch ended: every known lane receipted and nothing grew "
+            write(lines + ["", "# watch ended: no running lane and nothing unreceipted "
+                                "left in the window (receipted or terminally marked) "
                                 "for %d polls" % QUIET_ROUNDS])
             return EXIT_OK
         time.sleep(POLL_SECS)

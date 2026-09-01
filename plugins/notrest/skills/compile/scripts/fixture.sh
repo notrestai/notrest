@@ -214,18 +214,32 @@ ok=all((pathlib.Path('$R')/f).is_file() and len((pathlib.Path('$R')/f).read_text
 print(bool(refs) and ok)")" "True"
 python3 "$CP" contract --root "$R" --slug quantum-basket-weaving > "$W/none.md" 2>&1
 t "a slug with no trail evidence exits 3, with no invented rows" "$?" "3"
-has "…and says why plainly" "there is nothing to reconstruct" "$W/none.md"
+has "…via the refusal gate, named" "a cluster instead of a grep" "$W/none.md"
 python3 "$CP" contract --root "$R" --slug "$SLUG" --write "$W/written.md" >/dev/null 2>&1
 t "--write puts the draft on disk" "$([ -s "$W/written.md" ] && echo yes)" "yes"
 python3 "$CP" contract --root "$R" --slug "$SLUG" --max-rows 2 > "$W/capped.md" 2>&1
 t "--max-rows caps the table" \
   "$(grep -c '^| [0-9]* | _<rewrite' "$W/capped.md" | tr -d ' ')" "2"
 has "…and says the cap was hit" "capped at --max-rows 2" "$W/capped.md"
-# An unscanned root still yields a contract: the slug's own tokens are the query.
+# An unscanned root REFUSES rather than filling (contract changed upstream, merged
+# 2026-08-31): no candidate means no contract, and the only safe output is no output.
+# The old grep-fallback printed a table invented from the slug's own tokens.
 R6="$W/unscanned"; mkdir -p "$R6"; cp "$R/COORD.md" "$R6/"
 python3 "$CP" contract --root "$R6" --slug "release-changelog" > "$W/unscanned.md" 2>&1
-t "contract works with no scan on disk" "$?" "0"
-has "…and says the row set is a grep, not a cluster" "a grep, not a cluster" "$W/unscanned.md"
+t "contract on an unscanned root REFUSES, exit 3" "$?" "3"
+has "…naming the law it applies" "a cluster instead of a grep" "$W/unscanned.md"
+t "…and invents nothing resembling a contract table" \
+  "$(grep -c '^| [0-9]* |' "$W/unscanned.md" | tr -d ' ')" "0"
+
+# The empty-rows exit is a DIFFERENT condition (a real scanned candidate whose trail no
+# longer yields rows) and was masked once the refusal gate landed ahead of it — this arm
+# reaches it deliberately: scan first, then empty the trail, then ask.
+R7="$W/emptied"; mkdir -p "$R7"; cp "$R/COORD.md" "$R7/"
+python3 "$CP" scan --root "$R7" >/dev/null 2>&1
+printf '# COORD.md — session coordination ledger\n\n## LEDGER\n' > "$R7/COORD.md"
+python3 "$CP" contract --root "$R7" --slug "$SLUG" > "$W/emptied.md" 2>&1
+t "a scanned candidate whose trail emptied exits 3" "$?" "3"
+has "…via the empty-rows wording, not the refusal" "estate entries — there is nothing to reconstruct" "$W/emptied.md"
 
 echo "── K · scaffold creates an isolated runtime and never overwrites one"
 python3 "$CP" scaffold --root "$R" --slug demo-runtime >/dev/null 2>&1

@@ -11,6 +11,7 @@ CHANGELOG.md
 CLAUDE.md
 README.md
 docs/CAPABILITIES.md
+docs/DOCKET-4.4.md
 docs/TUTORIAL.md
 docs/UNDERSTANDING.md
 docs/oracle-skill-flow.html

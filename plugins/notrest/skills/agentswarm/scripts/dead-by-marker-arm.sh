@@ -10,7 +10,11 @@
 # carrying one has an expiry and would flip silently as the clock moves (Master b3344ea).
 # ⛔ VERDICT LAST.
 set -u
-W=/home/dev/notrest/plugins/notrest/skills/agentswarm/scripts/swarm.py
+# Subject resolved from this script's own location — a hardcoded author-machine path
+# made this arm exit 2 on every other box (found by the 2026-08-31 battery: the arm
+# had never run on the machine it shipped from).
+ARMHERE="$(cd "$(dirname "$0")" && pwd)"
+W="$ARMHERE/swarm.py"
 [ -f "$W" ] || { echo "arm: SUBJECT MISSING - no swarm.py at $W" >&2; exit 2; }
 SB="$(mktemp -d)"; trap 'rm -rf "$SB"' EXIT INT TERM
 R="$SB/fixroot"; mkdir -p "$R/spend"
@@ -40,7 +44,10 @@ recs = [
 open(p, "w", encoding="utf-8").write("\n".join(json.dumps(r) for r in recs) + "\n")
 PY
 # idle well past STALL_SECS (600) so the CURRENT watcher would call it STALL - computed, not literal
-touch -d "@$((NOW_EPOCH - 3000))" "$TD/$DEAD.output"
+# os.utime, not `touch -d "@epoch"`: that @-form is GNU-only — on BSD/macOS touch
+# rejects it, the mtime silently stays NOW, idle reads 0s, and no stall-class
+# alert can ever fire (second Linuxism found by the 2026-08-31 battery).
+python3 -c 'import os,sys; t=int(sys.argv[2]); os.utime(sys.argv[1],(t,t))' "$TD/$DEAD.output" "$((NOW_EPOCH - 3000))"
 
 # ⛔ NEGATIVE CONTROL, and it is the arm that matters most: a lane that is NOT marker-dead,
 # equally idle and equally unreceipted, MUST STILL ALERT. Without it, a change that
@@ -52,7 +59,7 @@ recs = [{"type": "assistant", "message": {"role": "assistant",
          "content": [{"type": "text", "text": "still working, no terminal marker here"}]}}]
 open(sys.argv[1], "w", encoding="utf-8").write("\n".join(json.dumps(r) for r in recs) + "\n")
 PY
-touch -d "@$((NOW_EPOCH - 3000))" "$TD/$CTRL.output"
+python3 -c 'import os,sys; t=int(sys.argv[2]); os.utime(sys.argv[1],(t,t))' "$TD/$CTRL.output" "$((NOW_EPOCH - 3000))"
 echo "     transcript idle by: $(( (NOW_EPOCH - (NOW_EPOCH - 3000)) / 60 ))m (computed)"
 
 # `report` reads RECEIPTS; the liveness/STALL sweep is `watch`. The first draft drove

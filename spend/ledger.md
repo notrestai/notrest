@@ -167,3 +167,5 @@
 [2026-08-06 03:07Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a114a3c45eeb10fbc
 [2026-08-06 03:12Z] lane=subagent model=? tokens=unknown grade=estimate purpose="auto-receipt: " agent=a53c6e0bf3d0dd230
 [2026-08-22 18:10Z] lane=subagent model=claude-opus-5 tokens=16281406 grade=observed purpose="auto-receipt: Round 1 complete. Work is in the working tree, uncommitted," calls=82 secs=682 agent=ae1449ff1af9bd4d0
+[2026-09-01 04:30Z] lane=subagent model=claude-opus-5 tokens=611087 grade=observed purpose="auto-receipt: I'll start by reading the fixture log and the failing arms." calls=7 secs=46 agent=ae15ada3259c6bfbe
+[2026-09-01 04:32Z] lane=subagent model=claude-opus-5 tokens=1848623 grade=observed purpose="auto-receipt: Diagnosis complete. Two root causes, both in the newly merge" calls=16 secs=194 agent=a2e80f4829f139688

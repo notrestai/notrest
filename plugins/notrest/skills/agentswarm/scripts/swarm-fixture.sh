@@ -169,7 +169,9 @@ import os,sys,time
 p=sys.argv[1]; old=time.time()-(11*60)
 os.utime(p,(old,old))" "$TD/tasklane1.output"
 python3 "$SW" watch --root "$TR_ROOT" --once > /dev/null 2>&1
-has "a frozen tasks-dir lane raises STALL" "ALERT STALL tasklane1" "$LIVE"
+# Host-gated contract (2026-08-26 ruling): with no claude host recognisable for a
+# fixture estate, a frozen lane is UNRESOLVABLE — held as its own alert, never STALL.
+has "a frozen tasks-dir lane raises STALL-UNRESOLVABLE" "ALERT STALL-UNRESOLVABLE tasklane1" "$LIVE"
 
 # a receipted tasks-dir lane is done, not stalled
 printf '[2026-08-05 21:05Z] lane=subagent model=claude-opus-4 tokens=10 grade=observed purpose="auto-receipt: x" calls=2 secs=60 agent=tasklane1\n' \
