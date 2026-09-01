@@ -14,7 +14,9 @@ check doesn't come out the way this sheet says, that's interesting — tell your
 mkdir -p ~/harness-workshop && cd ~/harness-workshop
 ```
 
-Open a session there and run `/doctor`.
+Open a session there and run `/doctor`. It grades the **install**, not this folder — so
+point it at the plugin (`doctor.py check --plugin <plugin-root>`). Bare in here it exits
+`3`: *holds no plugin*.
 
 - [ ] Exit code: `______`  ·  does it block a ship? `______`
 
@@ -51,7 +53,9 @@ _______________________________________________
 
 ## 02 · `/notrest` — presence is not establishment
 
-**Beat 1** — in the folder as it stands:
+**Beat 1** — in a folder with **no** project marker at all. (If module 01 already wrote a
+`CLAUDE.md` here, that counts as a marker — do this beat in a fresh empty folder:
+`mkdir -p ~/harness-workshop-bare && cd ~/harness-workshop-bare`.)
 
 ```
 /notrest check
@@ -125,6 +129,9 @@ if grep -q "$PATTERN" notes.txt; then echo "PASS"; else echo "FAIL (correctly)";
 ---
 
 ## 04 · `/doctor` + `/eval` — the two gates
+
+Both grade the **harness**, not this project — give each one a target, or you get `3`
+(doctor: no plugin here) and `2` (eval: no skills here) instead of a health reading.
 
 ```
 /doctor

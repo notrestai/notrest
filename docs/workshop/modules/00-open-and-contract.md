@@ -32,7 +32,16 @@ Open a session there and run:
 /doctor
 ```
 
+**It has to be pointed at the harness.** `/doctor` grades an *install*, and a bare scratch
+folder holds no plugin — run bare there it exits **3**, *"holds no plugin"*, which is
+neither of the codes you want. Have the session grade the installed plugin instead:
+
+```bash
+python3 <plugin-root>/skills/doctor/scripts/doctor.py check --plugin <plugin-root>
+```
+
 You want an exit code across the room. `0` and `5` both mean the install works.
+*Verified live: bare scratch folder → exit 3 · `--plugin` → exit 5.*
 
 Someone will have `5` and assume they're broken. Get ahead of it — put this on the board
 and leave it there all day:
@@ -67,7 +76,7 @@ And its generalization, which is what they'll actually take to work:
 This is the highest-leverage seven minutes in the workshop. Everything after it is cheaper
 because of it.
 
-There are 31 verbs. **You do not learn 31 things.** Every working skill follows one
+There are 32 verbs. **You do not learn 32 things.** Every working skill follows one
 contract:
 
 | part | what it means |

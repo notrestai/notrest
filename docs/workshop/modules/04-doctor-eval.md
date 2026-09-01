@@ -33,14 +33,26 @@ fingerprint in the shipped text. Its doctrine is worth quoting:
 > **A law that is well-encoded leaves a static fingerprint — check the fingerprint, not the
 > behaviour.**
 
-That's why it takes about a tenth of a second and **zero model tokens**. It isn't running
+That's why it takes about a fifth of a second and **zero model tokens**. It isn't running
 the system; it's checking that the rules are actually written down where they'd have to be.
 
-Both exit `0` / `5` warnings / `6` any failure, and both take `--json`.
+Both exit `0` / `5` warnings / `6` any failure, and both take `--json`. Each also has one
+code for *"I could not find a thing to grade"* — `3` for doctor, `2` for eval — and that is
+the one attendees hit first.
 
 ## Test drive (8 min)
 
-In the established scratch project:
+**Point them at the harness, not at the scratch project.** These two grade the *plugin*;
+the attendee's folder is not one. Run bare in the scratch project, `/doctor` exits `3` (no
+plugin there) and `/eval` exits `2` (no skills there) — neither is a health reading. Give
+them a target and the codes become the ones this module is about:
+
+```bash
+python3 <plugin-root>/skills/doctor/scripts/doctor.py check --plugin <plugin-root>
+python3 <plugin-root>/skills/eval/scripts/eval.py   check --root   <plugin-repo>
+```
+
+*Verified live from a scratch project: bare → doctor 3, eval 2 · targeted → doctor 5, eval 0.*
 
 ```
 /doctor

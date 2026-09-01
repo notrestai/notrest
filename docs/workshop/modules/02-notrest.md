@@ -46,7 +46,7 @@ Today they'll use the first mode. Module 08 uses the second, and that's the fina
 
 ### Beat 1: the refusal
 
-In the bare scratch folder:
+In a **bare** scratch folder:
 
 ```
 /notrest check
@@ -55,12 +55,21 @@ In the bare scratch folder:
 **Expect exit 2 — refused.** No project marker, so it declines to write anything and names
 what it looked for.
 
+**Watch the ordering — module 01 can eat this beat.** `CLAUDE.md` is one of the markers it
+looks for (`AGENTS.md`, `CLAUDE.md`, `README.md`, `package.json`, `pyproject.toml`,
+`COORD.md`), so a folder where `/oracle` already scaffolded a foundation answers **6**, not
+2. If module 01 wrote one, run beat 1 in a second, empty folder — `mkdir -p
+~/harness-workshop-bare && cd ~/harness-workshop-bare` — then come back for beats 2 and 3.
+*Verified live: empty dir → exit 2 · same dir with only a `CLAUDE.md` → exit 6.*
+
 This surprises people. Ask: *why would a tool refuse the thing you just asked it to do?*
 
 Because **the estate never scatters.** A tool that helpfully creates files wherever it's
 pointed will eventually create them somewhere terrible. Some refusals are absolute and no
-flag overrides them — your home directory, the filesystem root, and `Desktop` / `Documents`
-/ `Downloads` by exact path.
+flag overrides them — your home directory, the filesystem root, `Desktop` / `Documents` /
+`Downloads`, and a dot-directory sitting directly under home. They are matched by
+**identity, not spelling** (the check compares the actual directory, so `~/desktop` is
+refused exactly as `~/Desktop` is).
 
 Worth one sentence: `~/Desktop` is refused, but `~/Desktop/my-project` is an ordinary
 project. The refusal targets the specific dangerous locations, not a whole tree.
@@ -137,8 +146,10 @@ A code that swung on activity would make "am I compliant?" unfalsifiable.
   the beat. Tell them to `cd` in and run the verb against the current directory — which is how
   they'd use it for real anyway. The absolute refusals still hold even with `--root`.
   *Verified live: bare folder → exit 2 · add a `README.md` → exit 6 · establish → exit 0.*
-- If someone runs it inside a git repo subdirectory they'll get a refusal naming the repo's
-  top level instead. Correct behaviour: an estate below the toplevel would be written by
+- Inside a git repo's *subdirectory*, plain `/notrest` quietly resolves **up** to the repo's
+  toplevel and grades that — the estate always belongs to the toplevel. It only refuses if
+  someone pins the subdirectory with `--root`, and then the refusal names the toplevel to use
+  instead. Correct behaviour either way: an estate below the toplevel would be written by
   nobody and read by nobody.
 
 ## Fallback

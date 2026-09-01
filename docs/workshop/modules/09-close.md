@@ -64,7 +64,7 @@ Three beats. Don't summarise the modules — they just did them.
 Everything in the harness is an elaboration of that sentence. Someone who takes only this
 line and none of the verbs still leaves better off.
 
-**3 · Where to go next.** They used nine verbs. There are thirty-one. The other twenty-two
+**3 · Where to go next.** They used ten verbs. There are thirty-two. The other twenty-two
 will make sense once the habit is there — point at the cheatsheet and the tutorial, and stop
 talking.
 

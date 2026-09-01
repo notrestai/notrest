@@ -881,7 +881,7 @@ hasnt "session-start never nudges in \$HOME" "Say /notrest to establish" "$W/o"
 
 ( cd "$N2" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
 t "session-start (non-git, COORD) exit" "$?" "0"
-has "prints the live-ledger line" "COORD.md is live in this repo" "$W/o"
+has "prints the live-ledger line" "COORD.md is live" "$W/o"
 hasnt "does NOT re-print the establish nudge" "Say /notrest to establish" "$W/o"
 
 ( cd "$N2" && bash "$W/hooks/coord-nudge.sh" ) > "$W/o" 2>&1
@@ -982,7 +982,7 @@ has "…and states the successor posture" "you are its successor session" "$W/o"
 has "…names the tier-0 verify bound" "tier-0 verify only" "$W/o"
 has "…the injected packet carries this estate's own ledger tail" "AUTOCONT-MARKER-LINE" "$W/o"
 has "…and points at the full packet" "Full packet: /notrest" "$W/o"
-has "…while every existing nudge is untouched" "COORD.md is live in this repo" "$W/o"
+has "…while every existing nudge is untouched" "COORD.md is live" "$W/o"
 has "…including the identity line" "@skills-dir" "$W/o"
 has "…and the offload HARD RULE" "HARD RULE — offload" "$W/o"
 has "…the packet arrives WHOLE (the terminator the hook gates on)" "notrest BRIEF PACKET END" "$W/o"
@@ -1001,7 +1001,7 @@ for NRQ in file dir dangling livelink; do
   ( cd "$AC" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
   t ".notrest-quiet as a $NRQ keeps the hook at exit 0" "$?" "0"
   hasnt "…and suppresses the packet entirely ($NRQ)" "AUTO-CONTINUATION" "$W/o"
-  has "…while the ordinary nudges still fire ($NRQ)" "COORD.md is live in this repo" "$W/o"
+  has "…while the ordinary nudges still fire ($NRQ)" "COORD.md is live" "$W/o"
   rm -rf "$AC/.notrest-quiet"
 done
 rm -f "$AC/quiet-target"
@@ -1029,7 +1029,7 @@ chmod 000 "$W/skills/notrest/scripts/establish.py"
 t "unreadable establish.py → hook STILL exits 0" "$?" "0"
 hasnt "…injects no packet" "AUTO-CONTINUATION" "$W/o"
 hasnt "…and leaks no python error into the session" "Traceback" "$W/o"
-has "…falling back to the ordinary nudges" "COORD.md is live in this repo" "$W/o"
+has "…falling back to the ordinary nudges" "COORD.md is live" "$W/o"
 chmod 644 "$W/skills/notrest/scripts/establish.py"
 
 echo "── regression: inside git, every hook behaves exactly as before"
@@ -1044,7 +1044,7 @@ grep -v '^- \[' "$G/COORD.md" > "$W/hookscaffold"
 grep -v '^- \[' "$P1/COORD.md" > "$W/estscaffold"
 t "establish.py scaffold == session-start.sh scaffold" "$(ckt "$W/hookscaffold")" "$(ckt "$W/estscaffold")"
 ( cd "$G" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
-has "git repo with COORD → live-ledger line" "COORD.md is live in this repo" "$W/o"
+has "git repo with COORD → live-ledger line" "COORD.md is live" "$W/o"
 ( cd "$G" && bash "$W/hooks/coord-nudge.sh" ) > "$W/o" 2>&1
 has "coord-nudge still fires in git" "append one honest ledger line" "$W/o"
 ( cd "$G" && printf '%s' "$P_REAL" | bash "$W/hooks/agent-ledger.sh" ) >/dev/null 2>&1
@@ -1112,6 +1112,33 @@ for BADMARK in 'garbage{' '{\"port\":\"not-a-number\"}' '{\"port\":0}' '{}' ''; 
   hasnt "malformed marker [$BADMARK] keeps the hook silent" "Cockpit is opted always-on" "$W/o"
 done
 rm -f "$CKN/graph/.cockpit-always"
+
+echo "── v4.6.1: the packet SILENCES the nudges it duplicates"
+
+# FIELD-PROVEN DEFECT (2026-09-01): a session handed the packet still obeyed the two
+# nudges that ORDER it to read the trail — "read START-HERE.md before starting work" and
+# "read its ledger tail before starting" — re-derived everything, and burned ~88k tokens
+# on an orientation the packet delivered for ~800. Two instructions that contradict each
+# other are worse than either alone. When the packet carries the trail, those nudges
+# stand down; when it cannot, they must come straight back.
+NUD="$W/nudge-standdown"; mkdir -p "$NUD"; ( cd "$NUD" && git init -q ) >/dev/null 2>&1
+est establish --root "$NUD" >/dev/null 2>&1
+printf '# stale resume file\n' > "$NUD/START-HERE.md"
+( cd "$NUD" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+t "packet fires with a START-HERE present" "$(grep -c 'AUTO-CONTINUATION' "$W/o")" "1"
+hasnt "…and the START-HERE read-order stands down" "read START-HERE.md before starting work" "$W/o"
+hasnt "…and the read-the-tail order stands down too" "read its ledger tail before starting" "$W/o"
+has "…while the APPEND law survives (it is not duplicated by the packet)" \
+  "append one honest line per substantive prompt" "$W/o"
+
+# The nudges must RETURN the moment the packet cannot carry the trail — .notrest-quiet is
+# the owner's opt-out, and an opted-out estate must not also lose its orientation nudges.
+: > "$NUD/.notrest-quiet"
+( cd "$NUD" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+t "quiet estate: no packet" "$(grep -c 'AUTO-CONTINUATION' "$W/o")" "0"
+has "…and the START-HERE nudge is RESTORED" "read START-HERE.md before starting work" "$W/o"
+has "…and the read-the-tail order is restored" "read its ledger tail before starting" "$W/o"
+rm -f "$NUD/.notrest-quiet"
 
 echo "── v4.5: the auto-build standing authorization (owner-private, out of the repo)"
 

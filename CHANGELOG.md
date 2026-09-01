@@ -1,5 +1,33 @@
 # Changelog — the notrest harness
 
+## 4.6.1 — 2026-09-01
+
+**The packet now silences the nudges that told a session to go fetch what the packet
+just handed it.**
+
+Field-proven the hour 4.6.0 shipped: a fresh session received the brief packet — and then
+obeyed the two echoes printed immediately above it, *"read START-HERE.md before starting
+work"* and *"read its ledger tail before starting"*. It re-derived the whole trail,
+spawned lanes, and spent **~88,000 tokens on an orientation the packet had delivered for
+~800** — and the START-HERE it dutifully read was five weeks stale. Two instructions that
+contradict each other are worse than either one alone.
+
+- The estate resolver is hoisted above the continuity nudges, so the hook knows whether
+  the packet will carry the trail BEFORE it prints an order to go find it. When it will:
+  the START-HERE read-order stands down entirely and the COORD echo keeps only the half
+  the packet does not duplicate — the append law.
+- When the packet cannot carry the trail (`.notrest-quiet`, an unestablished estate, a
+  refused or truncated packet), every nudge returns exactly as before. Arms assert both
+  directions, and all three were watched red against the 4.6.0 hook.
+- The **workshop pack joins the golden release surface** (16 files). A concurrent session's
+  currency audit corrected it to v4.6.0 — 32 skills, ten verbs, `doctor --plugin` guidance
+  where the bare invocation exits 3 — and RELEASE-SURFACE correctly refused the release
+  until those files were named. Teaching material that quotes version-specific behaviour is
+  a release surface like any other; now a release that changes a verb's exit codes cannot
+  ship without the pack being considered.
+- Five older arms pinned the ledger echo's full wording; they now pin the half that is
+  stable across both branches, which is what they were always asserting.
+
 ## 4.6.0 — 2026-09-01
 
 **Opening a session in your own project IS resuming it.**

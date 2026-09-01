@@ -78,7 +78,7 @@ Three hours, hands-on throughout, walking one verb at a time. Each module opens 
 failure it exists to prevent — reproduced live, not described — and then you drive the tool
 yourself.
 
-There are thirty-one skills in the harness. You won't learn thirty-one things: they share a
+There are thirty-two skills in the harness. You won't learn thirty-two things: they share a
 single contract, taught in the first twenty minutes, after which each verb costs ten minutes
 instead of twenty because you're only learning what differs.
 
@@ -121,7 +121,7 @@ this. Most people hit them constantly and pay without noticing.
 - A live window over your own estate
 - One delegated lane with a receipt you can audit
 - A session you deliberately killed and successfully continued from another
-- Nine verbs you've actually driven, and the laws underneath them — which transfer to any
+- Ten verbs you've actually driven, and the laws underneath them — which transfer to any
   tool, or none
 
 ## Prerequisites

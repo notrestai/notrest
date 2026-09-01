@@ -29,8 +29,28 @@ echo "[notrest] Fable discipline is active: ORIENT -> PROBE -> ACT -> PROVE -> B
 # notrest skill is loaded. Owner-set 2026-07-15: opus-only offload.
 echo "[notrest] HARD RULE — offload: every spawned agent/Workflow lane sets its model explicitly — \"opus\" by default, \"sonnet\" only for a brief-declared mechanical/DRAFT-tier job (owner amendment 2026-08-30). Never haiku, never subagent_type \"fork\" (forks inherit the seat); omitting model is a violation, not a default. Delegate via /notrest:agentswarm; builds run ONE persistent lane — feedback RESUMES it (SendMessage), never a new spawn. Receipts auto-log; never hand-log. Never /model-switch the seat."
 
+# ── WILL THE PACKET FIRE? Decided BEFORE the continuity nudges, because those nudges
+# ORDER a session to go read the very trail the packet is about to hand it. Field-proven
+# 2026-09-01: a session given the packet still obeyed "read START-HERE.md before starting
+# work" and "read its ledger tail before starting", re-derived everything, and burned
+# ~88k tokens on an orientation the packet delivered for ~800 — and the START-HERE it
+# dutifully read was five weeks stale. Two instructions that contradict each other are
+# worse than either alone; the packet wins and the duplicated nudges stand down.
+# This is only the CHEAP predicate (the same one the packet block re-tests); the packet
+# still gates on exit code + terminator, and if it fails the nudges below are restored.
+. "$(cd "$(dirname "$0")" && pwd)/estate-root.sh" 2>/dev/null || true
+NR_PACKET_LIKELY=""
+if [ -n "${NR_ESTATE_ROOT:-}" ] && [ -f "${NR_ESTATE_ROOT}/COORD.md" ] \
+   && [ ! -e "${NR_ESTATE_ROOT}/.notrest-quiet" ] && [ ! -L "${NR_ESTATE_ROOT}/.notrest-quiet" ]; then
+  for NR_F in AGENTS.md CLAUDE.md; do
+    if [ -f "${NR_ESTATE_ROOT}/$NR_F" ] && grep -q '<!-- notrest:protocol v' "${NR_ESTATE_ROOT}/$NR_F" 2>/dev/null; then
+      NR_PACKET_LIKELY=1; break
+    fi
+  done
+fi
+
 # ── continuity nudge: stdout is injected as session context.
-if [ -f "START-HERE.md" ]; then
+if [ -f "START-HERE.md" ] && [ -z "$NR_PACKET_LIKELY" ]; then
   echo "[notrest] START-HERE.md exists in this directory — a previous session left resume instructions (and possibly a 'Live line:' to a predecessor session that can answer setup questions). Suggest /oracle to the user to resume properly, or read START-HERE.md before starting work."
 fi
 if [ -f "HANDOFF.md" ] && [ ! -f "START-HERE.md" ]; then
@@ -84,7 +104,12 @@ COORDEOF
   echo "- [$(date -u '+%Y-%m-%d %H:%MZ')] [hook] COORD.md scaffolded by notrest SessionStart" >> "$REPO_ROOT/COORD.md"
   echo "[notrest] COORD.md created at the repo root — the session coordination ledger. Append one ledger line per substantive prompt when its work lands (ask -> landed | evidence)."
 elif [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/COORD.md" ]; then
-  echo "[notrest] COORD.md is live in this repo — read its ledger tail before starting (prior sessions' trail), and append one line per substantive prompt's work (ask -> landed | evidence)."
+  if [ -n "$NR_PACKET_LIKELY" ]; then
+    # The tail is being handed over below; only the APPEND half of the law is owed here.
+    echo "[notrest] COORD.md is live — append one honest line per substantive prompt when its work lands (ask -> landed | evidence). The trail tail is in the packet below; re-read it only if the packet is missing or you need more than its 8 lines."
+  else
+    echo "[notrest] COORD.md is live in this repo — read its ledger tail before starting (prior sessions' trail), and append one line per substantive prompt's work (ask -> landed | evidence)."
+  fi
 elif [ -z "$REPO_ROOT" ] && [ "$PWD" != "$HOME" ] && [ "$PWD" != "/" ]; then
   for NR_MARK in CLAUDE.md README.md package.json pyproject.toml; do
     if [ -e "$PWD/$NR_MARK" ]; then

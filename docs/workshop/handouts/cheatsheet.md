@@ -10,7 +10,7 @@ Keep this next to you all day.
 > between.** The bookends make sessions continuous; the posture makes each one trustworthy.
 > Everything else is an instrument you reach for inside that frame.
 
-## The nine verbs you'll drive today
+## The ten verbs you'll drive today
 
 | verb | what it's for | leaves behind |
 |---|---|---|
@@ -18,14 +18,14 @@ Keep this next to you all day.
 | `/notrest` | **Establishes** a project — or, if it's already established, **continues the build** | `COORD.md` + a protocol block |
 | `/fable-mode` | The discipline contract: the loop, the labels, the evidence bar | a posture |
 | `/doctor` | Is the **install** healthy? | exit code + a fix per finding |
-| `/eval` | Do the **laws** hold? | exit code, ~0.1s, zero tokens |
+| `/eval` | Do the **laws** hold? | exit code, ~0.2s, zero tokens |
 | `/recap` | The trail turned into a decision story + a clickable map | understanding |
 | `/graph` | The live window — file graph, river, the cockpit | HTML, zero tokens |
 | `/agentswarm` | Delegate to background lanes, properly | banked commissions |
 | `/spend` | The receipt — what it cost, and whether routing obeyed policy | `spend/ledger.md` |
 | `/sessionend` | Closes a session so a memoryless one can resume | resume + handoff files |
 
-There are **31** in total. These are the ones for today.
+There are **32** in total. These are the ones for today.
 
 ## The contract every skill shares
 

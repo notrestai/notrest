@@ -123,7 +123,7 @@ cost of a false claim, it doesn't make one impossible.
 The laws do — they're about evidence and record-keeping, not any vendor. The verbs are Claude
 Code. Say which is which.
 
-**"Why nine verbs and not thirty-one?"**
+**"Why ten verbs and not thirty-two?"**
 Because every skill shares one contract, and once you have it the rest are variations. Also
 because a verb that doesn't finish while you're watching can't be taught hands-on — which is
 why the roster leans on the instant, zero-token ones.
