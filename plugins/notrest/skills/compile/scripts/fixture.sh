@@ -263,10 +263,24 @@ has "…and the existing work is untouched" "SENTINEL" "$O/demo-runtime/runner.p
 python3 "$CP" scaffold --root "$R" --slug "///" >/dev/null 2>&1
 t "an unusable slug is refused" "$?" "2"
 
-echo "── L · auto: the standing authorization round-trips, and is never a licence to install"
+echo "── L · auto: the standing authorization lives OUTSIDE the estate (docket 8c)"
+
+# WHY IT MOVED (refuter, 2026-09-01 — PLAUSIBLE, now closed): compile/.auto-build sat
+# INSIDE the repo, so any lane with write access to the tree could grant itself the
+# owner's standing build authorization, and any clone carried someone else's opt-in.
+# Authorization is now owner-private machine state at
+#   ${NOTREST_HOME:-~/.notrest}/auto-build/<sha256 of the estate realpath>.json
+# — unforgeable from inside the tree and uncopyable by a clone. NOTREST_HOME exists so
+# this fixture never writes into the real home; the default is the only shipped path.
+export NOTREST_HOME="$W/nrhome"
+mk(){ python3 -c 'import hashlib, os, sys
+base = os.environ.get("NOTREST_HOME") or os.path.expanduser("~/.notrest")
+print(os.path.join(base, "auto-build",
+      hashlib.sha256(os.path.realpath(sys.argv[1]).encode("utf-8")).hexdigest() + ".json"))' "$1"; }
 
 A="$W/autoroot"; mkdir -p "$A"
-MARK="$A/compile/.auto-build"
+MARK="$(mk "$A")"
+LEGACY="$A/compile/.auto-build"
 
 python3 "$CP" auto --root "$A" > "$W/auto.txt" 2>&1
 t "bare auto with no marker exits 5" "$?" "5"
@@ -274,33 +288,46 @@ has "…and says how to turn it on" "auto --on" "$W/auto.txt"
 t "…and wrote nothing" "$([ -e "$MARK" ] && echo wrote || echo none)" "none"
 
 # Refuter F2 (2026-09-01, CONFIRMED pre-fix): auto wrote its marker at a cwd-relative
-# root the hooks never read, and --off at the real root could not clear it. Now a
-# --root that is not the estate root the hooks resolve is REFUSED, exit 2, naming it.
+# root the hooks never read, and --off at the real root could not clear it. A --root
+# that is not the estate root the hooks resolve is REFUSED, exit 2, naming it. The
+# refusal survives the move: the marker's NAME is derived from that root.
 G="$W/gitestate"; mkdir -p "$G/sub"; ( cd "$G" && git init -q ) >/dev/null 2>&1
 python3 "$CP" auto --root "$G/sub" --on > "$W/auto-sub.txt" 2>&1
 t "auto --on at a git SUBdir is refused" "$?" "2"
 has "…naming the root the hooks resolve" "not the estate root the hooks resolve" "$W/auto-sub.txt"
-t "…and no stray marker landed" "$([ -e "$G/sub/compile/.auto-build" ] && echo stray || echo none)" "none"
+t "…and no stray marker landed" "$([ -e "$(mk "$G/sub")" ] && echo stray || echo none)" "none"
 python3 "$CP" auto --root "$G" --on >/dev/null 2>&1
 t "auto --on at the git TOPLEVEL is accepted" "$?" "0"
 
 python3 "$CP" auto --root "$A" --on > "$W/auto.txt" 2>&1
 t "auto --on exits 0" "$?" "0"
-t "…and the marker exists" "$([ -f "$MARK" ] && echo yes || echo no)" "yes"
+t "…and the marker exists OUTSIDE the estate" "$([ -f "$MARK" ] && echo yes || echo no)" "yes"
+t "…and NOTHING was written inside the estate" \
+  "$(find "$A" -name '.auto-build*' 2>/dev/null | wc -l | tr -d ' ')" "0"
 has "…and the opt-in restates the hard law where the owner reads it" \
   "never auto-installs" "$W/auto.txt"
 has "…naming what it actually authorizes" "authorizes DISPATCH only" "$W/auto.txt"
+has "…and prints the owner-private path it wrote" "$MARK" "$W/auto.txt"
 t "the marker is ONE json line" "$(wc -l < "$MARK" | tr -d ' ')" "1"
 t "the marker parses, and says opted=true" "$(python3 -c '
 import json,sys
 d = json.load(open(sys.argv[1]))
 print(d.get("opted") is True and isinstance(d.get("stamp"), str) and bool(d["stamp"]))
 ' "$MARK")" "True"
+t "…and names the estate it authorizes (a marker is never anonymous)" "$(python3 -c '
+import json,os,sys
+print(os.path.realpath(json.load(open(sys.argv[1]))["estate"]) == os.path.realpath(sys.argv[2]))
+' "$MARK" "$A")" "True"
 t "…with a UTC stamp in the estate's own grammar" "$(python3 -c '
 import json,re,sys
 print(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}Z",
                         json.load(open(sys.argv[1]))["stamp"])))
 ' "$MARK")" "True"
+t "the marker file name is the sha256 of the estate realpath" "$(python3 -c '
+import hashlib,os,sys
+print(os.path.basename(sys.argv[1]) ==
+      hashlib.sha256(os.path.realpath(sys.argv[2]).encode("utf-8")).hexdigest() + ".json")
+' "$MARK" "$A")" "True"
 t "the atomic write left no .tmp behind" \
   "$([ -e "$MARK.tmp" ] && echo left || echo none)" "none"
 
@@ -308,6 +335,28 @@ python3 "$CP" auto --root "$A" > "$W/auto.txt" 2>&1
 t "bare auto with the marker exits 0" "$?" "0"
 has "…and reports when it was opted" "auto-build: ON since" "$W/auto.txt"
 
+# THE POINT OF THE MOVE: a marker written INSIDE the tree — by a lane, or carried in
+# by a clone — is not an authorization any more.
+python3 "$CP" auto --root "$A" --off >/dev/null 2>&1
+mkdir -p "$A/compile"
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$LEGACY"
+python3 "$CP" auto --root "$A" > "$W/auto-legacy.txt" 2>&1
+t "an in-repo marker is NOT an authorization (a lane cannot grant it)" "$?" "5"
+has "…and the migration is stated once, not left to be guessed" \
+  "compile/.auto-build is IGNORED" "$W/auto-legacy.txt"
+has "…naming where authorization actually lives now" "$MARK" "$W/auto-legacy.txt"
+
+# A marker whose estate field names SOMEONE ELSE's tree is not this estate's opt-in,
+# even if it lands under the right filename (a copied ~/.notrest, a restored backup).
+python3 "$CP" auto --root "$A" --on >/dev/null 2>&1
+python3 -c 'import json,sys
+p = sys.argv[1]; d = json.load(open(p)); d["estate"] = "/somewhere/else"
+open(p, "w").write(json.dumps(d) + "\n")' "$MARK"
+python3 "$CP" auto --root "$A" >/dev/null 2>&1
+t "a marker naming a DIFFERENT estate is refused (5)" "$?" "5"
+rm -f "$LEGACY"
+
+python3 "$CP" auto --root "$A" --on >/dev/null 2>&1
 python3 "$CP" auto --root "$A" --off >/dev/null 2>&1
 t "auto --off exits 0" "$?" "0"
 t "…and the marker is gone" "$([ -e "$MARK" ] && echo left || echo none)" "none"
@@ -317,6 +366,7 @@ python3 "$CP" auto --root "$A" --off >/dev/null 2>&1
 t "--off on an already-off estate is still 0" "$?" "0"
 
 # A corrupt marker is NOT an opt-in — the same ruling the hook makes, made here too.
+python3 "$CP" auto --root "$A" --on >/dev/null 2>&1
 for BADMARK in 'garbage{' '{"opted": false}' '[]' '{}' ''; do
   printf '%s' "$BADMARK" > "$MARK"
   python3 "$CP" auto --root "$A" >/dev/null 2>&1
@@ -326,6 +376,120 @@ rm -f "$MARK"
 
 python3 "$CP" auto --root "$A" --on --off >/dev/null 2>&1
 t "--on and --off together are refused (2)" "$?" "2"
+
+# ── RB-4 (refuter, MODERATE, 2026-09-01): NOTREST_HOME REOPENS 8c.
+# The override exists so fixtures never write the real home — but nothing stopped it
+# being pointed back INSIDE the estate, which reinstates exactly the hole the move
+# closed: a store under the tree is writable by any lane and travels with a clone.
+# Both readers now refuse a store whose realpath sits inside the estate root.
+IN="$A/.nr"
+NOTREST_HOME="$IN" python3 "$CP" auto --on --root "$A" > "$W/auto-in.txt" 2>&1
+t "a store INSIDE the estate is refused by auto --on (2)" "$?" "2"
+has "…naming why (an in-estate store is not owner-private)" \
+  "inside the estate" "$W/auto-in.txt"
+t "…and nothing was written into the estate" \
+  "$(find "$A" -name '*.json' -path '*auto-build*' 2>/dev/null | wc -l | tr -d ' ')" "0"
+# even a marker planted there by hand is not an authorization
+mkdir -p "$IN/auto-build"
+INMARK="$(NOTREST_HOME="$IN" mk "$A")"
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z", "estate": "%s"}\n' \
+  "$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$A")" > "$INMARK"
+NOTREST_HOME="$IN" python3 "$CP" auto --root "$A" > "$W/auto-in2.txt" 2>&1
+# 2, not 5: 5 means "OFF, turn it on with --on" and --on is refused here too, so the
+# refusal code is the honest one. What must never happen is a report of ON.
+t "a hand-planted in-estate marker is refused, never reported ON (2)" "$?" "2"
+hasnt "…and the status never says ON" "auto-build: ON" "$W/auto-in2.txt"
+
+# ── RB-5: the STATUS path lacked the containment the hook already had, so `auto` said
+# ON for a marker session-start refuses — a split verdict between the two readers of
+# one file is worse than either verdict alone.
+python3 "$CP" auto --root "$A" --on >/dev/null 2>&1
+mkdir -p "$W/planted"
+printf '{"opted": true, "stamp": "planted", "estate": "%s"}\n' \
+  "$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$A")" \
+  > "$W/planted/forged.json"
+rm -f "$MARK"; ln -sf "$W/planted/forged.json" "$MARK"
+python3 "$CP" auto --root "$A" > "$W/auto-esc.txt" 2>&1
+t "a marker symlinked OUT of the store reads as OFF (5)" "$?" "5"
+has "…and says the two readers agree on why" "escapes" "$W/auto-esc.txt"
+rm -f "$MARK"
+
+echo "── L2 · the SessionStart hook reads the owner-private marker, and only that"
+
+# The hooks are COPIED out of the plugin tree: session-start.sh self-updates its own
+# clone in the background, and a fixture must never fire a git pull on this repo.
+HKS="$W/hooks"; mkdir -p "$HKS"
+cp "$(cd "$(dirname "$0")/../../../hooks" && pwd)"/*.sh "$HKS/" 2>/dev/null
+AB="$W/hookestate"; mkdir -p "$AB/compile"; ( cd "$AB" && git init -q ) >/dev/null 2>&1
+printf '{"candidates":[{"slug":"release-ritual","occurrences":7,"ripe":true,"status":"NEW"}]}\n' \
+  > "$AB/compile/candidates.json"
+ABMARK="$(mk "$AB")"
+
+( cd "$AB" && bash "$HKS/session-start.sh" ) > "$W/o" 2>&1
+t "no authorization → hook exits 0" "$?" "0"
+has "no authorization → the OLD ripe nudge is unchanged" \
+  "Ripe compile candidate: release-ritual seen 7x" "$W/o"
+hasnt "no authorization → nothing claims one" "AUTO-BUILD opted in" "$W/o"
+
+# the legacy in-repo marker: ignored by the hook too, and SAID so once.
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$AB/compile/.auto-build"
+( cd "$AB" && bash "$HKS/session-start.sh" ) > "$W/o" 2>&1
+t "legacy in-repo marker → hook still exits 0" "$?" "0"
+hasnt "legacy in-repo marker grants NOTHING" "AUTO-BUILD opted in" "$W/o"
+has "…and the hook says the authorization moved" "compile/.auto-build is IGNORED" "$W/o"
+rm -f "$AB/compile/.auto-build"
+
+python3 "$CP" auto --root "$AB" --on >/dev/null 2>&1
+( cd "$AB" && bash "$HKS/session-start.sh" ) > "$W/o" 2>&1
+t "owner-private marker → hook exits 0" "$?" "0"
+has "…and the echo carries the authorization" "AUTO-BUILD opted in" "$W/o"
+has "…and names ONE opus lane for the ripe candidate" \
+  "dispatch ONE opus builder lane this session for ripe candidate release-ritual" "$W/o"
+has "…and restates the hard law in the echo itself" \
+  "NEVER installed: shipping stays the owner's act" "$W/o"
+hasnt "…and REPLACES the old nudge rather than doubling it" "Ripe compile candidate" "$W/o"
+
+for BADMARK in 'garbage{' '{"opted": false}' '[]' '{}' ''; do
+  printf '%s' "$BADMARK" > "$ABMARK"
+  ( cd "$AB" && bash "$HKS/session-start.sh" ) > "$W/o" 2>&1
+  t "malformed marker [$BADMARK] → hook still exits 0" "$?" "0"
+  hasnt "malformed marker [$BADMARK] claims no authorization" "AUTO-BUILD opted in" "$W/o"
+  has "malformed marker [$BADMARK] falls back to the old nudge" \
+    "Ripe compile candidate: release-ritual" "$W/o"
+done
+
+# containment, inherited from the COORD.md law: a marker that is a symlink OUT of the
+# authorization store is not this machine's authorization.
+mkdir -p "$W/elsewhere"
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z", "estate": "%s"}\n' "$AB" \
+  > "$W/elsewhere/planted.json"
+ln -sfn "$W/elsewhere/planted.json" "$ABMARK"
+( cd "$AB" && bash "$HKS/session-start.sh" ) > "$W/o" 2>&1
+t "escaping-symlink marker → hook still exits 0" "$?" "0"
+hasnt "escaping-symlink marker claims NO authorization" "AUTO-BUILD opted in" "$W/o"
+rm -f "$ABMARK"
+
+# an opt-in is not a licence to invent work: with nothing ripe, neither echo fires.
+AB2="$W/hookestate-noripe"; mkdir -p "$AB2/compile"; ( cd "$AB2" && git init -q ) >/dev/null 2>&1
+printf '{"candidates":[{"slug":"cold","occurrences":2,"ripe":false,"status":"NEW"}]}\n' \
+  > "$AB2/compile/candidates.json"
+python3 "$CP" auto --root "$AB2" --on >/dev/null 2>&1
+( cd "$AB2" && bash "$HKS/session-start.sh" ) > "$W/o" 2>&1
+t "opted in but nothing ripe → hook exits 0" "$?" "0"
+hasnt "opted in but nothing ripe → no AUTO-BUILD echo" "AUTO-BUILD opted in" "$W/o"
+
+# RB-4, hook side: a store redirected INTO the estate authorizes nothing, and the hook
+# says so rather than going quiet — a standing authorization that silently stops working
+# is the failure mode this whole marker exists to avoid.
+ABIN="$AB/.nr"; mkdir -p "$ABIN/auto-build"
+INHOOK="$(NOTREST_HOME="$ABIN" mk "$AB")"
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z", "estate": "%s"}\n' \
+  "$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$AB")" > "$INHOOK"
+( cd "$AB" && NOTREST_HOME="$ABIN" bash "$HKS/session-start.sh" ) > "$W/o" 2>&1
+t "in-estate store → hook still exits 0" "$?" "0"
+hasnt "in-estate store grants NO authorization" "AUTO-BUILD opted in" "$W/o"
+has "…and the hook says why it ignored it" "inside the estate" "$W/o"
+has "…and falls back to the old nudge" "Ripe compile candidate: release-ritual" "$W/o"
 
 echo
 echo "compile fixture: $PASS passed, $FAIL failed"

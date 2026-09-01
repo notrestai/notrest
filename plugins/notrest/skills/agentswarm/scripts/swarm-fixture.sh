@@ -215,6 +215,150 @@ for _ in $(seq 1 40); do
 done
 t "…and self-terminates once every lane has receipted" "${GONE:-no}" "1"
 
+# ══ v4.5 · NESTED-LANE RECEIPT FIDELITY (docket 7) ══════════════════════════════════
+#
+# ROOT CAUSE, live-proven on this estate 2026-08-31: the depth-2 lane
+# agent-a10cd965b589d9d4b receipted `model=sonnet tokens=unknown grade=estimate
+# purpose="auto-receipt: "` — and its transcript on disk is FINE (usage object, model,
+# text). The COORD line recorded bytes=44594; the file's line boundaries are
+# 503 / 10651 / 44594 / 45932. The hook read the transcript at exactly the byte where
+# lines 0-2 were flushed and the FINAL ASSISTANT LINE — the only line carrying usage,
+# model and text — was not yet on disk. It is a FLUSH RACE, not a schema difference,
+# and short nested lanes lose it most often because they finish inside one flush.
+#
+# So the receipt writer must (a) settle: re-read while the transcript is still growing;
+# (b) when no usage object is ever readable, derive an honest bytes-estimate rather
+# than dropping the layer out of the roll-up; (c) keep `unknown` for the case where
+# genuinely nothing is derivable, and SAY SO in the receipt; (d) fingerprint what the
+# lane actually said (docket 8d).
+HK="$HERE/../../../hooks/agent-ledger.sh"
+[ -f "$HK" ] || { echo "  FAIL  agent-ledger.sh not found at $HK"; FAIL=$((FAIL+1)); }
+
+RF="$W/receipts"; mkdir -p "$RF/spend"; ( cd "$RF" && git init -q ) >/dev/null 2>&1
+printf '# spend ledger — append-only via spend.py; grades: observed|estimate\n' \
+  > "$RF/spend/ledger.md"
+RL="$RF/spend/ledger.md"
+fire_hook(){ # fire_hook <agent-id> <transcript-path>
+  ( cd "$RF" && printf '{"agent_id":"%s","transcript_path":"%s"}' "$1" "$2" \
+      | bash "$HK" ) >/dev/null 2>&1
+}
+rrow(){ grep " agent=$1\$" "$RL" 2>/dev/null | head -1; }
+
+# ── the flush race itself: three lines on disk, the final assistant line lands 0.4s
+# after the hook starts. A hook that reads once records nothing; a hook that settles
+# records the real 1160 and the real conclusion text.
+TR="$RF/agent-race2.jsonl"
+{ printf '{"timestamp":"2026-08-31T04:42:00Z","type":"user","message":{"role":"user","content":"Return exactly the word: NESTED-OK"}}\n'
+  printf '{"timestamp":"2026-08-31T04:42:00Z","type":"attachment","attachment":{"type":"skill_listing","content":"%s"}}\n' "$(python3 -c 'print("x"*2000)')"
+} > "$TR"
+TAIL_LINE='{"timestamp":"2026-08-31T04:42:03Z","type":"assistant","message":{"role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":1000,"cache_creation_input_tokens":10},"content":[{"type":"text","text":"NESTED-OK"}]}}'
+( sleep 0.4; printf '%s\n' "$TAIL_LINE" >> "$TR" ) &
+RACEPID=$!
+fire_hook race2 "$TR"
+wait "$RACEPID" 2>/dev/null
+ROW="$(rrow race2)"
+echo "      row: $ROW"
+case "$ROW" in
+  *"tokens=1160 grade=observed"*) ok "flush race: the settle recovers the REAL usage total (1160, observed)" ;;
+  *) no "flush race: receipt did not settle — [$ROW]" ;;
+esac
+case "$ROW" in
+  *'purpose="auto-receipt: NESTED-OK'*) ok "flush race: purpose carries what the lane actually said" ;;
+  *) no "flush race: purpose is still empty/degraded — [$ROW]" ;;
+esac
+case "$ROW" in
+  *"model=claude-sonnet-5"*) ok "flush race: model comes from the settled transcript, not the sidecar" ;;
+  *) no "flush race: model not scraped from the settled transcript" ;;
+esac
+
+# ── docket 8d · EVIDENCE FINGERPRINT: the receipt binds to the lane's final text.
+WANT_SHA="$(printf '%s' "NESTED-OK" | shasum -a 256 | cut -d' ' -f1)"
+case "$ROW" in
+  *"outsha=$WANT_SHA"*) ok "outsha: receipt carries sha256 of the lane's final text" ;;
+  *) no "outsha: missing or wrong (want $WANT_SHA) — [$ROW]" ;;
+esac
+case "$ROW" in
+  *"outsha="*" agent=race2") ok "outsha sits BEFORE the agent= marker (idempotence key intact)" ;;
+  *) no "outsha broke the trailing agent= marker — [$ROW]" ;;
+esac
+fire_hook race2 "$TR"
+t "…and the receipt is still idempotent" "$(grep -c " agent=race2\$" "$RL")" "1"
+
+# ── no usage object anywhere, but real bytes on disk: an honest bytes-derived
+# estimate, never a layer silently dropped from the /spend roll-up.
+TN="$RF/agent-noused.jsonl"
+printf '{"timestamp":"2026-08-31T04:50:00Z","type":"assistant","message":{"role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":"no usage object in this transcript"}]}}\n' > "$TN"
+fire_hook noused "$TN"
+ROWN="$(rrow noused)"
+echo "      row: $ROWN"
+NBYTES="$(wc -c < "$TN" | tr -d ' ')"
+t "bytes-estimate: tokens is a real number, not 'unknown'" \
+  "$(printf '%s' "$ROWN" | sed -n 's/.*tokens=\([^ ]*\).*/\1/p' | grep -qE '^[0-9]+$' && echo digits || echo notdigits)" "digits"
+case "$ROWN" in
+  *"grade=estimate"*) ok "bytes-estimate: graded estimate, never laundered as observed" ;;
+  *) no "bytes-estimate: grade is not estimate — [$ROWN]" ;;
+esac
+case "$ROWN" in
+  *"[est from ${NBYTES} transcript bytes]"*) ok "bytes-estimate: the receipt SAYS how the figure was derived" ;;
+  *) no "bytes-estimate: the receipt does not disclose its derivation — [$ROWN]" ;;
+esac
+
+# ── genuinely nothing derivable: the sidecar names the model (so the row is still
+# audit-bearing) but the transcript never landed. `unknown` is correct here — and the
+# receipt must say so rather than leaving a silent hole.
+TM="$RF/agent-nofile.jsonl"
+printf '{"agentType":"general-purpose","spawnDepth":2,"model":"sonnet"}\n' > "$RF/agent-nofile.meta.json"
+fire_hook nofile "$TM"
+ROWM="$(rrow nofile)"
+echo "      row: $ROWM"
+case "$ROWM" in
+  *"tokens=unknown"*) ok "no transcript: tokens=unknown (nothing was derivable)" ;;
+  *) no "no transcript: expected tokens=unknown — [$ROWM]" ;;
+esac
+case "$ROWM" in
+  *"[no transcript readable at stop"*) ok "no transcript: the receipt says WHY it is unknown" ;;
+  *) no "no transcript: the unknown is undisclosed — [$ROWM]" ;;
+esac
+case "$ROWM" in
+  *"outsha="*) no "no transcript: fingerprint invented from nothing — [$ROWM]" ;;
+  *) ok "no transcript: no outsha invented (a missing field is honest)" ;;
+esac
+
+# ── a lane that ends on a tool_use has no final text: purpose falls back to the
+# COMMISSION (the first user turn), which is the one thing always on disk.
+TB="$RF/agent-briefonly.jsonl"
+{ printf '{"timestamp":"2026-08-31T05:00:00Z","type":"user","message":{"role":"user","content":"Sweep the estate for stale COORD volumes"}}\n'
+  printf '{"timestamp":"2026-08-31T05:00:09Z","type":"assistant","message":{"role":"assistant","model":"claude-opus-5","usage":{"input_tokens":7,"output_tokens":3},"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}\n'
+} > "$TB"
+fire_hook briefonly "$TB"
+ROWB="$(rrow briefonly)"
+echo "      row: $ROWB"
+case "$ROWB" in
+  *'purpose="auto-receipt: asked: Sweep the estate'*) ok "no final text: purpose falls back to the commission" ;;
+  *) no "no final text: purpose is empty — [$ROWB]" ;;
+esac
+case "$ROWB" in
+  *"tokens=10 grade=observed"*) ok "no final text: usage is still summed exactly" ;;
+  *) no "no final text: usage lost — [$ROWB]" ;;
+esac
+# RB (refuter, 2026-09-01): `outsha=tail:<sha>` named a WINDOW without naming what the
+# window was anchored on. The transcript keeps growing after the stop, so a later reader
+# recomputing "the last 4096 bytes" hashes different bytes and concludes the receipt is
+# wrong. The size the hook captured is now part of the field, which makes the tail form
+# reproducible instead of merely plausible.
+TBSZ="$(wc -c < "$TB" | tr -d ' ')"
+TBSHA="$(python3 -c '
+import hashlib, sys
+p, sz = sys.argv[1], int(sys.argv[2])
+with open(p, "rb") as f:
+    f.seek(max(0, sz - 4096))
+    print(hashlib.sha256(f.read()).hexdigest())' "$TB" "$TBSZ")"
+case "$ROWB" in
+  *"outsha=tail:$TBSHA@$TBSZ"*) ok "outsha tail form names the size it was anchored on (reproducible)" ;;
+  *) no "outsha tail form is not independently reproducible — [$ROWB]" ;;
+esac
+t "the hook still exits 0 on every one of these" "$?" "0"
+
 echo
 echo "swarm-fixture: $PASS pass, $FAIL fail"
 [ "$FAIL" -eq 0 ] || exit 1

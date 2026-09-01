@@ -168,6 +168,25 @@ then append the ledger line (append-only, as always):
 
 Then work. The whole ritual should cost one script run, one message, two instrument runs.
 
+## Cross-runtime pickup — Codex hands to Claude, and back
+
+A build does not always continue on the runtime that started it. **`establish.py` with
+`--surface both` is the one-time bridge:** run it once and the project carries an
+`AGENTS.md` *and* a `CLAUDE.md`, an estate both runtimes can read, so a successor on either
+side reads the same COORD trail and the same laws. It is a bridge, not a mode — you run it
+once at the seam and then never again; a project already established for both surfaces
+takes the ordinary continuation route above, whichever runtime opens it.
+
+Two things change when the successor is a **Codex** session, and both are limits rather
+than steps. First, the wire: Codex has no session-management tools that reach a Claude
+session, so the mentor step takes the **files-only fallback** — `START-HERE.md`'s *Live
+line:* row, `HANDOFF.md`, and the packet — and says so in the one honest line the fallback
+already requires. Second, the receipts: **there are no lifecycle hooks on Codex**, so
+nothing writes the ledger for you. The agent banks its own COORD lines by hand, one per
+substantive prompt, in the same append-only format — and never claims a hook ran. A Claude
+successor picking the build back up gets its hooks again; the trail in between is only as
+complete as the Codex seat wrote it.
+
 ## When you receive a mentor request
 
 Any session running this harness may be asked. Answer **from your own context** — you are
@@ -317,11 +336,13 @@ fenced example is not the block; a stray opener, duplicate blocks, a read-only d
 and an escaping symlink each leave the file **byte-untouched**; `$HOME`, `/` and a git
 subdirectory are refused; a hand-edited block is banked before it is replaced.
 
-Two assertions exist only to kill a mutant: this fixture's first version passed **78/0
+Two mutant-killers guard the atomic path: this fixture's first version passed **78/0
 against a de-atomized `atomic_write`** — every assertion held while the property was gone.
-A read-only `CLAUDE.md` in a writable directory now proves the atomic path (tmp+replace
-succeeds where `open(w)` cannot), and a read-only directory proves a failed write leaves
-no `.notrest-*.tmp` debris and an untouched target.
+Since the 4.5 F4 round, a read-only foundation is **refused outright** (exit 5, mode and
+bytes untouched, no `.bak` debris — rewriting a file the owner locked was the defect, not
+a feature), the target's mode survives every legitimate rewrite (0640 stays 0640, never
+reset to 0600), and a read-only *directory* still proves a failed write leaves no
+`.notrest-*.tmp` debris and an untouched target.
 
 It also drives the **hooks themselves** — all four, through the shared resolver — in
 non-git `COORD.md` projects, across a project boundary (where all four must agree there is

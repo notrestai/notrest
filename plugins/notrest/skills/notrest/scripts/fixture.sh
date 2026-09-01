@@ -12,16 +12,23 @@
 #
 # MUTATION-AWARE (2026-08-02 adversarial round). The first version of this fixture passed
 # 78/0 against a DE-ATOMIZED atomic_write — every assertion held while the property was
-# gone. Two assertions below exist to kill that mutant: a read-only CLAUDE.md in a
-# writable directory (tmp+os.replace SUCCEEDS, since replace needs the directory bit and
-# not the file's; a plain open(w) cannot) and a read-only directory (a failed write must
-# leave no .notrest-*.tmp behind and the target byte-untouched). An assertion that cannot
-# fail is decoration.
+# gone. The READ-ONLY DIRECTORY arm is what kills that mutant today: a de-atomized
+# open(w) SUCCEEDS on an existing writable file in an unwritable directory (opening an
+# existing file for writing needs the file's bit, not the directory's), while mkstemp
+# cannot — so the arm's "exit 6, no .notrest-*.tmp debris, target byte-untouched" holds
+# only for the atomic path. (Its old partner — a read-only CLAUDE.md that tmp+replace
+# overwrote — asserted the defect: 4.5 docket item 3 made that a REFUSAL, and the arm now
+# asserts the refusal.) An assertion that cannot fail is decoration.
 # Usage: bash <notrest-skill>/scripts/fixture.sh   (exit 0 = all pass, 1 = a failure)
 set -u
-# The historical corpus exercises the Claude adapter unless a case explicitly selects
-# Codex. A fixture inherits its caller's host variables, which must not change its arm.
+# HOST-SIGNAL HERMETICITY (4.5 docket item 1). detect_surface is decided by HOST SIGNALS,
+# so a fixture that inherits its caller's host variables is a fixture whose surface arms
+# depend on which runtime ran it. Every establish.py call below therefore runs with the
+# Codex AND Claude signal variables stripped — the corpus runs on the documented
+# no-signal default (claude), and an arm that wants a host STATES it on the command line.
 unset CODEX_THREAD_ID CODEX_SANDBOX
+CLEAR_HOST=""
+for _v in $(env | sed -n 's/^\(CLAUDE[A-Za-z0-9_]*\)=.*/\1/p'); do CLEAR_HOST="$CLEAR_HOST -u $_v"; done
 HERE="$(cd "$(dirname "$0")" && pwd)"
 EST="$HERE/establish.py"
 HOOKS_SRC="$(cd "$HERE/../../../hooks" && pwd)"
@@ -35,7 +42,15 @@ has(){ if grep -qF -- "$2" "$3" 2>/dev/null; then ok "$1"; else no "$1 — [$2] 
 hasnt(){ if grep -qF -- "$2" "$3" 2>/dev/null; then no "$1 — [$2] unexpectedly in $3"; else ok "$1"; fi; }
 ckt(){ cksum < "$1" | awk '{print $1"-"$2}'; }
 nblk(){ grep -c '<!-- notrest:protocol v' "$1" 2>/dev/null || true; }
-est(){ python3 "$EST" "$@"; }
+mode_of(){ python3 -c "import os,sys;print('%o' % (os.stat(sys.argv[1]).st_mode & 0o777))" "$1"; }
+# An arm that WANTS a host states it in NR_HOST — a plain `CLAUDECODE=1 est …` prefix
+# would be stripped again by CLEAR_HOST, since `env` applies its -u options before the
+# assignments it is given. NR_HOST is applied AFTER the strip, so it is the only host the
+# run sees, whatever the fixture's own caller was running under.
+NR_HOST=""
+# shellcheck disable=SC2086 — CLEAR_HOST/NR_HOST are token lists, split on purpose.
+est(){ env $CLEAR_HOST ${NR_HOST:-} python3 "$EST" "$@"; }
+pyest(){ env $CLEAR_HOST ${NR_HOST:-} python3 "$@"; }
 
 # ── the sandboxed hooks (estate-root.sh included — it is what they all source) ────────
 mkdir -p "$W/hooks"
@@ -100,8 +115,13 @@ t "Codex check → established" "$?" "0"
 has "Codex check names its surface" "AGENTS-BLOCK" "$W/o"
 
 PA="$W/proj-auto-codex"; mkdir -p "$PA"; : > "$PA/README.md"
-CODEX_THREAD_ID=fixture-thread est establish --root "$PA" > "$W/o" 2>&1
-t "Codex runtime variable selects Codex automatically" "$?" "0"
+NR_HOST=CODEX_THREAD_ID=fixture-thread est establish --root "$PA" > "$W/o" 2>&1
+# 4.5 docket item 5: this arm asserted exit 0 ONLY, and survived a killed codex branch in
+# detect_surface (mutation-proven) — exit 0 is what the Claude adapter returns too. It now
+# asserts the PROPERTY its two neighbours assert: which surface the run actually selected.
+t "Codex runtime variable → establish exit" "$?" "0"
+has "Codex runtime variable selects Codex automatically" "(surface=codex)" "$W/o"
+t "…and the block landed in AGENTS.md" "$(nblk "$PA/AGENTS.md")" "1"
 t "auto Codex wrote AGENTS.md" "$([ -f "$PA/AGENTS.md" ] && echo y || echo n)" "y"
 t "auto Codex left CLAUDE.md absent" "$([ -f "$PA/CLAUDE.md" ] && echo y || echo n)" "n"
 
@@ -111,6 +131,134 @@ t "both adapter writes AGENTS.md" "$([ -f "$PB/AGENTS.md" ] && echo y || echo n)
 t "both adapter writes CLAUDE.md" "$([ -f "$PB/CLAUDE.md" ] && echo y || echo n)" "y"
 est check --surface both --root "$PB" > "$W/o" 2>&1
 t "both adapter grades both foundations" "$?" "0"
+
+echo "── 4.5 docket 1 · F2: HOST SIGNALS decide the runtime; files only narrow within one"
+
+# Pre-fix, the Claude branch of detect_surface probed CLAUDE_PLUGIN_ROOT / CLAUDE_CONFIG_DIR
+# — variables a real Claude session does NOT export — so that branch was DEAD and the FILE
+# TIE-BREAK governed every `auto` run: a Claude session in a repo carrying an upstream
+# AGENTS.md and no CLAUDE.md established the WRONG runtime's foundation and exited 0
+# (confirmed live at the v4.3.0 ship). Owner ruling (a): host signals decide the runtime,
+# files may only narrow WITHIN a detected host, and no signal → claude.
+# REPAIR ROUND, refuter RA-3: the guard was ONE-DIRECTIONAL. It refused to create
+# AGENTS.md for an undetected host — and then created CLAUDE.md over a codex-shaped repo
+# without a word, which is the same wrong-runtime write in the other direction. With NO
+# signal at all and AGENTS.md the ONLY foundation present, the honest move is to ASK.
+F2A="$W/f2-upstream-agents"; mkdir -p "$F2A"; : > "$F2A/README.md"
+printf '# upstream agents file\n' > "$F2A/AGENTS.md"; A2A="$(ckt "$F2A/AGENTS.md")"
+est establish --root "$F2A" > "$W/o" 2>&1
+t "no host signal + AGENTS.md is the ONLY foundation → refuses to guess" "$?" "2"
+has "…and asks for the flag by name" "pass --surface codex|claude|both" "$W/o"
+t "…no CLAUDE.md was invented over a codex-shaped repo" \
+  "$([ -f "$F2A/CLAUDE.md" ] && echo wrote || echo none)" "none"
+t "…and the upstream AGENTS.md is byte-untouched" "$(ckt "$F2A/AGENTS.md")" "$A2A"
+t "…no COORD.md either — the refusal happens before any write" \
+  "$([ -f "$F2A/COORD.md" ] && echo wrote || echo none)" "none"
+est establish --surface claude --root "$F2A" > "$W/o" 2>&1
+t "…and the operator's explicit answer is honoured" "$?" "0"
+t "…creating exactly the surface they named" "$(nblk "$F2A/CLAUDE.md")" "1"
+
+# REVIEW ROUND (2026-09-01) verdict, followed: the refusal is a WRITE-safety rule. The
+# READ verbs grade what exists — an established codex estate must never get a usage
+# error from its own drift check just because the environment is signal-less (cron/CI),
+# and if the unverified CODEX vars are ever wrong, reads degrade to a report, never to
+# silence. establish alone keeps the exit-2 ask.
+F2AR="$W/f2-read-verbs"; mkdir -p "$F2AR"; : > "$F2AR/README.md"
+est establish --surface codex --root "$F2AR" >/dev/null 2>&1
+est check --root "$F2AR" > "$W/o" 2>&1
+t "no signal: CHECK grades the codex estate instead of refusing" "$?" "0"
+has "…with the ambiguity handed to the seat as a WARN" "WARN  SURFACE" "$W/o"
+has "…grading the foundation that exists" "AGENTS-BLOCK" "$W/o"
+est continuation --root "$F2AR" > "$W/o" 2>&1
+t "no signal: CONTINUATION hands over the packet instead of refusing" "$?" "0"
+has "…and the packet carries the surface warning" "# WARN surface:" "$W/o"
+
+# The other two no-signal legs are UNCHANGED, and asserted so the refusal cannot creep:
+# nothing present → the stated claude default still creates CLAUDE.md; both present →
+# proceed on both blocks and create nothing.
+F2A2="$W/f2-nosignal-bare"; mkdir -p "$F2A2"; : > "$F2A2/README.md"
+est establish --root "$F2A2" > "$W/o" 2>&1
+t "no signal + NO foundation → the claude default still establishes" "$?" "0"
+has "…on the claude surface" "(surface=claude)" "$W/o"
+F2A3="$W/f2-nosignal-both"; mkdir -p "$F2A3"; : > "$F2A3/README.md"
+est establish --surface both --root "$F2A3" >/dev/null 2>&1
+BA3="$(ckt "$F2A3/AGENTS.md")"; BC3="$(ckt "$F2A3/CLAUDE.md")"
+est establish --root "$F2A3" > "$W/o" 2>&1
+t "no signal + BOTH foundations present → proceeds, does not ask" "$?" "0"
+has "…across both blocks" "(surface=both)" "$W/o"
+has "…creating nothing" "wrote: nothing (already established)" "$W/o"
+t "…and touching neither file" \
+  "$(ckt "$F2A3/AGENTS.md")-$(ckt "$F2A3/CLAUDE.md")" "$BA3-$BC3"
+
+# A DETECTED host outranks the files, in both directions.
+F2B="$W/f2-claude-signal"; mkdir -p "$F2B"; : > "$F2B/README.md"
+printf '# upstream agents file\n' > "$F2B/AGENTS.md"
+NR_HOST=CLAUDECODE=1 est establish --root "$F2B" > "$W/o" 2>&1
+has "CLAUDECODE=1 selects Claude in an AGENTS.md-only tree" "(surface=claude)" "$W/o"
+t "…and CLAUDE.md is what it wrote" "$([ -f "$F2B/CLAUDE.md" ] && echo y || echo n)" "y"
+F2C="$W/f2-claude-code-family"; mkdir -p "$F2C"; : > "$F2C/README.md"
+printf '# upstream agents file\n' > "$F2C/AGENTS.md"
+NR_HOST=CLAUDE_CODE_ENTRYPOINT=cli est establish --root "$F2C" > "$W/o" 2>&1
+has "a CLAUDE_CODE_* variable is a Claude signal too" "(surface=claude)" "$W/o"
+F2D="$W/f2-codex-signal"; mkdir -p "$F2D"; : > "$F2D/README.md"
+printf '# their claude file\n' > "$F2D/CLAUDE.md"; K2D="$(ckt "$F2D/CLAUDE.md")"
+NR_HOST=CODEX_THREAD_ID=fixture-thread est establish --root "$F2D" > "$W/o" 2>&1
+has "a Codex signal outranks a CLAUDE.md-only tree" "(surface=codex)" "$W/o"
+t "…and the CLAUDE.md it did not pick is byte-untouched" "$(ckt "$F2D/CLAUDE.md")" "$K2D"
+
+# AMBIGUOUS host — both families signal. REPAIR ROUND, refuter RA-1: letting the files
+# NARROW here resurrected F2 whole. CODEX_THREAD_ID is exported by a Codex session and
+# INHERITED by everything that session ever launches, so a Claude seat started from a
+# Codex shell carries a stale codex signal forever — and "narrow to the file we see" then
+# handed an AGENTS.md-only repo straight back to the codex surface. The rule now: both
+# signals means CLAUDE-PREFERRED, and the files may only WIDEN to `both` when both
+# foundations already exist. They can never take the surface to codex-only.
+F2E="$W/f2-ambiguous"; mkdir -p "$F2E"; : > "$F2E/README.md"
+printf '# upstream agents file\n' > "$F2E/AGENTS.md"; E2E="$(ckt "$F2E/AGENTS.md")"
+NR_HOST="CLAUDECODE=1 CODEX_THREAD_ID=stale" est establish --root "$F2E" > "$W/o" 2>&1
+has "both signals + AGENTS.md only → claude-preferred, NOT narrowed to codex" \
+  "(surface=claude)" "$W/o"
+t "…CLAUDE.md is what a claude-preferred session wrote" "$(nblk "$F2E/CLAUDE.md")" "1"
+t "…and the stale signal never touched the AGENTS.md" "$(ckt "$F2E/AGENTS.md")" "$E2E"
+F2F="$W/f2-ambiguous-bare"; mkdir -p "$F2F"; : > "$F2F/README.md"
+NR_HOST="CLAUDECODE=1 CODEX_THREAD_ID=stale" est establish --root "$F2F" > "$W/o" 2>&1
+has "both signals + nothing to widen with → claude, not both" "(surface=claude)" "$W/o"
+t "…so no AGENTS.md was invented for a stale signal" \
+  "$([ -f "$F2F/AGENTS.md" ] && echo wrote || echo none)" "none"
+F2H="$W/f2-ambiguous-widen"; mkdir -p "$F2H"; : > "$F2H/README.md"
+est establish --surface both --root "$F2H" >/dev/null 2>&1
+NR_HOST="CLAUDECODE=1 CODEX_THREAD_ID=stale" est establish --root "$F2H" > "$W/o" 2>&1
+has "both signals + BOTH foundations present → files may WIDEN to both" "(surface=both)" "$W/o"
+# The refuter's d7 shape: a different variable from each family, same law.
+F2I="$W/f2-ambiguous-d7"; mkdir -p "$F2I"; : > "$F2I/README.md"
+printf '# upstream agents file\n' > "$F2I/AGENTS.md"
+NR_HOST="CLAUDE_CODE_ENTRYPOINT=cli CODEX_SANDBOX=seatbelt" est establish --root "$F2I" > "$W/o" 2>&1
+has "…and the law holds whichever variable of each family signals" "(surface=claude)" "$W/o"
+
+# THE WRITE GUARD (ruling (b), folded in): under `auto`, an undetected host never gets a
+# foundation file CREATED for it. Asserted against the WRITER directly — detect_surface can
+# no longer route there, and an invariant that holds only while its caller stays correct is
+# not an invariant. Reads still grade whatever files exist (read-only honesty, unchanged).
+F2G="$W/f2-guard"; mkdir -p "$F2G"; : > "$F2G/README.md"
+t "auto + no Codex signal → AGENTS.md is never CREATED on a hunch" "$(pyest -c "
+import sys, os, io, contextlib
+sys.path.insert(0, os.path.dirname('$EST'))
+import establish
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    establish.write_foundation('$F2G', 'codex', [], requested='auto')
+print(('created' if os.path.exists('$F2G/AGENTS.md') else 'refused')
+      + ('|names-the-flag' if '--surface codex' in buf.getvalue() else '|silent'))" 2>&1)" \
+  "refused|names-the-flag"
+t "…and an EXPLICIT --surface codex still creates it" \
+  "$(est establish --surface codex --root "$F2G" >/dev/null 2>&1; nblk "$F2G/AGENTS.md")" "1"
+
+# Review round (2026-09-01): a CREATED foundation honors the umask like open(w) would
+# — mkstemp's 0600 made every fresh CLAUDE.md owner-only, unreadable to a teammate.
+PMODE="$W/proj-createmode"; mkdir -p "$PMODE"; : > "$PMODE/README.md"
+( umask 022 && est establish --root "$PMODE" >/dev/null 2>&1 )
+t "a CREATED foundation honors the umask (022 → 644)" \
+  "$(stat -f%Lp "$PMODE/CLAUDE.md" 2>/dev/null || stat -c%a "$PMODE/CLAUDE.md")" "644"
 
 echo "── F-12(a): the hostile CLAUDE.md corpus"
 
@@ -190,12 +338,49 @@ has "the backup holds the old body" "stale body WITH A HAND EDIT" "$P3/CLAUDE.md
 
 echo "── F-12(b): atomicity, proven by a mutant that would survive without it"
 
+# 4.5 docket item 3 (F4). This arm asserted the OLD contract — that tmp+os.replace WINS
+# over a read-only target, since os.replace needs the DIRECTORY bit and not the file's.
+# Winning there IS the defect: the owner marked the file read-only and the tool rewrote it
+# anyway (and reset its mode to 0600 on the way through). The refusal is the contract now.
 P11="$W/proj11"; mkdir -p "$P11"; : > "$P11/README.md"
 printf 'read-only foundation\n' > "$P11/CLAUDE.md"; chmod 444 "$P11/CLAUDE.md"
-est establish --root "$P11" > "$W/o" 2>&1; t "read-only CLAUDE.md → atomic write wins" "$?" "0"
-t "the block reached the read-only file" "$(nblk "$P11/CLAUDE.md")" "1"
+K11="$(ckt "$P11/CLAUDE.md")"
+est establish --root "$P11" > "$W/o" 2>&1
+t "read-only CLAUDE.md → REFUSED, not rewritten" "$?" "5"
+has "the refusal names the read-only target and its mode" "is read-only (mode 0444)" "$W/o"
+has "…and the tail counts it as a failed write" "writes failed: CLAUDE.md" "$W/o"
+t "the read-only file is byte-untouched" "$(ckt "$P11/CLAUDE.md")" "$K11"
+t "…and its MODE is untouched too" "$(mode_of "$P11/CLAUDE.md")" "444"
 has "its original line survives" "read-only foundation" "$P11/CLAUDE.md"
 chmod 644 "$P11/CLAUDE.md"
+
+# REPAIR ROUND, refuter RA-4: the backup-failure branch ABANDONS the upgrade it was asked
+# to make and said so in a WARN — but never counted it, so the tail read `wrote: COORD.md`
+# with no mention that the block it came for was left at v1.
+F4B="$W/f4-bak"; mkdir -p "$F4B"; : > "$F4B/README.md"
+{ printf '# CLAUDE.md\n\n<!-- notrest:protocol v1 (managed by /notrest) -->\nhand edited\n'
+  printf '<!-- /notrest:protocol -->\n'; } > "$F4B/CLAUDE.md"
+KF4B="$(ckt "$F4B/CLAUDE.md")"
+printf 'old\n' > "$F4B/CLAUDE.md.notrest-v1.bak"; chmod 444 "$F4B/CLAUDE.md.notrest-v1.bak"
+est establish --root "$F4B" > "$W/o" 2>&1
+t "read-only stale .bak → the upgrade is abandoned, PARTIAL" "$?" "5"
+has "…the WARN still explains itself" "the backup failed" "$W/o"
+has "…and the tail now says a write FAILED" "writes failed: CLAUDE.md" "$W/o"
+t "…the v1 block is left exactly as it was" "$(ckt "$F4B/CLAUDE.md")" "$KF4B"
+t "…and the stale backup was not overwritten" "$(cat "$F4B/CLAUDE.md.notrest-v1.bak")" "old"
+chmod 644 "$F4B/CLAUDE.md.notrest-v1.bak"
+
+# The other half of F4: a WRITABLE target keeps the mode its owner gave it. mkstemp
+# creates 0600, so pre-fix every foundation file this tool rewrote came back 0600 — a
+# silent re-permissioning of somebody else's file.
+F4M="$W/f4-mode"; mkdir -p "$F4M"; : > "$F4M/README.md"
+printf 'their foundation\n' > "$F4M/CLAUDE.md"; chmod 640 "$F4M/CLAUDE.md"
+est establish --root "$F4M" > "$W/o" 2>&1; t "append into a mode-0640 foundation → exit" "$?" "0"
+t "the target's MODE survives the atomic replace" "$(mode_of "$F4M/CLAUDE.md")" "640"
+t "…and the block still landed" "$(nblk "$F4M/CLAUDE.md")" "1"
+has "…and the original content survives" "their foundation" "$F4M/CLAUDE.md"
+hasnt "no message claims the FILE was untouched when it was replaced" "content untouched" "$W/o"
+has "…it says what actually happened instead" "preserved byte for byte" "$W/o"
 
 P12="$W/proj12"; mkdir -p "$P12"; : > "$P12/README.md"
 printf 'untouchable\n' > "$P12/CLAUDE.md"; K12="$(ckt "$P12/CLAUDE.md")"; chmod 555 "$P12"
@@ -271,6 +456,184 @@ P6="$W/proj6"; mkdir -p "$P6"; : > "$P6/README.md"; ln -s "$WR/outside/CLAUDE.md
 est establish --root "$P6" > "$W/o" 2>&1; t "escaping symlink → PARTIAL" "$?" "5"
 has "escape is refused by name" "resolves outside" "$W/o"
 t "the file outside the root is untouched" "$(ckt "$W/outside/CLAUDE.md")" "$OUT1"
+
+echo "── 4.5 docket 2 · F3: the REPORT never escapes the root, and the tail never lies"
+
+# The write containment always held; the REPORT did not. foundation_state() followed the
+# escaping link, so a foundation living OUTSIDE the estate graded PASS — and grade()
+# ignored `failures`, so a run with a REFUSED write printed
+# `ESTABLISHED · wrote: nothing (writes failed: AGENTS.md) · exit 0`: a PASS asserted from
+# a file the estate does not own, exit 0 on a refused write, and a `wrote:` tail that was
+# false about the writes that DID land.
+F3SRC="$W/f3-src"; mkdir -p "$F3SRC"; : > "$F3SRC/README.md"
+est establish --surface codex --root "$F3SRC" >/dev/null 2>&1
+cp "$F3SRC/AGENTS.md" "$W/outside/AGENTS.md"; OUTA="$(ckt "$W/outside/AGENTS.md")"
+F3="$W/f3-escape"; mkdir -p "$F3"; : > "$F3/README.md"
+ln -s "$WR/outside/AGENTS.md" "$F3/AGENTS.md"
+est establish --surface both --root "$F3" > "$W/o" 2>&1
+t "escaping AGENTS.md carrying a VALID block outside → never exit 0" "$?" "5"
+hasnt "…and never prints a clean ESTABLISHED verdict" "notrest: ESTABLISHED" "$W/o"
+has "…the READ side refuses the escape too" "refusing to READ" "$W/o"
+has "…the tail names the write that failed" "writes failed: AGENTS.md" "$W/o"
+has "…and still tells the truth about what it DID write" "wrote: COORD.md, CLAUDE.md" "$W/o"
+hasnt "…so a partial run never reports 'wrote: nothing'" "wrote: nothing" "$W/o"
+t "…the file outside the root is byte-untouched" "$(ckt "$W/outside/AGENTS.md")" "$OUTA"
+est check --surface both --root "$F3" > "$W/o" 2>&1
+t "check refuses to grade a foundation from outside the root" "$?" "5"
+est continuation --surface both --root "$F3" > "$W/o" 2>&1
+t "continuation is not CONTINUABLE off an out-of-root foundation" "$?" "6"
+# The grade leg on its own: states can be all-PASS and the run still be a failure.
+t "grade() refuses to say ESTABLISHED while a write failed" "$(pyest -c "
+import sys, os
+sys.path.insert(0, os.path.dirname('$EST'))
+import establish
+print(establish.grade([establish.PASS, establish.PASS], ['AGENTS.md']))" 2>&1)" "5"
+
+# REPAIR ROUND, refuter RA-2: the FOUNDATION read was contained, but every OTHER estate
+# read was not. An escaping COORD.md let `check` grade another project's ledger PASS and
+# `continuation` hand a successor seat a stranger's trail as this project's own history.
+F3C="$W/f3-coord-escape"; mkdir -p "$F3C"; : > "$F3C/README.md"
+DONOR="$W/donor-estate/donor"; mkdir -p "$DONOR"; : > "$DONOR/README.md"
+est establish --root "$DONOR" >/dev/null 2>&1
+{ echo "- [2026-08-01 09:00Z] [donor] someone else's work -> v9.9.9 shipped | evidence: not ours"
+  echo "- [2026-08-02 09:00Z] [donor] more of it -> landed | evidence: not ours"; } >> "$DONOR/COORD.md"
+DONORCK="$(ckt "$DONOR/COORD.md")"
+cp "$DONOR/CLAUDE.md" "$F3C/CLAUDE.md"
+ln -s "$WR/donor-estate/donor/COORD.md" "$F3C/COORD.md"
+est check --root "$F3C" > "$W/o" 2>&1
+t "escaping COORD.md → check is not a PASS" "$?" "5"
+has "…the COORD finding names the escape" "resolves outside" "$W/o"
+hasnt "…and never grades a stranger's ledger as this project's" "COORD.md present with the ledger header" "$W/o"
+hasnt "…nor counts their ledger lines as adoption" "2 ledger line(s) beyond the scaffold" "$W/o"
+est continuation --root "$F3C" > "$W/o" 2>&1
+t "escaping COORD.md → NOT CONTINUABLE" "$?" "6"
+has "…and the refusal names the boundary" "resolves outside" "$W/o"
+hasnt "…the successor is never handed the donor's ships" "v9.9.9 shipped" "$W/o"
+est establish --root "$F3C" > "$W/o" 2>&1
+t "escaping COORD.md → establish refuses to write through it" "$?" "5"
+t "…and the donor's ledger is byte-untouched" "$(ckt "$DONOR/COORD.md")" "$DONORCK"
+# The same law for the other estate reads a packet makes.
+F3D="$W/f3-agentledger-escape"; mkdir -p "$F3D"; : > "$F3D/README.md"
+est establish --root "$F3D" >/dev/null 2>&1
+printf '# COORD-AGENTS.md\n\n## LEDGER\n- [2026-08-04 12:01Z] agent=stranger | last: done\n' \
+  > "$W/donor-estate/COORD-AGENTS.md"
+ln -s "$WR/donor-estate/COORD-AGENTS.md" "$F3D/COORD-AGENTS.md"
+mkdir -p "$W/donor-estate/spend"; printf '# ledger\nlane=stranger tokens=999 grade=observed\n' \
+  > "$W/donor-estate/spend/ledger.md"
+ln -s "$WR/donor-estate/spend" "$F3D/spend"
+est continuation --root "$F3D" > "$W/o" 2>&1
+t "…continuation still works with escaping side-ledgers" "$?" "0"
+hasnt "…but never reads the stranger's agent tail" "agent=stranger" "$W/o"
+hasnt "…nor their spend line" "tokens=999" "$W/o"
+
+echo "── 4.5 docket 6 · F6: the hostile corpus, cloned for AGENTS.md"
+
+# The F-12(a) corpus ran against CLAUDE.md only, and findings F3/F4 above sat in exactly
+# that gap. Same shapes, same laws, the Codex surface.
+A7="$W/agents-crlf"; mkdir -p "$A7"; : > "$A7/README.md"
+printf '# Windows project\r\n\r\nCaf\351 notes: r\351sum\351.\r\n' > "$A7/AGENTS.md"
+cp "$A7/AGENTS.md" "$W/origA7"; OSA7=$(wc -c < "$W/origA7" | tr -d ' ')
+est establish --surface codex --root "$A7" > "$W/o" 2>&1
+t "CRLF+latin-1 AGENTS.md → establish" "$?" "0"
+head -c "$OSA7" "$A7/AGENTS.md" > "$W/preA7"
+t "AGENTS.md original bytes survive EXACTLY (CRLF + latin-1)" "$(ckt "$W/preA7")" "$(ckt "$W/origA7")"
+t "AGENTS.md CRLF count preserved" \
+  "$(python3 -c "import sys;print(open(sys.argv[1],'rb').read().count(b'\\r'))" "$A7/AGENTS.md")" "3"
+t "no U+FFFD written into AGENTS.md" \
+  "$(grep -c $'\xef\xbf\xbd' "$A7/AGENTS.md" 2>/dev/null || true)" "0"
+t "the AGENTS.md block still landed" "$(nblk "$A7/AGENTS.md")" "1"
+
+A8="$W/agents-fenced"; mkdir -p "$A8"; : > "$A8/README.md"
+{ printf '# Docs\n\nHere is what the block looks like:\n\n'
+  printf '```markdown\n'
+  printf '<!-- notrest:protocol v1 (do not edit inside markers; managed by /notrest) -->\n'
+  printf 'example body\n'
+  printf '<!-- /notrest:protocol -->\n'
+  printf '```\n'; } > "$A8/AGENTS.md"
+KA8="$(ckt "$A8/AGENTS.md")"
+est check --surface codex --root "$A8" > "$W/o" 2>&1
+t "fenced EXAMPLE in AGENTS.md is not the block → check" "$?" "5"
+has "…and names the fence/mask disagreement" "inside a fenced/masked region" "$W/o"
+est establish --surface codex --root "$A8" > "$W/o" 2>&1
+t "fenced example in AGENTS.md → establish appends NOTHING" "$?" "5"
+t "…the fenced example survives byte-for-byte" "$(ckt "$A8/AGENTS.md")" "$KA8"
+
+A9="$W/agents-stray"; mkdir -p "$A9"; : > "$A9/README.md"
+{ printf '<!-- notrest:protocol v1 (do not edit inside markers; managed by /notrest) -->\n'
+  printf '\nIRREPLACEABLE USER CONTENT\n\n'
+  printf '<!-- notrest:protocol v0 (do not edit inside markers; managed by /notrest) -->\n'
+  printf 'old body\n'
+  printf '<!-- /notrest:protocol -->\n'; } > "$A9/AGENTS.md"
+KA9="$(ckt "$A9/AGENTS.md")"
+est establish --surface codex --root "$A9" > "$W/o" 2>&1
+t "stray open marker in AGENTS.md → establish refuses" "$?" "5"
+has "…names the ambiguity" "multiple/ambiguous protocol markers" "$W/o"
+t "…and the file is byte-untouched" "$(ckt "$A9/AGENTS.md")" "$KA9"
+has "…USER CONTENT survives" "IRREPLACEABLE USER CONTENT" "$A9/AGENTS.md"
+
+A10="$W/agents-dup"; mkdir -p "$A10"; : > "$A10/README.md"
+{ printf '<!-- notrest:protocol v0 (managed by /notrest) -->\nfirst\n<!-- /notrest:protocol -->\n'
+  printf '\nmiddle\n\n'
+  printf '<!-- notrest:protocol v1 (managed by /notrest) -->\nsecond\n<!-- /notrest:protocol -->\n'; } > "$A10/AGENTS.md"
+KA10="$(ckt "$A10/AGENTS.md")"
+est check --surface codex --root "$A10" > "$W/o" 2>&1
+t "duplicate blocks in AGENTS.md → check" "$?" "5"
+has "…names the shape" "duplicate protocol blocks" "$W/o"
+est establish --surface codex --root "$A10" > "$W/o" 2>&1
+t "duplicate blocks in AGENTS.md → establish refuses" "$?" "5"
+t "…and the file is byte-untouched" "$(ckt "$A10/AGENTS.md")" "$KA10"
+
+A11="$W/agents-unterminated"; mkdir -p "$A11"; : > "$A11/README.md"
+{ printf '# theirs\n\n'
+  printf '<!-- notrest:protocol v1 (managed by /notrest) -->\nbody with no closer\n'; } > "$A11/AGENTS.md"
+KA11="$(ckt "$A11/AGENTS.md")"
+est check --surface codex --root "$A11" > "$W/o" 2>&1
+t "unterminated block in AGENTS.md → check is PARTIAL" "$?" "5"
+has "…and says the block never closes" "unterminated" "$W/o"
+est establish --surface codex --root "$A11" > "$W/o" 2>&1
+t "unterminated block in AGENTS.md → establish leaves it alone" "$?" "5"
+has "…and names the by-hand repair" "close the marker by hand" "$W/o"
+t "…the file is byte-untouched" "$(ckt "$A11/AGENTS.md")" "$KA11"
+
+printf 'OUTSIDE AGENTS — must never change\n' > "$W/outside/PLAIN-AGENTS.md"
+OUTA2="$(ckt "$W/outside/PLAIN-AGENTS.md")"
+A12="$W/agents-escape"; mkdir -p "$A12"; : > "$A12/README.md"
+ln -s "$WR/outside/PLAIN-AGENTS.md" "$A12/AGENTS.md"
+est establish --surface codex --root "$A12" > "$W/o" 2>&1
+t "escaping AGENTS.md symlink → PARTIAL" "$?" "5"
+has "…the escape is refused by name" "resolves outside" "$W/o"
+t "…and the file outside the root is untouched" "$(ckt "$W/outside/PLAIN-AGENTS.md")" "$OUTA2"
+
+A13="$W/agents-readonly"; mkdir -p "$A13"; : > "$A13/README.md"
+printf 'read-only agents foundation\n' > "$A13/AGENTS.md"; chmod 444 "$A13/AGENTS.md"
+KA13="$(ckt "$A13/AGENTS.md")"
+est establish --surface codex --root "$A13" > "$W/o" 2>&1
+t "read-only AGENTS.md → REFUSED, not rewritten" "$?" "5"
+has "…the refusal names the mode" "is read-only (mode 0444)" "$W/o"
+t "…the read-only AGENTS.md is byte-untouched" "$(ckt "$A13/AGENTS.md")" "$KA13"
+chmod 644 "$A13/AGENTS.md"
+
+A14="$W/agents-utf16"; mkdir -p "$A14"; : > "$A14/README.md"
+python3 -c "open('$A14/AGENTS.md','wb').write('# UTF-16 foundation\n'.encode('utf-16'))"
+KA14="$(ckt "$A14/AGENTS.md")"
+est establish --surface codex --root "$A14" > "$W/o" 2>&1
+t "UTF-16 AGENTS.md → PARTIAL" "$?" "5"
+has "…the WARN names the encoding" "not UTF-8 (UTF-16" "$W/o"
+t "…the UTF-16 file is byte-untouched" "$(ckt "$A14/AGENTS.md")" "$KA14"
+est check --surface codex --root "$A14" > "$W/o" 2>&1
+t "UTF-16 AGENTS.md → check also refuses" "$?" "5"
+
+# A PARTIAL `both` run: one surface lands, the other is refused, and the verdict says
+# WHICH — on the same screen, with a tail that names what was actually written.
+A15="$W/agents-partial-both"; mkdir -p "$A15"; : > "$A15/README.md"
+python3 -c "open('$A15/AGENTS.md','wb').write('# UTF-16 foundation\n'.encode('utf-16'))"
+KA15="$(ckt "$A15/AGENTS.md")"
+est establish --surface both --root "$A15" > "$W/o" 2>&1
+t "partial both run (hostile AGENTS.md, clean CLAUDE.md) → PARTIAL" "$?" "5"
+t "…the Claude half landed" "$(nblk "$A15/CLAUDE.md")" "1"
+t "…the hostile AGENTS.md is byte-untouched" "$(ckt "$A15/AGENTS.md")" "$KA15"
+has "…the tail names what it wrote" "wrote: COORD.md, CLAUDE.md" "$W/o"
+has "…and the verdict names the unfinished surface" "AGENTS-BLOCK" "$W/o"
 
 echo "── F-12(g): ONE resolver — all four hooks source it and agree"
 
@@ -398,6 +761,67 @@ sys.path.insert(0, os.path.dirname('$EST'))
 import establish
 root, err = establish.resolve_root(pwd.getpwuid(os.getuid()).pw_dir)
 print('refused' if err else 'established')" 2>&1)" "refused"
+
+# 4.5 docket item 4: the whole home-refusal family compared STRINGS, so on a
+# case-insensitive volume (macOS default) `--root /users/me` walked straight past $HOME,
+# past Desktop/Documents/Downloads and past the dot-dir refusal — the same directory,
+# spelled differently. The family now compares INODES (os.path.samefile, guarded for
+# existence); the dot-LEAF stays lexical, because the leaf's own symlink is exactly what
+# must not be followed before judging it.
+# The arms adapt to the volume they run on: where the alt-case spelling IS the same
+# directory the refusal must name the reason; on a case-sensitive volume it is simply a
+# path that does not exist, and the arm says so rather than pretending to prove identity.
+: > "$W/caseprobe"
+if [ -e "$W/CASEPROBE" ]; then CI=yes; CIWHY="HOME directory, not a project"; CIWK="well-known home folder"; CIDOT="dot-directory directly under your HOME"
+else CI=no; CIWHY="is not a directory"; CIWK="is not a directory"; CIDOT="is not a directory"; fi
+rm -f "$W/caseprobe"
+swapcase(){ python3 -c "import sys;print(sys.argv[1].swapcase())" "$1"; }
+
+# REPAIR ROUND, refuter RA-P: the home family was derived from $HOME, so exporting HOME
+# elsewhere — a harness, a launchd job, a plain `env HOME=… claude` — left the REAL
+# account home completely unprotected, and that is the one directory whose CLAUDE.md is
+# loaded into every session on the machine. The account home now comes from the password
+# database ALWAYS, and a root matching EITHER home is refused.
+# ⛔ These arms call resolve_root() ONLY — pure resolution, no writes, nothing created.
+# Nothing in this fixture may ever run `establish` against the real home.
+ACCT="$(python3 -c "import os,pwd;print(os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir))")"
+rr(){ pyest -c "
+import sys, os
+sys.path.insert(0, os.path.dirname('$EST'))
+import establish
+root, err = establish.resolve_root(sys.argv[1])
+print('refused' if err else 'RESOLVED')" "$1" 2>&1; }
+mkdir -p "$W/not-my-home"
+t "HOME exported elsewhere → the ACCOUNT home is STILL refused" \
+  "$(HOME="$W/not-my-home" rr "$ACCT")" "refused"
+t "…its well-known folders too" \
+  "$(HOME="$W/not-my-home" rr "$ACCT/Desktop")" "refused"
+t "…and its dot-directories" \
+  "$(HOME="$W/not-my-home" rr "$ACCT/.claude")" "refused"
+t "…while an ordinary project still resolves (no over-refusal)" \
+  "$(HOME="$W/not-my-home" rr "$P1")" "RESOLVED"
+t "…and the redirected HOME is refused as well — BOTH homes hold" \
+  "$(HOME="$W/not-my-home" rr "$W/not-my-home")" "refused"
+FHC="$W/fakehome-case"; mkdir -p "$FHC/Desktop" "$FHC/.codex"
+: > "$FHC/README.md"; printf '# codex global\n' > "$FHC/.codex/AGENTS.md"
+HOME="$FHC" est establish --root "$(swapcase "$FHC")" > "$W/o" 2>&1
+t "case-variant \$HOME → refused (case-insensitive volume: $CI)" "$?" "2"
+has "…and the refusal names the reason this volume gives" "$CIWHY" "$W/o"
+HOME="$FHC" est establish --root "$(swapcase "$FHC")/Desktop" > "$W/o" 2>&1
+t "case-variant \$HOME/Desktop → refused" "$?" "2"
+has "…named" "$CIWK" "$W/o"
+HOME="$FHC" est establish --root "$(swapcase "$FHC")/.codex" > "$W/o" 2>&1
+t "case-variant \$HOME/.codex → refused" "$?" "2"
+has "…named" "$CIDOT" "$W/o"
+# NOT a directory-entry count: pointing $HOME at a sandbox makes macOS create ~/Library
+# under it the first time anything runs there, and an arm that reds on the OS's own
+# housekeeping teaches people to ignore it. Assert what THIS TOOL wrote instead.
+t "…and no foundation or ledger was written anywhere in the aliased home" \
+  "$(ls -A "$FHC" "$FHC/Desktop" "$FHC/.codex" 2>/dev/null \
+     | grep -c -E '^(COORD\.md|CLAUDE\.md)$' || true)" "0"
+t "…no COORD.md was written through the alias" \
+  "$([ -f "$FHC/COORD.md" ] || [ -f "$FHC/Desktop/COORD.md" ] || [ -f "$FHC/.codex/COORD.md" ] \
+    && echo wrote || echo none)" "none"
 
 # N-2: a CLAUDE.md-ONLY subproject is the ordinary Claude Code shape and must never be
 # adopted by an established parent. Parent carries a ripe compile candidate to prove no
@@ -617,28 +1041,42 @@ for BADMARK in 'garbage{' '{\"port\":\"not-a-number\"}' '{\"port\":0}' '{}' ''; 
 done
 rm -f "$CKN/graph/.cockpit-always"
 
-echo "── v4.4: the auto-build standing authorization (dispatch, never install)"
+echo "── v4.5: the auto-build standing authorization (owner-private, out of the repo)"
 
-# The marker authorizes DISPATCH only. Three states are asserted here: absent (the old
-# nudge, byte-for-byte the same), present-and-valid (the AUTO-BUILD directive replaces
-# it), and malformed (silently the OLD nudge — a corrupt opt-in must never be read as an
-# authorization, and must never break the session).
+# v4.5 (docket 8c): the marker moved OUT of the estate — an in-repo file is writable by
+# any lane and travels with a clone. Authorization now lives at
+# ${NOTREST_HOME:-~/.notrest}/auto-build/<sha256-of-estate-realpath>.json, and the hook
+# ignores the legacy in-repo path with a one-line migration note. These arms run against
+# a SANDBOX store: NOTREST_HOME is exported so the real ~/.notrest is never read/written.
 # A git root, NOT `est establish`: establish.py fires a DETACHED pulse refresher that
-# runs a real compile scan and would race this arm by overwriting the synthetic
-# candidates.json. git init reaches the same REPO_ROOT with no background writer.
+# would race the synthetic candidates.json.
+export NOTREST_HOME="$W/nrhome"
 AB="$W/autobuild"; mkdir -p "$AB/compile"; ( cd "$AB" && git init -q ) >/dev/null 2>&1
 printf '{"candidates":[{"slug":"release-ritual","occurrences":7,"ripe":true,"status":"NEW"}]}\n' \
   > "$AB/compile/candidates.json"
+# Arg-count decides valid-vs-literal: `mark <estate>` writes the canonical valid marker;
+# `mark <estate> <body>` writes <body> VERBATIM — including the empty string, which a
+# truthiness test would silently upgrade to valid (that bug shipped in this arm's first
+# draft and turned the '' malformed case green for the wrong reason).
+mark(){ python3 -c '
+import hashlib, json, os, sys
+est = os.path.realpath(sys.argv[1]); home = sys.argv[2]
+d = os.path.join(home, "auto-build"); os.makedirs(d, exist_ok=True)
+p = os.path.join(d, hashlib.sha256(est.encode()).hexdigest() + ".json")
+body = (sys.argv[3] if len(sys.argv) > 3
+        else json.dumps({"opted": True, "stamp": "2026-08-31 12:00Z", "estate": est}) + "\n")
+open(p, "w").write(body)
+os.chmod(p, 0o600); print(p)' "$1" "$NOTREST_HOME" ${2+"$2"}; }
 
 ( cd "$AB" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
-t "auto-build: no marker → hook exits 0" "$?" "0"
+t "auto-build: no marker in the store → hook exits 0" "$?" "0"
 has "no marker → the OLD ripe nudge is unchanged" \
   "Ripe compile candidate: release-ritual seen 7x" "$W/o"
 hasnt "no marker → nothing claims an authorization" "AUTO-BUILD opted in" "$W/o"
 
-printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$AB/compile/.auto-build"
+MP="$(mark "$AB")"
 ( cd "$AB" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
-t "auto-build: marker present → hook exits 0" "$?" "0"
+t "auto-build: store marker present → hook exits 0" "$?" "0"
 has "marker → the echo carries the authorization" "AUTO-BUILD opted in" "$W/o"
 has "…and names ONE opus lane for the ripe candidate" \
   "dispatch ONE opus builder lane this session for ripe candidate release-ritual" "$W/o"
@@ -649,33 +1087,34 @@ has "…and restates the hard law in the echo itself" \
 hasnt "…and REPLACES the old nudge rather than doubling it" "Ripe compile candidate" "$W/o"
 
 for BADMARK in 'garbage{' '{"opted": false}' '[]' '{}' ''; do
-  printf '%s' "$BADMARK" > "$AB/compile/.auto-build"
+  mark "$AB" "$BADMARK" >/dev/null
   ( cd "$AB" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
-  t "malformed marker [$BADMARK] → hook still exits 0" "$?" "0"
-  hasnt "malformed marker [$BADMARK] claims no authorization" "AUTO-BUILD opted in" "$W/o"
-  has "malformed marker [$BADMARK] falls back to the old nudge" \
+  t "malformed store marker [$BADMARK] → hook still exits 0" "$?" "0"
+  hasnt "malformed store marker [$BADMARK] claims no authorization" "AUTO-BUILD opted in" "$W/o"
+  has "malformed store marker [$BADMARK] falls back to the old nudge" \
     "Ripe compile candidate: release-ritual" "$W/o"
 done
-# Refuter F3 (2026-09-01, CONFIRMED pre-fix with pasted output): a marker whose
-# realpath ESCAPES the estate was honored, unlike an escaping COORD.md. Now the hook
-# applies the same containment law — an out-of-estate marker is no authorization.
-mkdir -p "$W/other-estate/compile"
-printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$W/other-estate/compile/.auto-build"
-ln -sfn "$W/other-estate/compile/.auto-build" "$AB/compile/.auto-build"
+rm -f "$MP"
+
+# The LEGACY in-repo marker — valid content, correct old path — is IGNORED by law, with
+# a one-line migration note so a standing authorization never silently disappears.
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$AB/compile/.auto-build"
 ( cd "$AB" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
-t "escaping-symlink marker → hook still exits 0" "$?" "0"
-hasnt "escaping-symlink marker claims NO authorization" "AUTO-BUILD opted in" "$W/o"
-has "…and falls back to the old nudge" "Ripe compile candidate: release-ritual" "$W/o"
+t "legacy in-repo marker → hook exits 0" "$?" "0"
+hasnt "legacy in-repo marker grants NO authorization" "AUTO-BUILD opted in" "$W/o"
+has "…and the migration note says why and what to run" \
+  "compile/.auto-build is IGNORED since v4.5" "$W/o"
 rm -f "$AB/compile/.auto-build"
 
 # An opt-in is not a licence to invent work: with nothing ripe, neither echo fires.
 AB2="$W/autobuild-noripe"; mkdir -p "$AB2/compile"; ( cd "$AB2" && git init -q ) >/dev/null 2>&1
 printf '{"candidates":[{"slug":"cold","occurrences":2,"ripe":false,"status":"NEW"}]}\n' \
   > "$AB2/compile/candidates.json"
-printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$AB2/compile/.auto-build"
+mark "$AB2" >/dev/null
 ( cd "$AB2" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
 t "opted in but nothing ripe → hook exits 0" "$?" "0"
 hasnt "opted in but nothing ripe → no AUTO-BUILD echo" "AUTO-BUILD opted in" "$W/o"
+unset NOTREST_HOME
 
 echo "── v4.0.0: the continuation packet"
 

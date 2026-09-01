@@ -28,7 +28,9 @@ because the estate recorded the same shape three or more times. Whether it is
 worth compiling is a judgment the ritual makes — never the scanner.
 """
 import argparse
+import hashlib
 import json
+import os
 import pathlib
 import re
 import sys
@@ -798,11 +800,89 @@ def cmd_decide(a):
 # compile/<slug>/ and wiring it in is a versioned release the owner gates — Part 3 of
 # the skill, unchanged. Kept as a FILE rather than a flag so the standing authorization
 # is visible on disk, survives the seat, and can be revoked by deleting it.
-AUTO_MARK = ".auto-build"
+#
+# ── WHERE IT LIVES, AND WHY IT MOVED (v4.5, docket item 8c) ───────────────────
+# It used to live at `compile/.auto-build`, INSIDE the estate. The refuter's finding
+# (2026-09-01, graded PLAUSIBLE) is that this puts the owner's standing authorization
+# inside the one place every lane can write: a lane could grant itself the authority to
+# be dispatched, and a clone carried a stranger's opt-in into a fresh tree. A .gitignore
+# entry does not touch either problem — it hides the file from git, not from a writer.
+#
+# Authorization is therefore OWNER-PRIVATE MACHINE STATE now:
+#
+#     ${NOTREST_HOME:-~/.notrest}/auto-build/<sha256 of the estate realpath>.json
+#
+# outside every repo, so nothing in a tree can forge it and no clone can carry it. The
+# filename is the hash of the estate's REALPATH — one marker per estate, no directory
+# tree mirroring anyone's paths under $HOME — and the marker names its estate inside,
+# so a copied ~/.notrest cannot silently authorize a different tree. NOTREST_HOME is an
+# override for fixtures; the default is the only shipped path.
+#
+# The legacy in-repo marker is IGNORED, not migrated: honoring it would preserve the
+# exact hole the move exists to close. `auto` says so, once, when it finds one.
+AUTO_MARK = ".auto-build"          # legacy, in-repo — read by nobody, reported by `auto`
 
 
-def _auto_opted(p):
-    """True only for a well-formed opt-in. A corrupt marker is not an opt-in."""
+def auto_home():
+    """The owner-private authorization store. Never inside an estate."""
+    base = os.environ.get("NOTREST_HOME") or os.path.join(
+        os.path.expanduser("~"), ".notrest")
+    return pathlib.Path(base) / "auto-build"
+
+
+def auto_marker(root):
+    """The one marker path for this estate: <store>/<sha256 of realpath>.json."""
+    real = os.path.realpath(str(pathlib.Path(root).expanduser()))
+    return auto_home() / (hashlib.sha256(real.encode("utf-8")).hexdigest() + ".json")
+
+
+def auto_store_fault(root):
+    """Why this estate's authorization store cannot be trusted — else "".
+
+    RB-4 (refuter, 2026-09-01). NOTREST_HOME exists so fixtures never write the real
+    home, and nothing stopped it being pointed back INSIDE the estate. A store under the
+    tree reinstates the exact hole 8c closed: writable by any lane, carried by a clone.
+    The override stays (a fixture that writes $HOME is worse), but a store that lands
+    inside the estate is refused by BOTH readers rather than quietly honored.
+    """
+    try:
+        r = os.path.realpath(str(pathlib.Path(root).expanduser()))
+        base = os.path.realpath(str(auto_home()))
+    except Exception:
+        return ""
+    if base == r or base.startswith(r + os.sep):
+        return ("the authorization store %s is inside the estate %s — an in-estate store "
+                "is writable by any lane and travels with a clone, which is the hole the "
+                "owner-private marker exists to close" % (base, r))
+    return ""
+
+
+def auto_marker_escapes(p):
+    """True when the marker resolves OUTSIDE its own store — a planted symlink.
+
+    RB-5: session-start already applied this law and `auto` did not, so `auto` printed
+    ON for a marker the hook refused. Two readers of one file disagreeing about it is
+    worse than either answer alone.
+    """
+    try:
+        rp = os.path.realpath(str(p))
+        rb = os.path.realpath(str(auto_home()))
+        return not (rp == rb or rp.startswith(rb + os.sep))
+    except Exception:
+        return True
+
+
+def _auto_opted(p, root=None):
+    """True only for a well-formed opt-in that names THIS estate, read from a store the
+    marker does not escape.
+
+    A corrupt marker is not an opt-in. Neither is one whose `estate` field names some
+    other tree (a copied store, a restored backup): the filename alone is a hash anyone
+    could recompute, so the marker has to say what it authorizes. Nor is one that is a
+    symlink out of the store — RB-5, the containment session-start already applied.
+    """
+    if auto_marker_escapes(p):
+        return False
     raw = _read(p)
     if not raw:
         return False
@@ -810,7 +890,12 @@ def _auto_opted(p):
         d = json.loads(raw)
     except Exception:
         return False
-    return isinstance(d, dict) and d.get("opted") is True
+    if not (isinstance(d, dict) and d.get("opted") is True):
+        return False
+    if root is not None and isinstance(d.get("estate"), str) and d["estate"]:
+        if os.path.realpath(d["estate"]) != os.path.realpath(str(root)):
+            return False
+    return True
 
 
 def _estate_root_mismatch(root):
@@ -844,14 +929,25 @@ def _estate_root_mismatch(root):
 
 
 def cmd_auto(a):
-    real = _estate_root_mismatch(str(outdir(a).parent))
+    root = outdir(a).parent
+    real = _estate_root_mismatch(str(root))
     if real:
         sys.stderr.write("auto-build: %s is not the estate root the hooks resolve — the "
                          "marker there would be read by nobody. Use --root %s\n"
-                         % (outdir(a).parent, real))
+                         % (root, real))
         return 2
-    out = outdir(a)
-    p = out / AUTO_MARK
+    fault = auto_store_fault(root)
+    if fault:
+        sys.stderr.write("auto-build: refused — %s\n" % fault)
+        sys.stderr.write("auto-build: set NOTREST_HOME to a path outside the estate, or "
+                         "unset it to use ~/.notrest\n")
+        return 2
+    p = auto_marker(root)
+    legacy = outdir(a) / AUTO_MARK
+    if legacy.exists():
+        print("auto-build: NOTE — %s is IGNORED since v4.5 (an in-estate marker is "
+              "writable by any lane and travels with a clone). Authorization now lives "
+              "at %s; delete the old file at your convenience." % (legacy, p))
     if a.off:
         was = p.exists()
         try:
@@ -861,26 +957,37 @@ def cmd_auto(a):
         print("auto-build: OFF" + ("" if was else " (was already off)") + f" — {p}")
         return 0
     if a.on:
-        out.mkdir(parents=True, exist_ok=True)
+        p.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
         # tmp + replace: a half-written marker must never be readable as an opt-in.
-        tmp = out / (AUTO_MARK + ".tmp")
-        tmp.write_text(json.dumps({"opted": True, "stamp": stamp}) + "\n", encoding="utf-8")
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps({"opted": True, "stamp": stamp,
+                                   "estate": os.path.realpath(str(root))}) + "\n",
+                       encoding="utf-8")
         tmp.replace(p)
+        try:
+            os.chmod(p, 0o600)          # owner-private, and legibly so
+        except OSError:
+            pass
         print(f"auto-build: ON ({stamp}) — {p}")
         print("[compile] this authorizes DISPATCH only: a compiled runtime still never "
               "auto-installs. Shipping stays the owner's act.")
         return 0
-    if _auto_opted(p):
+    if _auto_opted(p, root):
         try:
             stamp = json.loads(_read(p)).get("stamp", "?")
         except Exception:
             stamp = "?"
         print(f"auto-build: ON since {stamp} — {p}")
         return 0
-    print("auto-build: OFF" + (" (marker present but unreadable — treated as OFF)"
-                               if p.exists() else "")
-          + f" — turn it on with: compile.py auto --on --root {a.root}")
+    if p.exists() or os.path.islink(str(p)):
+        why = ("marker escapes the authorization store — treated as OFF, exactly as the "
+               "SessionStart hook treats it" if auto_marker_escapes(p)
+               else "marker present but not a valid opt-in for this estate — treated as OFF")
+        print("auto-build: OFF (%s) — %s" % (why, p))
+    else:
+        print("auto-build: OFF"
+              + f" — turn it on with: compile.py auto --on --root {a.root}")
     return 5
 
 
@@ -1357,8 +1464,9 @@ def main():
     au.add_argument("--root", default=".")
     au.add_argument("--out", default="compile")
     g = au.add_mutually_exclusive_group()
-    g.add_argument("--on", action="store_true", help="write compile/.auto-build")
-    g.add_argument("--off", action="store_true", help="remove compile/.auto-build")
+    g.add_argument("--on", action="store_true",
+                   help="write the owner-private marker under ~/.notrest/auto-build/")
+    g.add_argument("--off", action="store_true", help="remove that marker")
     au.set_defaults(f=cmd_auto)
 
     sc = sub.add_parser("scaffold",

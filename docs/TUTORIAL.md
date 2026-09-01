@@ -1,7 +1,7 @@
 # The notrest harness in 10 minutes
 
 The session harness that makes a Codex task or Claude session **token-lean, verified, and
-continuous** — riding on thirty-one skills from intake to handoff.
+continuous** — riding on thirty-two skills from intake to handoff.
 
 ## 1. Install (once)
 
@@ -73,6 +73,7 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | Work with discipline all session | automatic (hook) · full contract: **/fable-mode** |
 | Run a multi-SESSION dev team | "/fable-director" → **fable-director** |
 | Delegate heavy work fast (any seat + Opus lanes) | "swarm this" / "/agentswarm" → **agentswarm** |
+| Decide whether to tier a job (or just run it flat) | "should I tier this" / "/tieredswarm" → **tieredswarm** |
 | Ask "what do we already know about X?" | "index the dossiers" → **archivist** |
 | See how the files connect (or every project at once) | "map the files" / "/graph" → **graph** |
 | Audit token spend / model routing | "spend report" → **spend** |

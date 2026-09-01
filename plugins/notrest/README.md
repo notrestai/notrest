@@ -1,7 +1,7 @@
 # ORACLE Suite — Codex + Claude
 
 A cross-runtime working-session toolkit by [Not Rest Inc.](https://do.not.rest) — structured
-thinking from intake to handoff. Thirty-one skills share one estate and expose native
+thinking from intake to handoff. Thirty-two skills share one estate and expose native
 Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
 
 - **oracle** — session intake + loads/scaffolds `AGENTS.md` on Codex or `CLAUDE.md` on Claude.
@@ -90,6 +90,10 @@ Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
   `opus`); the harness is the wire (no blackboards, no watches,
   no rotation). The default way any seat delegates; fable-director remains the multi-day /
   multi-machine choice.
+- **tieredswarm** — the three-layer topology (seat → opus lanes → workers) and the
+  MEASURED routing gate from four benchmarked rounds: script it if compilable, flat solo
+  opus by default, tier only for context overflow or wide parallel reads (`[unmeasured]`),
+  sonnet workers only under a declared mechanical/DRAFT tier.
 - **sessionend** — writes START-HERE / HANDOFF / STATE / the runtime foundation.
 - **fable-mode** — the Fable behavioral contract: the discipline loop + hard rules (incl.
   the offload model policy — Fable never rides in a subagent; every offloaded job runs on

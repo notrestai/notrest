@@ -35,7 +35,7 @@ SessionStart/UserPromptSubmit/SubagentStop hooks run on Codex. See
 **The session harness** — the scaffolding a working session runs inside: runtime foundation +
 explicit instruments, delegation as an arrangement (agentswarm) with a spend ledger that makes the model-routing
 policy checkable, an append-only estate that records every prompt and every agent, continuity + successor
-escort across sessions, and an eval suite the harness runs against its own rules. Thirty-one skills ride
+escort across sessions, and an eval suite the harness runs against its own rules. Thirty-two skills ride
 on it — structured thinking from intake to handoff, built on three principles: **token-lean** (progressive disclosure, `--quick` modes, built-in search budgets), **verified** (real tiered sources, disconfirmation passes, honesty labels on every claim), and **model-agnostic** (the discipline lives in the skills, so any model runs them reliably):
 
 | Skill | What it does |

@@ -6,7 +6,7 @@ capable* — every upgrade buildable (a script, a hook, an MCP, a flag), none va
 Skill entries come from a three-lane Opus analyst pass over every SKILL.md and shipped
 script; toolset entries are seat-written from the day's live work.
 
-> **v4.3.0 runtime note (2026-08-06):** the estate and thirty-one skills now ship with
+> **v4.3.0 runtime note (2026-08-06):** the estate and thirty-two skills now ship with
 > native Codex and Claude adapters. Codex discovery is `.codex-plugin/plugin.json`, its
 > project foundation is `AGENTS.md`, and authorized workers use `gpt-5.6-sol`. Claude
 > retains `.claude-plugin`, `CLAUDE.md`, lifecycle hooks, and `opus`. Codex has no claimed

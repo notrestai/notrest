@@ -73,7 +73,7 @@ python3 <compile-skill>/scripts/compile.py report --root "$ROOT"
   `candidates.md`. Rulings match on slug **and** on the recorded `sig=` core, so a candidate
   the scanner renames as the ledger grows keeps its ruling.
 - **`auto [--on|--off]`** — the standing authorization (see below). `--on` writes
-  `compile/.auto-build`, `--off` removes it, bare prints status: **exit 0** opted in,
+  `~/.notrest/auto-build/<estate-sha>.json` (owner-private, outside the repo — v4.5), `--off` removes it, bare prints status: **exit 0** opted in,
   **exit 5** not. It authorizes DISPATCH only and never touches installation.
 
 The same script also carries the ritual's two scaffolding verbs — documented where they are
@@ -143,7 +143,7 @@ a human typing `/compile`. `compile.py auto --on` closes that gap without moving
 line one inch.
 
 - `python3 <compile-skill>/scripts/compile.py auto --on --root "$ROOT"` writes
-  `compile/.auto-build` — one JSON line, `{"opted": true, "stamp": "<UTC>"}`. `--off` removes
+  `~/.notrest/auto-build/<estate-sha>.json` (owner-private, outside the repo — v4.5) — one JSON line, `{"opted": true, "stamp": "<UTC>"}`. `--off` removes
   it; bare `auto` prints status (exit 0 opted in, exit 5 not). The marker is the **owner's
   standing authorization**, on disk where it can be read and revoked.
 - With the marker present and a ripe `NEW` candidate scanned, the SessionStart hook stops

@@ -26,6 +26,12 @@ Constraints this file is built under:
     is refused outright.
   - RUNTIME-EXPLICIT: Codex writes AGENTS.md, Claude writes CLAUDE.md, and `both` writes
     both. Auto-detection is conservative and can always be overridden with `--surface`.
+    HOST SIGNALS DECIDE THE RUNTIME (owner ruling, 4.5): files may only narrow WITHIN a
+    detected host, never pick one; no signal at all means claude, the historical default,
+    now actually enforced. And under `auto` a foundation file is never CREATED for a host
+    nothing detected — reads still grade whatever files exist.
+  - A FILE'S MODE IS PART OF THE FILE. Every rewrite carries the target's mode across the
+    atomic replace, and a target its owner marked READ-ONLY is refused, not rewritten.
   - REPORT/JUDGE SPLIT (load-bearing): establishment checks drive the exit code; adoption
     facts are INFO and can never move it. "Is this session actually following the plugin"
     is a judgment, and it belongs to the seat reading these lines.
@@ -210,11 +216,45 @@ def read_text(path):
         return None
 
 
+def readonly_refusal(path):
+    """A refusal message when `path` exists and its owner marked it read-only, else None.
+
+    `os.replace` needs the DIRECTORY's write bit, not the file's, so the atomic path would
+    cheerfully overwrite a file a plain `open(w)` cannot touch. The fixture used to
+    celebrate that as "atomic write wins". Winning there IS the defect (F4): read-only is
+    an instruction from the file's owner, and this tool is a guest in their project."""
+    try:
+        mode = os.stat(path).st_mode & 0o7777
+    except OSError:
+        return None
+    if os.access(path, os.W_OK):
+        return None
+    return ("%s is read-only (mode 0%03o) — refusing to rewrite a file its owner marked "
+            "read-only. `chmod u+w %s` and re-run if the estate should write here."
+            % (os.path.basename(path), mode, os.path.basename(path)))
+
+
 def atomic_write(path, text, roundtrip=False):
     """tmp file in the SAME directory + os.replace — a reader never sees a half-file, and
     a crash mid-write leaves the original intact. `roundtrip` preserves the byte and
-    line-ending fidelity of a file we did not author."""
+    line-ending fidelity of a file we did not author.
+
+    MODE IS PART OF THE FILE (F4). `mkstemp` creates 0600, so a bare tmp+replace silently
+    re-permissioned every foundation file it rewrote — somebody else's 0644 CLAUDE.md came
+    back 0600 and nothing said so. The target's mode is stat'd first and stamped onto the
+    tmp BEFORE the replace, and a read-only target is refused rather than rewritten."""
     d = os.path.dirname(path) or "."
+    refusal = readonly_refusal(path)
+    if refusal:
+        raise PermissionError(refusal)
+    try:
+        mode = os.stat(path).st_mode & 0o7777
+    except OSError:
+        # A file we are CREATING: mkstemp's 0600 would make every fresh foundation
+        # owner-only — a CLAUDE.md a teammate cannot read (review round, 2026-09-01).
+        # Honor the process umask exactly as open(w) would have.
+        um = os.umask(0); os.umask(um)
+        mode = 0o666 & ~um
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".notrest-", suffix=".tmp")
     try:
         if roundtrip:
@@ -223,6 +263,8 @@ def atomic_write(path, text, roundtrip=False):
             fh = os.fdopen(fd, "w", encoding="utf-8")
         with fh:
             fh.write(text)
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, path)
     except Exception:
         try:
@@ -301,6 +343,17 @@ def contain(root, path):
         return None
 
 
+def in_root(root, rel):
+    """The realpath of `root/rel` when it stays inside the root, else None.
+
+    EVERY ESTATE READ GOES THROUGH HERE (refuter RA-2). Round 1 contained the foundation
+    read and stopped there — so an escaping COORD.md still let `check` grade another
+    project's ledger PASS, and handed `continuation` a stranger's trail as this project's
+    own history. Containment is not a property of one file; it is what "this project"
+    means."""
+    return contain(root, os.path.join(root, rel))
+
+
 def git(root, *args):
     try:
         p = subprocess.run(["git"] + list(args), cwd=root, stdout=subprocess.PIPE,
@@ -320,27 +373,131 @@ def now():
 
 
 # ── runtime surface ───────────────────────────────────────────────────────────────────
-def detect_surface(requested, root=None):
-    """Return `claude`, `codex`, or `both` without pretending the shell knows more than it
-    does. Explicit selection always wins. Codex and Claude runtime variables win next;
-    existing foundation files break a tie. The historical CLI behavior remains Claude
-    when no signal exists, so automation does not silently start writing a second file."""
+#
+# ⛔ HOST SIGNALS DECIDE THE RUNTIME (owner ruling, 4.5 docket item 1, option (a)).
+#
+# The pre-4.5 Claude branch probed CLAUDE_PLUGIN_ROOT / CLAUDE_CONFIG_DIR. Neither is
+# exported by a real Claude Code session, so THE BRANCH WAS DEAD and the file tie-break
+# governed every `auto` run: a Claude session in a repo carrying an upstream AGENTS.md and
+# no CLAUDE.md established the WRONG runtime's foundation and exited 0 ESTABLISHED
+# (confirmed live at the v4.3.0 ship). A detector whose evidence does not exist is not
+# conservative — it is a coin flip wearing a rule's clothes.
+#
+# CLAUDE_SIGNAL_* below are what `env | grep ^CLAUDE` ACTUALLY SHOWS in a Claude Code
+# session, probed on the live host 2026-08-31: CLAUDECODE=1, CLAUDE_PID, and a
+# CLAUDE_CODE_* family (ENTRYPOINT, SESSION_ID, …). Any one of them is the host saying so.
+CLAUDE_SIGNAL_VARS = ("CLAUDECODE", "CLAUDE_PID")
+CLAUDE_SIGNAL_PREFIX = "CLAUDE_CODE_"
+# ⚠️ UNVERIFIED FROM HERE, and labelled rather than dressed up: no Codex session was
+# available to probe from the host that made this change, so these keep the names the 4.3
+# adapter shipped with. If a real Codex session exports neither, this branch is dead the
+# way the Claude branch was — but the failure mode is now benign: no signal falls to the
+# claude default, and the write guard below refuses to CREATE an AGENTS.md nobody detected
+# a host for, so the tool asks for `--surface codex` instead of writing the wrong file.
+CODEX_SIGNAL_VARS = ("CODEX_THREAD_ID", "CODEX_SANDBOX")
+
+
+def host_signals(env=None):
+    """(claude, codex) — what the ENVIRONMENT says about which runtime is running us."""
+    env = os.environ if env is None else env
+    claude = (any(env.get(v) for v in CLAUDE_SIGNAL_VARS)
+              or any(k.startswith(CLAUDE_SIGNAL_PREFIX) and env.get(k) for k in env))
+    codex = any(env.get(v) for v in CODEX_SIGNAL_VARS)
+    return bool(claude), bool(codex)
+
+
+SURFACE_ASK = ("pass --surface codex|claude|both")
+
+
+def resolve_surface(requested, root=None, writing=True):
+    """(surface, error) — the whole surface law in one place.
+
+    Explicit `--surface` always wins, unchanged. Otherwise:
+
+    · BOTH families signal → CLAUDE-PREFERRED, and the files may only WIDEN to `both`
+      when both foundations already exist. They may NEVER take the surface to codex-only.
+      (Refuter RA-1: CODEX_THREAD_ID is exported by a Codex session and INHERITED by
+      everything that session launches, so a Claude seat started from a Codex shell wears
+      a stale codex signal for its whole life. "Narrow to the file we see" then handed an
+      AGENTS.md-only repo straight back to the codex surface — F2 resurrected entire, by
+      the very mechanism meant to fix it. A signal that cannot go stale can decide; one
+      that can, cannot.)
+    · ONE family signals → that runtime.
+    · NO signal at all → the files may only answer a question the environment could not:
+      both foundations present means `both` (upgrade what is there, create nothing);
+      nothing present means the stated claude default; and AGENTS.md ALONE is a REFUSAL,
+      because writing CLAUDE.md over a codex-shaped repo is the same wrong-runtime write
+      the guard already refuses in the other direction (refuter RA-3 — the guard was
+      one-directional). The tool asks instead of guessing.
+
+    Existence is probed THROUGH containment: a foundation that resolves outside the root
+    is not evidence about this project (RA-2)."""
     if requested and requested != "auto":
-        return requested
-    if os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SANDBOX"):
-        return "codex"
-    if os.environ.get("CLAUDE_PLUGIN_ROOT") or os.environ.get("CLAUDE_CONFIG_DIR"):
-        return "claude"
-    if root:
-        has_agents = os.path.isfile(os.path.join(root, "AGENTS.md"))
-        has_claude = os.path.isfile(os.path.join(root, "CLAUDE.md"))
-        if has_agents and has_claude:
-            return "both"
-        if has_agents:
-            return "codex"
-        if has_claude:
-            return "claude"
-    return "claude"
+        return requested, None, None
+    claude, codex = host_signals()
+    has_agents = bool(root) and os.path.isfile(contain(root, os.path.join(root, "AGENTS.md")) or os.devnull)
+    has_claude = bool(root) and os.path.isfile(contain(root, os.path.join(root, "CLAUDE.md")) or os.devnull)
+    if claude and codex:
+        return ("both" if (has_agents and has_claude) else "claude"), None, None
+    if codex:
+        return "codex", None, None
+    if claude:
+        return "claude", None, None
+    if has_agents and has_claude:
+        return "both", None, None
+    if has_agents:
+        if not writing:
+            # REVIEW-THE-FIX verdict (2026-09-01), followed by the seat: the refusal is a
+            # WRITE-safety rule — check and continuation create nothing, so they grade
+            # what exists and hand the ambiguity to the seat as a WARN instead of taking
+            # the judgment away (the file's own report/judge split). If the UNVERIFIED
+            # codex vars are wrong, a read verb degrades to a report, never to silence.
+            # "Grading every foundation present" means the ones that EXIST: an
+            # AGENTS-only estate is graded on its codex surface — an absent CLAUDE.md
+            # is not a failure of a repo that never claimed one.
+            return "codex", None, ("nothing in this environment says which runtime is "
+                                   "running — grading the foundation present, AGENTS.md "
+                                   "(pass --surface to pin it)")
+        return None, ("nothing in this environment says which runtime is running (looked "
+                      "for: %s, %s*, %s), and %s carries AGENTS.md but no CLAUDE.md — "
+                      "refusing to guess, because establishing the wrong runtime's "
+                      "foundation is the defect this rule exists to prevent. Nothing was "
+                      "written: %s."
+                      % (", ".join(CLAUDE_SIGNAL_VARS), CLAUDE_SIGNAL_PREFIX,
+                         ", ".join(CODEX_SIGNAL_VARS), root, SURFACE_ASK)), None
+    return "claude", None, None
+
+
+def detect_surface(requested, root=None):
+    """The surface alone, or None when the environment must be asked (see
+    `resolve_surface`, which is what every command in this file calls). None is returned
+    rather than a guess on purpose: a caller that ignores it raises on the next line
+    instead of quietly writing the wrong runtime's file."""
+    return resolve_surface(requested, root)[0]  # writing default: the safe side
+
+
+def may_create_surface(surface, requested):
+    """(allowed, why_not) — THE WRITE GUARD (ruling option (b), folded in).
+
+    `establish` under `auto` never CREATES a foundation file for a host nothing detected.
+    Reads and checks still grade whatever files exist (read-only honesty), and an explicit
+    `--surface` always wins. The no-signal default may still create CLAUDE.md — that IS
+    the default, stated in the CLI help since 4.0.
+
+    Today `detect_surface` cannot route an undetected host here at all. The guard is kept
+    anyway, and asserted directly by the fixture, because an invariant that holds only
+    while its caller stays correct is not an invariant — it is a coincidence."""
+    if requested and requested != "auto":
+        return True, ""
+    if surface != "codex":
+        return True, ""
+    _claude, codex = host_signals()
+    if codex:
+        return True, ""
+    return False, ("nothing in this environment says a Codex session is running (looked "
+                   "for: %s) — refusing to CREATE %s on a hunch. Re-run with `--surface "
+                   "codex` (or `--surface both`) if that is what you mean; nothing was "
+                   "written." % (", ".join(CODEX_SIGNAL_VARS), SURFACE_FILES["codex"]))
 
 
 def selected_surfaces(surface):
@@ -348,6 +505,44 @@ def selected_surfaces(surface):
 
 
 # ── root resolution ───────────────────────────────────────────────────────────────────
+def same_dir(a, b):
+    """Inode identity, guarded for existence — a STRING compare is not an identity
+    compare. On a case-insensitive volume (macOS default) `/users/me` and `/Users/me` are
+    ONE directory spelled two ways, and the whole home-refusal family was string compares:
+    `--root /users/me` walked straight past $HOME, past Desktop/Documents/Downloads and
+    past the dot-dir refusal. Pre-existing since 4.0; found by the 2026-08-21 review
+    lane, docketed as 4.4 item 4."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def account_homes():
+    """Every directory that is A HOME for this run — the ACCOUNT home from the password
+    database ALWAYS, plus the $HOME-derived one when HOME is set.
+
+    ⛔ Deriving the home from $HOME ALONE meant that exporting HOME elsewhere — a test
+    harness, a launchd job, a container, a plain `env HOME=/tmp/x …` — left the REAL
+    account home entirely unprotected, and that is precisely the directory whose CLAUDE.md
+    every session on the machine loads. The refuter reached it by setting HOME to a
+    sandbox (RA-P). $HOME is a hint the environment can move; the password database is
+    the account. Both are refused, so neither can be used to unprotect the other."""
+    out = []
+    try:
+        import pwd
+        out.append(os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir))
+    except Exception:
+        pass
+    if os.environ.get("HOME"):
+        h = os.path.realpath(os.path.expanduser("~"))
+        if h not in out:
+            out.append(h)
+    if not out:
+        out.append(os.path.realpath(os.path.expanduser("~")))
+    return out
+
+
 def resolve_root(explicit):
     """(root, error). --root wins; else the git root; else the cwd IF it looks like a
     project; else a refusal that NAMES what it looked for. Always realpath'd."""
@@ -378,28 +573,25 @@ def resolve_root(explicit):
     # $HOME and the filesystem root are refused however they were reached, --root
     # included: a CLAUDE.md in $HOME is loaded into every session on this machine, and
     # there is no such thing as a legitimate $HOME estate.
-    # HOME="" (set but empty — launchd/CI shells) makes expanduser("~") return "/",
-    # silently disarming every refusal below; derive home from the account instead.
-    # (Review-the-fix round, 2026-08-21.)
-    if os.environ.get("HOME"):
-        home = os.path.realpath(os.path.expanduser("~"))
-    else:
-        try:
-            import pwd
-            home = os.path.realpath(pwd.getpwuid(os.getuid()).pw_dir)
-        except Exception:
-            home = os.path.realpath(os.path.expanduser("~"))
-    if r == home:
-        return None, ("%s is your HOME directory, not a project — refusing. A CLAUDE.md "
-                      "here is loaded into every session on this machine; establish "
-                      "inside the project itself." % r)
-    if r == os.path.dirname(r):
+    # HOME="" (set but empty — launchd/CI shells) made expanduser("~") return "/" and
+    # silently disarmed every refusal below (review-the-fix round, 2026-08-21); HOME
+    # pointed ELSEWHERE left the real account home unprotected (refuter RA-P). Both are
+    # answered the same way: every home this run has is refused, not just the one $HOME
+    # currently names.
+    homes = account_homes()
+    for home in homes:
+        if r == home or same_dir(r, home):
+            return None, ("%s is your HOME directory, not a project — refusing. A "
+                          "CLAUDE.md here is loaded into every session on this machine; "
+                          "establish inside the project itself." % r)
+    if r == os.path.dirname(r) or same_dir(r, os.path.dirname(r)):
         return None, "%s is a filesystem root, not a project — refusing." % r
-    for wk in ("Desktop", "Documents", "Downloads"):
-        if r == os.path.join(home, wk):
-            return None, ("%s is a well-known home folder, not a project — refusing. Its "
-                          "SUBdirectories are ordinary projects; establish in the one you "
-                          "mean." % r)
+    for home in homes:
+        for wk in ("Desktop", "Documents", "Downloads"):
+            if r == os.path.join(home, wk) or same_dir(r, os.path.join(home, wk)):
+                return None, ("%s is a well-known home folder, not a project — refusing. "
+                              "Its SUBdirectories are ordinary projects; establish in the "
+                              "one you mean." % r)
 
     # A dot-directory directly under $HOME is per-machine configuration territory:
     # ~/.codex/AGENTS.md and ~/.claude/CLAUDE.md are loaded into every session of their
@@ -410,8 +602,13 @@ def resolve_root(explicit):
     # The PARENT is realpath'd (so /var-vs-/private/var aliasing or a symlinked $HOME
     # cannot dodge the compare) while the LEAF stays as named — the leaf's own symlink
     # is exactly what must not be followed before judging it.
+    # The PARENT compare is inode identity (4.4 docket item 4); the LEAF stays lexical,
+    # AS NAMED — the leaf's own symlink is exactly what must not be followed before
+    # judging it, and ".codex" is ".codex" however the volume folds its case.
     def _dot_under_home(p):
-        return (os.path.realpath(os.path.dirname(p)) == home
+        parent = os.path.dirname(p)
+        return (any(os.path.realpath(parent) == home or same_dir(parent, home)
+                    for home in homes)
                 and os.path.basename(p).startswith("."))
     for cand in (r, lex):
         if _dot_under_home(cand):
@@ -436,7 +633,11 @@ def resolve_root(explicit):
 # ── the establishment surfaces ────────────────────────────────────────────────────────
 def coord_state(root):
     """(status, detail). PASS = a ledger a reader can append to."""
-    p = os.path.join(root, "COORD.md")
+    p = in_root(root, "COORD.md")
+    if p is None:
+        return FAIL, ("COORD.md resolves outside %s — refusing to READ a ledger from "
+                      "outside the root. A project's history is its own; grading this "
+                      "estate on another project's trail is a false report" % root)
     try:
         empty = os.path.getsize(p) == 0 if os.path.isfile(p) else True
     except OSError:
@@ -484,9 +685,18 @@ def block_problem(txt):
 
 
 def foundation_state(root, surface):
-    """(status, detail, version) for one runtime foundation."""
+    """(status, detail, version) for one runtime foundation.
+
+    THE REPORT IS CONTAINED THE WAY THE WRITERS ARE (F3). Write containment always held,
+    but this reader followed an escaping symlink and graded a file OUTSIDE the estate —
+    so `check` could print PASS, and `establish` ESTABLISHED exit 0, off a foundation the
+    project does not own. An escape is a FAIL finding, never a PASS read from outside."""
     filename = SURFACE_FILES[surface]
-    p = os.path.join(root, filename)
+    p = contain(root, os.path.join(root, filename))
+    if p is None:
+        return FAIL, ("%s resolves outside %s — refusing to READ a foundation from "
+                      "outside the root; a PASS asserted from a file this project does "
+                      "not own is a false report" % (filename, root)), None
     if not os.path.isfile(p):
         return FAIL, "%s absent — no protocol block, so nothing states the contract" % filename, None
     enc = not_utf8(p)
@@ -533,10 +743,15 @@ SCAFFOLD_MARK = "COORD.md scaffolded by"
 
 def adoption(root):
     out = []
-    cp = os.path.join(root, "COORD.md")
-    txt = read_text(cp) if os.path.isfile(cp) else None
+    cp = in_root(root, "COORD.md")
+    if cp is None:
+        out.append((INFO, "LEDGER-LINES",
+                    "COORD.md resolves outside the root — not read, not counted"))
+        cp = None
+    txt = read_text(cp) if cp and os.path.isfile(cp) else None
     if txt is None:
-        out.append((INFO, "LEDGER-LINES", "no COORD.md to count"))
+        if cp is not None:
+            out.append((INFO, "LEDGER-LINES", "no COORD.md to count"))
     else:
         lines = [ln for ln in txt.splitlines() if LEDGER_LINE_RE.match(ln)]
         real = [ln for ln in lines if SCAFFOLD_MARK not in ln]
@@ -555,9 +770,10 @@ def adoption(root):
         else:
             out.append((INFO, "LEDGER-AGE", "no stamped ledger lines yet"))
     for name, rel in (("AGENT-LEDGER", "COORD-AGENTS.md"), ("SPEND-LEDGER", "spend/ledger.md")):
-        out.append((INFO, name, "%s %s" % (rel, "present"
-                                           if os.path.exists(os.path.join(root, rel))
-                                           else "absent")))
+        p = in_root(root, rel)
+        out.append((INFO, name, "%s %s" % (rel, "resolves outside the root — not read"
+                                           if p is None
+                                           else ("present" if os.path.exists(p) else "absent"))))
     return out
 
 
@@ -572,7 +788,11 @@ NONGIT_WARNS = [
 
 # ── subcommands ───────────────────────────────────────────────────────────────────────
 def tail_lines(path, cap):
-    """The last `cap` ledger lines of a file, oldest first. Missing file → []."""
+    """The last `cap` ledger lines of a file, oldest first. Missing file → []. A None
+    path is an ESCAPING one (in_root refused it) and reads as empty — never as somebody
+    else's ledger."""
+    if path is None:
+        return []
     txt = read_text(path)
     if txt is None:
         return []
@@ -593,8 +813,8 @@ def spend_verdict(root):
     """The spend ledger's own last line, READ not computed. Deliberately never shells to
     spend.py: continuation must stay read-only, deterministic and instant, and a report
     that can exit 4 is a gate, not a packet."""
-    txt = read_text(os.path.join(root, "spend", "ledger.md"))
-    if txt is None:
+    txt = read_text(in_root(root, "spend/ledger.md") or os.devnull)
+    if txt is None or not txt.strip():
         return None
     lines = [ln.strip() for ln in txt.splitlines() if ln.strip() and not ln.startswith("#")]
     return lines[-1] if lines else None
@@ -616,9 +836,10 @@ def git_facts(root):
 def packet(root, surface="claude"):
     """Everything a fresh seat needs to continue, in one gulp. NO CLOCK: every timestamp
     here comes off a file, so the same estate yields the same packet twice."""
-    coord = tail_lines(os.path.join(root, "COORD.md"), COORD_TAIL)
-    agents = tail_lines(os.path.join(root, "COORD-AGENTS.md"), AGENT_TAIL)
-    all_coord = tail_lines(os.path.join(root, "COORD.md"), 10 ** 9)
+    coord_p = in_root(root, "COORD.md")
+    coord = tail_lines(coord_p, COORD_TAIL)
+    agents = tail_lines(in_root(root, "COORD-AGENTS.md"), AGENT_TAIL)
+    all_coord = tail_lines(coord_p, 10 ** 9)
     flags = {"ship": [], "gate": [], "correction": []}
     for ln in all_coord:
         body = ln
@@ -629,7 +850,7 @@ def packet(root, surface="claude"):
         elif GATE_RE.search(body):
             flags["gate"].append(ln)
     try:
-        briefs = len([f for f in os.listdir(os.path.join(root, "briefs"))
+        briefs = len([f for f in os.listdir(in_root(root, "briefs") or os.devnull)
                       if f.endswith(".md")])
     except OSError:
         briefs = 0
@@ -674,14 +895,25 @@ def cmd_continuation(args):
     if err:
         sys.stderr.write("notrest: %s\n" % err)
         return EXIT_USAGE
-    surface = detect_surface(args.surface, root)
+    surface, serr, snote = resolve_surface(args.surface, root, writing=False)
+    if snote:
+        print("# WARN surface: %s" % snote)
+    if serr:
+        sys.stderr.write("notrest: %s\n" % serr)
+        return EXIT_USAGE
     p = packet(root, surface)
     if not p["established"]:
+        # NAME THE BOUNDARY (RA-2). "Not established" is true but useless when the reason
+        # is that this estate's ledger points into somebody else's project — the successor
+        # seat needs to know it was refused a trail, not that there is none.
+        cs, cd = coord_state(root)
         if args.json:
-            print(json.dumps({"root": root, "established": False}, indent=1, sort_keys=True))
+            print(json.dumps({"root": root, "established": False,
+                              "coord_state": cs, "coord_detail": cd},
+                             indent=1, sort_keys=True))
         else:
-            print("notrest: NOT ESTABLISHED — %s carries no continuable estate. "
-                  "Run `/notrest establish` first." % root)
+            print("notrest: NOT ESTABLISHED — %s carries no continuable estate (%s). "
+                  "Run `/notrest establish` first." % (root, cd))
         return EXIT_NONE
     if args.json:
         print(json.dumps(p, indent=1, sort_keys=True))
@@ -729,12 +961,20 @@ def verdict(code, root, extra=""):
     print("notrest: %s — %s%s (exit %d)" % (word, root, extra, code))
 
 
-def grade(states):
+def grade(states, failures=()):
+    """The exit code. FAILURES ARE PART OF THE GRADE (F3): a run that was REFUSED a write
+    it was asked to make has not established anything, however the surfaces read
+    afterwards — `ESTABLISHED · wrote: nothing (writes failed: AGENTS.md) · exit 0` was a
+    live output of this function. `check` passes no failures: it never writes."""
     if all(s == PASS for s in states):
-        return EXIT_OK
-    if any(s in (PASS, WARN) for s in states):
+        code = EXIT_OK
+    elif any(s in (PASS, WARN) for s in states):
+        code = EXIT_PARTIAL
+    else:
+        code = EXIT_NONE
+    if failures and code == EXIT_OK:
         return EXIT_PARTIAL
-    return EXIT_NONE
+    return code
 
 
 def cmd_check(args):
@@ -742,7 +982,12 @@ def cmd_check(args):
     if err:
         sys.stderr.write("notrest: %s\n" % err)
         return EXIT_USAGE
-    surface = detect_surface(args.surface, root)
+    surface, serr, snote = resolve_surface(args.surface, root, writing=False)
+    if snote:
+        emit(WARN, "SURFACE", snote)
+    if serr:
+        sys.stderr.write("notrest: %s\n" % serr)
+        return EXIT_USAGE
     print("notrest check — %s (surface=%s)" % (root, surface))
     cs, cd = coord_state(root)
     emit(cs, "COORD", cd)
@@ -761,8 +1006,12 @@ def cmd_check(args):
     return code
 
 
-def write_foundation(root, surface, failures, allow_weakening=False):
-    """One runtime-foundation half of establish. Returns the 'wrote' descriptions."""
+def write_foundation(root, surface, failures, allow_weakening=False, requested=None):
+    """One runtime-foundation half of establish. Returns the 'wrote' descriptions.
+
+    `requested` is the raw `--surface` the operator asked for ("auto" or None when they
+    did not choose), because THE WRITE GUARD turns on that distinction: creating a
+    foundation for an undetected host needs an explicit choice, not a detector's guess."""
     filename = SURFACE_FILES[surface]
     label = SURFACE_LABELS[surface]
     kp = os.path.join(root, filename)
@@ -775,6 +1024,13 @@ def write_foundation(root, surface, failures, allow_weakening=False):
         failures.append(filename)
         return wrote
     if not os.path.isfile(target):
+        allowed, why = may_create_surface(surface, requested)
+        if not allowed:
+            emit(WARN, label, why)
+            # Counted, not silent: the operator asked for a foundation and did not get
+            # one, and an exit code that reads as success would be a lie about that.
+            failures.append("%s (creation refused: no host signal)" % filename)
+            return wrote
         try:
             atomic_write(target, "# %s — project foundation\n\n%s" % (filename, block))
             wrote.append(filename)
@@ -812,11 +1068,21 @@ def write_foundation(root, surface, failures, allow_weakening=False):
                      "example, or an unterminated fence) — not a live block; add the block "
                      "outside the fence by hand — nothing written")
                 return wrote
+            ro = readonly_refusal(target)
+            if ro:
+                emit(FAIL, label, ro)
+                failures.append(filename)
+                return wrote
             sep = "" if txt.endswith("\n\n") else ("\n" if txt.endswith("\n") else "\n\n")
             atomic_write(target, txt + sep + block, roundtrip=True)
             wrote.append("%s (block appended)" % filename)
-            emit(PASS, label, "v%d protocol block appended — existing content "
-                 "untouched, byte for byte" % PROTOCOL_VERSION)
+            # NOT "the file is untouched": os.replace hands the path a NEW INODE, so the
+            # file object changed even though not one byte of their text did. Say the
+            # true thing (F4) — an operator who checks inode or mtime must not find the
+            # tool's own message contradicted by `ls -i`.
+            emit(PASS, label, "v%d protocol block appended — existing content preserved "
+                 "byte for byte (atomic replace: same path and mode, new inode)"
+                 % PROTOCOL_VERSION)
             return wrote
         found, m, c = blocks[0]
         if c is None:
@@ -849,6 +1115,14 @@ def write_foundation(root, surface, failures, allow_weakening=False):
                             % (filename, ", ".join(dropped)))
             return wrote
 
+        # Checked BEFORE the backup: a refusal that still leaves a .bak behind has
+        # written into a project it just said it would not write into.
+        ro = readonly_refusal(target)
+        if ro:
+            emit(FAIL, label, ro)
+            failures.append(filename)
+            return wrote
+
         canon = CANONICAL_BODIES.get(found)
         if canon is None or old_body.strip() != canon.strip():
             bak = target + ".notrest-v%d.bak" % found
@@ -860,12 +1134,17 @@ def write_foundation(root, surface, failures, allow_weakening=False):
             except OSError as exc:
                 emit(WARN, label, "in-block edits found but the backup failed "
                      "(%s) — the block was left alone" % exc)
+                # RA-4: the upgrade this run came for did NOT happen. Warning about it and
+                # then printing a tail that lists only what succeeded is how a refused
+                # write reads as a clean run.
+                failures.append("%s (upgrade abandoned: backup failed)" % filename)
                 return wrote
         atomic_write(target, txt[:m.start()] + block.rstrip("\n") + txt[c.end():],
                      roundtrip=True)
         wrote.append("%s (block v%d -> v%d)" % (filename, found, PROTOCOL_VERSION))
-        emit(PASS, label, "protocol block replaced in place v%d -> v%d — nothing "
-             "outside the markers changed" % (found, PROTOCOL_VERSION))
+        emit(PASS, label, "protocol block replaced v%d -> v%d — nothing outside the "
+             "markers changed (atomic replace: same path and mode, new inode)"
+             % (found, PROTOCOL_VERSION))
     except OSError as exc:
         emit(FAIL, label, "could not write %s: %s" % (filename, exc))
         failures.append(filename)
@@ -901,7 +1180,10 @@ def cmd_establish(args):
     if err:
         sys.stderr.write("notrest: %s\n" % err)
         return EXIT_USAGE
-    surface = detect_surface(args.surface, root)
+    surface, serr, _snote = resolve_surface(args.surface, root, writing=True)
+    if serr:
+        sys.stderr.write("notrest: %s\n" % serr)
+        return EXIT_USAGE
     print("notrest establish — %s (surface=%s)" % (root, surface))
     wrote, failures = [], []
 
@@ -930,7 +1212,8 @@ def cmd_establish(args):
     # explicitly requested. The same versioned block and byte-preservation laws apply.
     for runtime in selected_surfaces(surface):
         wrote += write_foundation(root, runtime, failures,
-                                  allow_weakening=getattr(args, 'allow_protocol_weakening', False))
+                                  allow_weakening=getattr(args, 'allow_protocol_weakening', False),
+                                  requested=getattr(args, 'surface', None))
 
     # ── 3. git. Never initialized uninvited: `git init` changes what a directory IS, and
     # that is the owner's decision, not a side effect of establishing a ledger.
@@ -959,13 +1242,19 @@ def cmd_establish(args):
         ks, kd, _v = foundation_state(root, runtime)
         foundation_states.append(ks)
         emit(ks, SURFACE_LABELS[runtime], kd)
-    code = grade([cs] + foundation_states)
+    code = grade([cs] + foundation_states, failures)
     if seed_pulse(root):
         emit(INFO, "PULSE", "instrument readings seeding in the background → pulse/*.txt "
                             "+ pulse/pulse.json (derived, disposable; Claude hooks refresh "
                             "automatically, Codex refreshes through explicit harness actions)")
     if failures:
-        tail = " · wrote: nothing (writes failed: %s)" % ", ".join(sorted(set(failures)))
+        # A PARTIAL run wrote SOMETHING and failed at something else. The old tail said
+        # "wrote: nothing" whenever anything failed, which was simply false about the
+        # files that did land (F3) — and the files that land are what an operator has to
+        # go and look at.
+        tail = " · wrote: %s · writes failed: %s" % (
+            ", ".join(wrote) if wrote else "nothing",
+            ", ".join(sorted(set(failures))))
     else:
         tail = " · wrote: %s" % (", ".join(wrote) if wrote
                                  else "nothing (already established)")
@@ -981,11 +1270,13 @@ def main(argv=None):
     c = sub.add_parser("check", help="read-only: is the harness established here?")
     c.add_argument("--root", help="project root (default: git root, else a marked cwd)")
     c.add_argument("--surface", choices=("auto", "codex", "claude", "both"), default="auto",
-                   help="foundation surface (default: detect host/files; historical fallback claude)")
+                   help="foundation surface (default: auto — host signals decide, files only "
+                        "narrow within a detected host, no signal means claude)")
     e = sub.add_parser("establish", help="write the establishment surfaces (idempotent)")
     e.add_argument("--root", help="project root (default: git root, else a marked cwd)")
     e.add_argument("--surface", choices=("auto", "codex", "claude", "both"), default="auto",
-                   help="foundation surface to write")
+                   help="foundation surface to write (default: auto — host signals decide, and "
+                        "auto never CREATES a foundation file for a host it did not detect)")
     e.add_argument("--git-init", action="store_true",
                    help="also run `git init` (and nothing else) when the root is not a repo")
     e.add_argument("--allow-protocol-weakening", action="store_true",
@@ -995,7 +1286,7 @@ def main(argv=None):
                        help="read-only: the packet a successor seat needs to continue")
     n.add_argument("--root", help="project root (default: git root, else a marked cwd)")
     n.add_argument("--surface", choices=("auto", "codex", "claude", "both"), default="auto",
-                   help="foundation surface to read")
+                   help="foundation surface to read (default: auto — host signals decide)")
     n.add_argument("--json", action="store_true", help="machine output, stable key order")
     args = ap.parse_args(argv)
     if args.cmd == "check":

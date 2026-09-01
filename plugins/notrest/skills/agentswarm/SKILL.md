@@ -441,38 +441,19 @@ the tree, refuting the riskiest artifact. The digest spends one lane's context i
 the seat's; it never spends the seat's judgment. **Why the split is law: a summarizer that
 also gates is how "all lanes green" becomes a claim nobody checked.**
 
-## The tiered swarm — sonnet as a tool inside an opus lane (owner-proven 2026-08-31)
+## The tiered swarm — seat / opus lanes / workers (measured 2026-09-01)
 
-Three layers, each one absorbing the flood for the layer above; the owner ran this live
-and the throughput gain is why it is doctrine:
+Four benchmarked rounds narrowed this topology to a gate, in order: **script it if it is
+compilable** (round A: flat+script 60,832 tok beat tiered 270,186); **flat solo opus by
+default** for judgment that fits one context (round B: flat 291,645 tok and deeper beat
+sonnet-tiered 502,687 — dominated on both axes); **tier only for context overflow or wide
+parallelism with a lean fan-in**, both `[unmeasured]`; **sonnet workers only under a
+declared mechanical/DRAFT tier** (rounds C/D: opus workers recover depth, replicated within
+3%, and D's free-choice orchestrator routed all-opus on its own). Merging stays opus, depth
+stops at three, digest-never-verdict binds both merge points, and depth-2 receipts land
+estimate-grade so `/spend` under-counts layer 3.
 
-1. **The seat** (Fable or Opus) — decomposes into domains, dispatches ONE opus lane per
-   domain, judges what returns, applies every edit, gates every ship. Never rides below
-   itself.
-2. **The opus lane** — owns its domain, and may fan its own mechanical breadth out to
-   **sonnet workers as tools**: several parallel `model: "sonnet"` spawns for reads,
-   sweeps, extractions — the work where volume beats depth. The lane MERGES its workers'
-   raw returns itself, because merging is judgment and judgment is opus work.
-3. **The sonnet workers** — bounded, mechanical, DRAFT-tier by declaration in the lane's
-   own dispatching text; they return raw material, never conclusions.
-
-The laws compose downward, and both merge points obey them:
-
-- **Synthesis at fan-in — digest, never verdict — applies at BOTH merges.** The opus lane
-  compresses its workers without deciding for the seat; the seat's synthesis lane (when
-  four-plus lanes return) compresses without deciding for the owner. A verdict rendered
-  two layers down is an oracle nobody can cross-examine.
-- **The gate holds at depth 2.** Spawn-gate is a PreToolUse hook on `Agent|Task`, so a
-  lane's own spawns pass the same door the seat's do: explicit opus or sonnet admitted,
-  omitted models and haiku refused, forks banned at every depth.
-- **Receipts at every layer — with one honest limit.** Every worker is a lane;
-  SubagentStop receipts it with its model recorded (live-proven 2026-08-31: a nested
-  sonnet worker was receipted, an unlawful nested spawn was refused at the door). But a
-  depth-2 receipt currently lands estimate-grade (`tokens=unknown`), so a spend roll-up
-  over a tiered run UNDER-COUNTS layer 3 rather than missing it. Enforcement is exact;
-  accounting at depth 2 is lossy — docketed, not hidden.
-- **Depth stops at three.** A sonnet worker does not spawn. If a worker needs a worker,
-  the decomposition was wrong one layer up — redraw the domains instead.
+Full arrangement and the four measured rounds: **the `tieredswarm` skill** (`/tieredswarm`).
 
 ## Trail-walk — how the seat judges
 

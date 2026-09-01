@@ -374,10 +374,19 @@ class Target(object):
     def _surface(self, requested):
         if requested and requested != "auto":
             return requested
-        if os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SANDBOX"):
-            return "codex"
-        if os.environ.get("CLAUDE_PLUGIN_ROOT") or os.environ.get("CLAUDE_CONFIG_DIR"):
+        # Mirrors establish.py's host-signal law (review round, 2026-09-01: this
+        # sibling still carried the dead CLAUDE_PLUGIN_ROOT branch and file-tiebreak,
+        # so THE SHIP GATE graded itself a codex host on a Claude machine — skipping
+        # the Claude checks exactly when they are load-bearing). Claude signals that
+        # actually exist; claude-preferred when both families appear (a stale codex
+        # var must not flip the gate); the file tie-break only with no signal at all.
+        claude = bool(os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_PID")
+                      or any(k.startswith("CLAUDE_CODE_") for k in os.environ))
+        codex = bool(os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SANDBOX"))
+        if claude:
             return "claude"
+        if codex:
+            return "codex"
         if self.primary and os.path.isfile(os.path.join(self.primary, ".codex-plugin",
                                                         "plugin.json")):
             return "codex"

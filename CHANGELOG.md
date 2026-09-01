@@ -1,5 +1,61 @@
 # Changelog — the notrest harness
 
+## 4.5.0 — 2026-09-01
+
+**The whole docket ships, the tiered swarm becomes the 32nd verb, and the done-when
+becomes a runnable gate — through three builder lanes, three refuter rounds, and a
+review round that corrected the corrector.**
+
+- **tieredswarm (32nd skill):** the three-layer delegation shape as its own verb, carrying
+  the four-round measured routing gate (script → flat solo opus → tier only for context
+  overflow or wide parallel reads, both honestly `[unmeasured]`); agentswarm's section
+  shrinks to a pointer. Skill count 32 across every surface; always-on ~3.5k of 5.2k.
+- **Surface detection obeys the host, twice over (docket 1):** signals that actually
+  exist decide the runtime; both-families is claude-preferred (a stale `CODEX_THREAD_ID`
+  inherited from a Codex shell can no longer resurrect F2); with no signal at all the
+  READ verbs grade what exists under a `WARN SURFACE` line while `establish` refuses
+  AGENTS-only repos with the ask (the review round's verdict: a write-safety rule must
+  not silence a read verb — if the unverified Codex vars are ever wrong, reads degrade
+  to a report, never to an outage). `doctor.py` carried the same dead detector and was
+  grading the ship gate as a codex host on a Claude machine — mirrored to the same law.
+- **The report can no longer escape the root (docket 2):** every estate read — the COORD
+  state, adoption facts, spend, agents, briefs, and continuation's tails — resolves
+  through containment; an escaping COORD.md is a FAIL and NOT CONTINUABLE, never another
+  project's history served as your own. Refused writes reach the exit code and the tail
+  (`writes failed: …`); the `wrote: nothing (exit 0)` lie is gone.
+- **A file's mode is part of the file (docket 3):** rewrites preserve the target's mode
+  (0640 stays 0640, setuid/sticky included), read-only foundations are refused with the
+  mode named and zero debris, and created foundations honor the umask (no more 0600
+  CLAUDE.md a teammate cannot read).
+- **The home-refusal family compares inodes, not strings (docket 4):** `os.path.samefile`
+  across $HOME, `/`, Desktop/Documents/Downloads and the dot-dir parent kills the
+  case-variant bypass; the account's real home is protected even when $HOME points
+  elsewhere (CI/launchd), via a pwd-derived second anchor.
+- **Fixture debts paid (docket 5-6):** the vacuous codex-env arm now asserts the property
+  it names, and the full hostile corpus runs against AGENTS.md — including an
+  unterminated-marker arm the CLAUDE corpus never had.
+- **Depth-2 receipts tell the truth (docket 7):** the `tokens=unknown` root cause was a
+  flush race — the hook read the transcript at the exact byte before the usage line
+  landed. A bounded settle (+1.4ms happy path) recovers the real figure; failing that, a
+  bytes-derived estimate that names its derivation; `unknown` only with a stated reason.
+  `spend report` prints the estimate aggregate beside `known`, never summed into it.
+- **Commission gates, unlazy-inspired (docket 8):** `CHECK:`/`EXPECT:` blocks in
+  commissions become runnable via `hooks/gate-check.py` (evidence fingerprints, 1 MiB
+  capture cap with truncation stated, a wall-clock `--budget` under which an unreached
+  gate is RED, never skipped); a `Stop` hook blocks a completion claim while
+  `gates/ACTIVE.md` is red — an unreadable or gateless declared contract BLOCKS with a
+  true sentence (unterminated fences swallow gates and say so); fail-open on malfunction,
+  always loudly. The auto-build authorization moved OUT of the repo to
+  `~/.notrest/auto-build/<estate-sha>.json` (owner-private, unforgeable by clone or
+  lane; in-estate stores refused by both readers; legacy in-repo markers ignored with a
+  migration note). Receipts gain `outsha=` fingerprints, tail form anchored `@size` so a
+  later reader can verify it.
+- **Process receipts:** three builder lanes (domains A/B/C), two kernel refuter rounds
+  (9 CONFIRMED findings), one review-the-fix round (zero regressions; three ship-blockers
+  fixed at the seat, including overruling the seat's own zero-gates spec). Every fix
+  watched red first; final battery green; the two file-format seams the lanes could not
+  touch were arbitrated at the seat.
+
 ## 4.4.1 — 2026-09-01
 
 **Repetition becomes code without being asked, the tiered swarm becomes doctrine, and a

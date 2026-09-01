@@ -205,14 +205,24 @@ def cmd_report(a):
     # estimate that can move a percentage is an estimate laundered into a measurement.
     seat_est = [e for e in entries if e["kind"] == SEAT_ESTIMATE_KIND]
     seat_est_tokens = sum(e["tokens"] for e in seat_est)
+    est_tokens = 0
     for e in entries:
         if e["grade"] == "estimate":
             estimates += 1
+            est_tokens += e["tokens"]
         buckets[e["verdict"]].append(e)
         if e["kind"] == SEAT_ESTIMATE_KIND:
             continue
         d = by_model.setdefault(e["model"], [0, 0])
         d[0] += 1
+        # S38's own law, applied to this fold (ruled at the seat, 2026-09-01, after the
+        # 4.5 receipt upgrade made estimate rows carry real digits): a grade=estimate
+        # figure never enters the number printed under the word "known" — an estimate
+        # laundered into a measurement is the exact defect S38 fixed in the headline.
+        # The ENTRY still counts (d[0], verdicts, the estimate-grade line); only its
+        # tokens stay out of total_known/by_model sums.
+        if e["grade"] == "estimate":
+            continue
         d[1] += e["tokens"]
         total_known += e["tokens"]
 
@@ -269,8 +279,11 @@ def cmd_report(a):
         return
 
     scope = f" (since {since})" if since else ""
+    # Docket 7's complaint was "the roll-up under-counts layer 3"; S38's law is that an
+    # estimate never wears the word "known". Both hold at once by printing BOTH figures,
+    # never summed: the reader sees the floor (known) and the estimate mass beside it.
     print(f"entries: {len(entries)}{scope} · tokens (known): {total_known} · "
-          f"estimate-grade: {estimates}")
+          f"estimate-grade: {estimates} (~{est_tokens} tok, never summed into known)")
     print("NOTE: ledger covers observed spend only — the main loop's own "
           "consumption is not exposed to the model and is not in these totals."
           + (f" ({len(seat_est)} seat estimate(s) below are the seat's own guess at that "

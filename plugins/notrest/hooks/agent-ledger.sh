@@ -206,116 +206,170 @@ try:
     # tok_total/tok_seen also fund the spend auto-receipt below: summed from the
     # per-message usage objects the transcript actually carries (no guessing —
     # zero usage objects means no number is written at all).
-    model, snippet, size = "?", "?", "?"
-    tok_total, tok_seen = 0, False
-    # SIZE FIELDS FOR THE SWARM BAND (2026-08-05): a lane's tool-call count and its
-    # wall-clock are the two numbers the decomposition gauge runs on, and both are free
-    # here — the transcript is already open. Never estimated: absent stays "?".
-    calls, first_ts, last_ts = 0, "", ""
-    brief_text = None
-    if tpath:
-        p = tpath if os.path.isabs(tpath) else os.path.join(os.getcwd(), tpath)
+    # ── THE SCRAPE — AND THE FLUSH RACE IT USED TO LOSE (docket item 7, 2026-08-31).
+    #
+    # A depth-2 lane on this estate receipted `model=sonnet tokens=unknown grade=estimate
+    # purpose="auto-receipt: "` while its transcript on disk was perfectly intact — usage
+    # object, model and text all present. The COORD line recorded bytes=44594; that file's
+    # line boundaries are 503 / 10651 / 44594 / 45932. The hook read at exactly the byte
+    # where the FINAL ASSISTANT LINE — the only line carrying usage, model and text — had
+    # not yet been flushed. It is a WRITE RACE, not a schema difference, and short nested
+    # lanes lose it most often because they finish inside a single flush.
+    #
+    # So the scrape is a FUNCTION, and it is called again while the file is still
+    # growing. A complete transcript pays nothing: the first call answers and the settle
+    # loop never runs.
+    def _scrape(p):
+        """One pass over a transcript → every field both ledgers carry. Pure enough to
+        be called repeatedly: it only reads."""
+        r = {"model": "?", "snippet": "?", "last_full": "", "size": "?",
+             "tok_total": 0, "tok_seen": False, "calls": 0,
+             "first_ts": "", "last_ts": "", "brief": None}
         try:
-            size = str(os.path.getsize(p))
+            r["size"] = str(os.path.getsize(p))
         except Exception:
-            size = "?"
+            return r
         try:
             with open(p, "r", encoding="utf-8", errors="replace") as tf:
                 text = tf.read()
         except Exception:
-            text = ""
-        if text:
-            last = None
-            # ── the LANE BRIEF. The first user-role message in an agent transcript IS
-            # the prompt the seat passed — the commission, in the seat's own words.
-            # It is captured only before the first assistant turn, so tool results and
-            # follow-up turns (also role=user) can never be mistaken for the ask.
-            seen_assistant = False
+            return r
+        if not text:
+            return r
+        last = None
+        # ── the LANE BRIEF. The first user-role message in an agent transcript IS
+        # the prompt the seat passed — the commission, in the seat's own words.
+        # It is captured only before the first assistant turn, so tool results and
+        # follow-up turns (also role=user) can never be mistaken for the ask.
+        seen_assistant = False
 
-            def flatten(c):
-                """Content blocks → plain text; one rule for user and assistant alike."""
-                if isinstance(c, str):
-                    return c
-                if isinstance(c, list):
-                    parts = []
-                    for b in c:
-                        if isinstance(b, dict) and b.get("type") in (None, "text") \
-                                and isinstance(b.get("text"), str):
-                            parts.append(b["text"])
-                        elif isinstance(b, str):
-                            parts.append(b)
-                    return " ".join(parts)
-                return ""
+        def flatten(c):
+            """Content blocks → plain text; one rule for user and assistant alike."""
+            if isinstance(c, str):
+                return c
+            if isinstance(c, list):
+                parts = []
+                for b in c:
+                    if isinstance(b, dict) and b.get("type") in (None, "text") \
+                            and isinstance(b.get("text"), str):
+                        parts.append(b["text"])
+                    elif isinstance(b, str):
+                        parts.append(b)
+                return " ".join(parts)
+            return ""
 
-            for line in text.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except Exception:
-                    continue
-                if not isinstance(obj, dict):
-                    continue
-                for _tk in ("timestamp", "ts", "time"):
-                    _tv = obj.get(_tk)
-                    if isinstance(_tv, str) and _tv:
-                        if not first_ts:
-                            first_ts = _tv
-                        last_ts = _tv
-                        break
-                role = obj.get("role") or obj.get("type")
-                msg = obj.get("message")
-                if isinstance(msg, dict):
-                    role = msg.get("role", role)
-                    content = msg.get("content", obj.get("content"))
-                else:
-                    content = obj.get("content")
-                # ── token usage: one usage object per line at most (message-level
-                # first, else top-level) so nothing is counted twice. Every
-                # numeric *_tokens field is summed — input, output, and both
-                # cache legs — because that is the whole billed footprint.
-                usage = None
-                if isinstance(msg, dict) and isinstance(msg.get("usage"), dict):
-                    usage = msg["usage"]
-                elif isinstance(obj.get("usage"), dict):
-                    usage = obj["usage"]
-                if usage:
-                    for uk, uv in usage.items():
-                        if isinstance(uv, bool) or not isinstance(uv, int):
-                            continue
-                        if uk.endswith("_tokens") and uv >= 0:
-                            tok_total += uv
-                            tok_seen = True
-                # ── commission capture: the first user turn, before any assistant turn.
-                if role == "user" and brief_text is None and not seen_assistant:
-                    ut = flatten(content)
-                    if ut and ut.strip():
-                        brief_text = ut
-                if role != "assistant":
-                    continue
-                seen_assistant = True
-                # model from THIS assistant line (msg-level first, then top-level);
-                # skip empty and the "<synthetic>" placeholder.
-                m_here = None
-                if isinstance(msg, dict) and isinstance(msg.get("model"), str):
-                    m_here = msg.get("model")
-                elif isinstance(obj.get("model"), str):
-                    m_here = obj.get("model")
-                if m_here and m_here.strip() and m_here.strip() != "<synthetic>":
-                    model = m_here.strip()
-                _c = msg.get("content") if isinstance(msg, dict) else obj.get("content")
-                if isinstance(_c, list):
-                    for _b in _c:
-                        if isinstance(_b, dict) and _b.get("type") == "tool_use":
-                            calls += 1
-                txt = flatten(content)
-                if txt and txt.strip():
-                    last = txt
-            if last is not None:
-                flat = re.sub(r"\s+", " ", last).strip()
-                if flat:
-                    snippet = flat[:160]
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            for _tk in ("timestamp", "ts", "time"):
+                _tv = obj.get(_tk)
+                if isinstance(_tv, str) and _tv:
+                    if not r["first_ts"]:
+                        r["first_ts"] = _tv
+                    r["last_ts"] = _tv
+                    break
+            role = obj.get("role") or obj.get("type")
+            msg = obj.get("message")
+            if isinstance(msg, dict):
+                role = msg.get("role", role)
+                content = msg.get("content", obj.get("content"))
+            else:
+                content = obj.get("content")
+            # ── token usage: one usage object per line at most (message-level
+            # first, else top-level) so nothing is counted twice. Every
+            # numeric *_tokens field is summed — input, output, and both
+            # cache legs — because that is the whole billed footprint.
+            usage = None
+            if isinstance(msg, dict) and isinstance(msg.get("usage"), dict):
+                usage = msg["usage"]
+            elif isinstance(obj.get("usage"), dict):
+                usage = obj["usage"]
+            if usage:
+                for uk, uv in usage.items():
+                    if isinstance(uv, bool) or not isinstance(uv, int):
+                        continue
+                    if uk.endswith("_tokens") and uv >= 0:
+                        r["tok_total"] += uv
+                        r["tok_seen"] = True
+            # ── commission capture: the first user turn, before any assistant turn.
+            if role == "user" and r["brief"] is None and not seen_assistant:
+                ut = flatten(content)
+                if ut and ut.strip():
+                    r["brief"] = ut
+            if role != "assistant":
+                continue
+            seen_assistant = True
+            # model from THIS assistant line (msg-level first, then top-level);
+            # skip empty and the "<synthetic>" placeholder.
+            m_here = None
+            if isinstance(msg, dict) and isinstance(msg.get("model"), str):
+                m_here = msg.get("model")
+            elif isinstance(obj.get("model"), str):
+                m_here = obj.get("model")
+            if m_here and m_here.strip() and m_here.strip() != "<synthetic>":
+                r["model"] = m_here.strip()
+            _c = msg.get("content") if isinstance(msg, dict) else obj.get("content")
+            if isinstance(_c, list):
+                for _b in _c:
+                    if isinstance(_b, dict) and _b.get("type") == "tool_use":
+                        r["calls"] += 1
+            txt = flatten(content)
+            if txt and txt.strip():
+                last = txt
+        if last is not None:
+            r["last_full"] = last
+            flat = re.sub(r"\s+", " ", last).strip()
+            if flat:
+                r["snippet"] = flat[:160]
+        return r
+
+    def _settle(p):
+        """Read again while the transcript is still being written.
+
+        BOUNDED, and bounded twice over: at most ~2 s of wall clock, and it gives up
+        the moment the file has gone ~0.6 s without gaining a byte — a file that has
+        stopped growing will not become more complete by being waited on. A transcript
+        that was already whole costs exactly one stat and one read, as before.
+        """
+        r = _scrape(p)
+        if (r["tok_seen"] and r["snippet"] != "?") or r["size"] == "?":
+            return r
+        import time as _time
+        deadline = _time.time() + 2.0
+        stable, prev = 0, r["size"]
+        while _time.time() < deadline:
+            _time.sleep(0.15)
+            r2 = _scrape(p)
+            if r2["size"] != "?":
+                r = r2
+            if r["tok_seen"] and r["snippet"] != "?":
+                break
+            stable = stable + 1 if r["size"] == prev else 0
+            prev = r["size"]
+            if stable >= 4:
+                break
+        return r
+
+    model, snippet, size = "?", "?", "?"
+    tok_total, tok_seen = 0, False
+    calls, first_ts, last_ts = 0, "", ""
+    brief_text = None
+    last_full = ""
+    _p = ""
+    if tpath:
+        _p = tpath if os.path.isabs(tpath) else os.path.join(os.getcwd(), tpath)
+        _r = _settle(_p)
+        model, snippet, size = _r["model"], _r["snippet"], _r["size"]
+        tok_total, tok_seen = _r["tok_total"], _r["tok_seen"]
+        calls, first_ts, last_ts = _r["calls"], _r["first_ts"], _r["last_ts"]
+        brief_text, last_full = _r["brief"], _r["last_full"]
 
     if model == "?":
         _mm = _meta_model(tpath)
@@ -506,16 +560,85 @@ try:
                 "", "?", "-", "unknown", "none", "null")
             if sledger and os.path.isfile(sledger) and _model_known:
                 marker = f" agent={agent_id}"
+
+                # ── TOKENS: a real figure where one exists, an honest estimate where
+                # one can be derived, `unknown` only where genuinely nothing can be —
+                # and in that last case the receipt SAYS SO (docket item 7).
+                #
+                # The old rule was `tok_seen or bust`, and bust meant `tokens=unknown`,
+                # which spend.py scores as zero. A whole layer of a tiered swarm could
+                # therefore vanish from the roll-up while every row still looked like a
+                # row. A transcript with bytes on disk is not nothing: bytes/4 is the
+                # conventional proxy, it is graded `estimate` (never `observed`), and
+                # the derivation is written into the purpose so no reader can mistake
+                # it for a measurement. That disclosure is the whole licence for the
+                # number: an undisclosed estimate would be worse than the hole it fills.
+                est_note = ""
+                if tok_seen:
+                    stokens, sgrade = str(tok_total), "observed"
+                else:
+                    sgrade = "estimate"
+                    _bytes = int(size) if str(size).isdigit() else 0
+                    if _bytes > 0:
+                        stokens = str(max(1, _bytes // 4))
+                        est_note = f"[est from {_bytes} transcript bytes]"
+                    else:
+                        stokens = "unknown"
+                        est_note = ("[no transcript readable at stop — nothing was "
+                                    "derivable; model came from the spawn sidecar]")
+
+                # ── PURPOSE: the lane's own last words, else the COMMISSION it was
+                # given. A lane that ends on a tool call has no closing text, and the
+                # old writer left `purpose=""` — a receipt that says nothing about what
+                # was bought. The first user turn is always on disk and is the ask
+                # itself, so it is the honest fallback rather than an invented summary.
                 purpose = "" if snippet == "?" else snippet[:60]
+                if not purpose and brief_text:
+                    purpose = "asked: " + re.sub(r"\s+", " ", brief_text).strip()[:53]
                 purpose = re.sub(r"\s+", " ", purpose).replace('"', "'").strip()
-                stokens = str(tok_total) if tok_seen else "unknown"
-                sgrade = "observed" if tok_seen else "estimate"
+                if est_note:
+                    purpose = (purpose + " " + est_note).strip()
+
+                # ── EVIDENCE FINGERPRINT (docket item 8d): bind the receipt to what the
+                # lane actually said. `purpose` is a 60-char truncation and cannot serve
+                # as evidence; this is the sha256 of the lane's FULL final text, so a
+                # transcript can be re-hashed later and matched against its receipt.
+                # Derived from the transcript tail when the lane left no closing text,
+                # and OMITTED ENTIRELY when there is nothing to hash — a missing field is
+                # honest, an invented fingerprint is not.
+                #
+                # THE TAIL FORM CARRIES ITS ANCHOR: `outsha=tail:<sha>@<size>` (refuter,
+                # 2026-09-01). A transcript keeps GROWING after the stop that receipted
+                # it — a resumed lane appends, and this hook's own settle loop exists
+                # because the file is still being written. "the last 4096 bytes" is
+                # therefore not a fixed window: a later reader recomputing it hashes
+                # different bytes and concludes the receipt is wrong. Recording the size
+                # the window was anchored on makes the field reproducible instead of
+                # merely plausible. The full-text form needs no anchor: it hashes the
+                # lane's final text, which does not change.
+                sha_field = ""
+                try:
+                    import hashlib as _hl
+                    if last_full.strip():
+                        sha_field = " outsha=" + _hl.sha256(
+                            last_full.encode("utf-8", "replace")).hexdigest()
+                    elif str(size).isdigit() and int(size) > 0:
+                        _sz = int(size)
+                        with open(_p, "rb") as _tf2:
+                            _tf2.seek(max(0, _sz - 4096))
+                            sha_field = (" outsha=tail:%s@%d"
+                                         % (_hl.sha256(_tf2.read()).hexdigest(), _sz))
+                except Exception:
+                    sha_field = ""
+
                 # calls/secs go AFTER purpose: spend.py's ENTRY_RE stops at grade=, and
                 # the seat-tax fixture pins `grade=<x> purpose="` as adjacent bytes. New
                 # fields append; they never reshape a line other readers already parse.
+                # `agent=` STAYS LAST: it is the idempotence key, matched as a trailing
+                # token by this hook and by the fixtures.
                 sline = (f"[{ts}] lane=subagent model={model} tokens={stokens} "
                          f"grade={sgrade} purpose=\"auto-receipt: {purpose}\""
-                         f" calls={calls_s} secs={secs}"
+                         f" calls={calls_s} secs={secs}{sha_field}"
                          f"{marker}\n")
                 fd = os.open(sledger, os.O_RDWR | os.O_APPEND, 0o644)
                 with os.fdopen(fd, "a+", encoding="utf-8") as sf:

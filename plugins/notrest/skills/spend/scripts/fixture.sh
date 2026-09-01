@@ -143,7 +143,9 @@ echo "── 11. report keeps its shape (doctor + seat-tax fixture depend on it)
 R=$(mk "$(E '2026-07-20 10:00Z' subagent claude-opus-5)" \
        "$(E '2026-07-20 10:05Z' subagent claude-opus-5)")
 run "$R" >/dev/null
-grep -qE '^entries: 2 · tokens \(known\): 200 · estimate-grade: 0$' "$OUT" \
+# v4.5 (docket 7 / RB-3): the line gained the estimate aggregate — printed beside
+# known, never summed into it. The pin follows the ruled format.
+grep -qE '^entries: 2 · tokens \(known\): 200 · estimate-grade: 0 \(~0 tok, never summed into known\)$' "$OUT" \
   && ok "first line unchanged (entries · tokens · estimate-grade)" \
   || no "first line unchanged" "$(head -1 "$OUT")"
 grep -q '^NOTE: ledger covers observed spend only' "$OUT" \
@@ -175,7 +177,7 @@ chk "a seat estimate never fires the gate → exit 0" "$(run "$R")" "0"
 grep -q 'seat estimates: 1, informational — not offload-gated' "$OUT" \
   && ok "  reported on its own line, in the agreed words" \
   || no "  seat-estimate line" "$(cat "$OUT")"
-grep -qE '^entries: 2 · tokens \(known\): 100 · estimate-grade: 1$' "$OUT" \
+grep -qE '^entries: 2 · tokens \(known\): 100 · estimate-grade: 1 \(~480000 tok, never summed into known\)$' "$OUT" \
   && ok "  its 480000 tokens stay OUT of tokens(known) — an estimate cannot move a total" \
   || no "  observed total excludes the estimate" "$(head -1 "$OUT")"
 grep -qE '^  claude-fable-5 +entries=' "$OUT" \

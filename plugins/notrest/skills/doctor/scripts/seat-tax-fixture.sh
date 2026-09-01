@@ -285,9 +285,15 @@ fi
 run_hook "$A" agt_nousage "$T2"
 LINE2="$(grep 'agent=agt_nousage$' "$LEDGER" | head -1)"
 echo "      line: $LINE2"
+# v4.5 (docket 7): a no-usage transcript no longer surrenders to unknown — the receipt
+# carries a bytes-derived figure GRADED estimate, and says where it came from.
 case "$LINE2" in
-  *"tokens=unknown"*) ok "no-usage: token count omitted (tokens=unknown)" ;;
-  *) no "no-usage: token count omitted (tokens=unknown)" "$LINE2" ;;
+  *"grade=estimate"*) ok "no-usage: bytes-derived figure, graded estimate" ;;
+  *) no "no-usage: bytes-derived figure, graded estimate" "$LINE2" ;;
+esac
+case "$LINE2" in
+  *"est from"*"transcript bytes"*) ok "…and the receipt names its derivation" ;;
+  *) no "…and the receipt names its derivation" "$LINE2" ;;
 esac
 case "$LINE2" in
   *"grade=estimate"*) ok "no-usage: graded estimate, never guessed" ;;

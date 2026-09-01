@@ -154,23 +154,63 @@ r = [x for x in c if x.get("ripe") and x.get("status") == "NEW"]
 if r: print(r[0]["slug"], r[0]["occurrences"])' "$REPO_ROOT/compile/candidates.json" 2>/dev/null)"
   if [ -n "$COMPILE_TOP" ]; then
     read -r CSLUG CSEEN <<< "$COMPILE_TOP"
-    # compile/.auto-build is the owner's STANDING AUTHORIZATION, written by
-    # `compile.py auto --on`. It upgrades this line from a nudge a human must answer
-    # into a directive the seat may act on — and it authorizes exactly ONE thing:
-    # DISPATCHING a builder lane. It never authorizes installation. A compiled runtime
-    # still lives isolated under compile/<slug>/ and shipping stays a release the owner
-    # gates, so the echo restates that law rather than leaving it to be remembered.
+    # THE OWNER'S STANDING AUTHORIZATION, written by `compile.py auto --on`. It upgrades
+    # this line from a nudge a human must answer into a directive the seat may act on —
+    # and it authorizes exactly ONE thing: DISPATCHING a builder lane. It never
+    # authorizes installation. A compiled runtime still lives isolated under
+    # compile/<slug>/ and shipping stays a release the owner gates, so the echo restates
+    # that law rather than leaving it to be remembered.
+    #
+    # v4.5 (docket 8c): the marker lives OUTSIDE the estate, at
+    #   ${NOTREST_HOME:-~/.notrest}/auto-build/<sha256 of the estate realpath>.json
+    # because the old in-repo `compile/.auto-build` sat in the one place every lane can
+    # write — a lane could grant itself the authority to be dispatched, and a clone
+    # carried a stranger's opt-in. The legacy path is IGNORED here (honoring it would
+    # keep the hole open) and named ONCE, so a standing authorization can never be lost
+    # in silence.
+    #
     # A missing, unreadable or malformed marker falls back to the old nudge SILENTLY:
-    # a corrupt opt-in is not an opt-in, and a hook must never break the session.
-    # Containment (refuter F3, 2026-09-01): a marker whose realpath escapes the estate
-    # is not this estate's authorization — same law the resolver applies to COORD.md.
-    NR_AUTOBUILD=""
-    if [ -f "$REPO_ROOT/compile/.auto-build" ] \
-       && nr_contained "$REPO_ROOT" "$REPO_ROOT/compile/.auto-build"; then
-      NR_AUTOBUILD="$(python3 -c 'import json,sys
-try: d = json.load(open(sys.argv[1]))
-except Exception: sys.exit(0)
-if isinstance(d, dict) and d.get("opted") is True: sys.stdout.write("y")' "$REPO_ROOT/compile/.auto-build" 2>/dev/null)"
+    # a corrupt opt-in is not an opt-in, and a hook must never break the session. Three
+    # further refusals, all in the same python probe: the marker must not be a symlink
+    # OUT of the store (containment, the law the resolver applies to COORD.md), it must
+    # name THIS estate if it names one at all, and anything unexpected reads as OFF.
+    # RB-4 (refuter, 2026-09-01): NOTREST_HOME could be pointed back INSIDE the estate,
+    # which reinstates the hole 8c closed — an in-estate store is writable by any lane
+    # and travels with a clone. A store under the estate root is refused here and named
+    # on stderr (an authorization that silently stops working is the failure mode the
+    # marker exists to avoid); the probe prints `in-estate` for that case and `y` only
+    # for a store the owner alone can write.
+    NR_AUTOBUILD="$(python3 -c '
+import hashlib, json, os, sys
+try:
+    root = os.path.realpath(sys.argv[1])
+    base = os.path.join(os.environ.get("NOTREST_HOME") or
+                        os.path.join(os.path.expanduser("~"), ".notrest"), "auto-build")
+    rb = os.path.realpath(base)
+    if rb == root or rb.startswith(root + os.sep):
+        sys.stdout.write("in-estate:" + rb)      # a store a lane could write
+        raise SystemExit(0)
+    p = os.path.join(base, hashlib.sha256(root.encode("utf-8")).hexdigest() + ".json")
+    rp = os.path.realpath(p)
+    if not (rp == rb or rp.startswith(rb + os.sep)):
+        raise SystemExit(0)                      # escapes the store: not ours
+    d = json.load(open(p))
+    if not (isinstance(d, dict) and d.get("opted") is True):
+        raise SystemExit(0)
+    e = d.get("estate")
+    if isinstance(e, str) and e and os.path.realpath(e) != root:
+        raise SystemExit(0)                      # names a different estate
+    sys.stdout.write("y")
+except Exception:
+    pass' "$REPO_ROOT" 2>/dev/null)"
+    case "$NR_AUTOBUILD" in
+      in-estate:*)
+        echo "[notrest] auto-build authorization IGNORED: the store ${NR_AUTOBUILD#in-estate:} sits inside the estate — an in-estate store is writable by any lane and travels with a clone, so it is not the owner's private authorization. Unset NOTREST_HOME (or point it outside the estate) and re-run: compile.py auto --on --root $REPO_ROOT"
+        NR_AUTOBUILD=""
+        ;;
+    esac
+    if [ -z "$NR_AUTOBUILD" ] && [ -f "$REPO_ROOT/compile/.auto-build" ]; then
+      echo "[notrest] compile/.auto-build is IGNORED since v4.5 — an in-estate marker is writable by any lane and travels with a clone. Re-authorize with: compile.py auto --on --root $REPO_ROOT (writes to ~/.notrest/auto-build/), then delete the old file."
     fi
     if [ -n "$NR_AUTOBUILD" ]; then
       echo "[notrest] AUTO-BUILD opted in: dispatch ONE opus builder lane this session for ripe candidate $CSLUG (/compile $CSLUG) — isolated under compile/$CSLUG/, benchmarked, receipted; NEVER installed: shipping stays the owner's act."

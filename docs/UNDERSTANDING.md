@@ -96,7 +96,7 @@ picture of a whole working day costs zero tokens.
 
 *Why:* rules that depend on remembering get forgotten. These don't ask.
 
-### The 31 skills — the specialists
+### The 32 skills — the specialists
 
 Research, decide, fact-check, red-team, plan, turn plans into commands, draft what you
 send, watch facts for drift, recap the story, compile repeated work into scripts, run
@@ -180,7 +180,7 @@ run in seconds.
 
 ## 6. Where it stands
 
-**Done and running:** the engine (v4.2.0, 31 skills), all instruments green, the cockpit,
+**Done and running:** the engine (v4.2.0, 32 skills), all instruments green, the cockpit,
 the estate, the library.
 
 **Built and gated, not live:** rig.rest v0.1 — ~1,536 fixture assertions across six
