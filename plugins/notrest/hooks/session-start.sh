@@ -27,7 +27,7 @@ echo "[notrest] Fable discipline is active: ORIENT -> PROBE -> ACT -> PROVE -> B
 # ── offload model policy: unconditional, so it reaches every fan-out surface
 # (Agent tool, Workflow/ultracode, deep-research, review panels) even when no
 # notrest skill is loaded. Owner-set 2026-07-15: opus-only offload.
-echo "[notrest] HARD RULE — offload: every spawned agent/Workflow lane sets model \"opus\" explicitly. Never sonnet, haiku, or subagent_type \"fork\" (forks inherit the seat); omitting model is a violation, not a default. Delegate via /notrest:agentswarm; builds run ONE persistent lane — feedback RESUMES it (SendMessage), never a new spawn. Receipts auto-log; never hand-log. Never /model-switch the seat."
+echo "[notrest] HARD RULE — offload: every spawned agent/Workflow lane sets its model explicitly — \"opus\" by default, \"sonnet\" only for a brief-declared mechanical/DRAFT-tier job (owner amendment 2026-08-30). Never haiku, never subagent_type \"fork\" (forks inherit the seat); omitting model is a violation, not a default. Delegate via /notrest:agentswarm; builds run ONE persistent lane — feedback RESUMES it (SendMessage), never a new spawn. Receipts auto-log; never hand-log. Never /model-switch the seat."
 
 # ── continuity nudge: stdout is injected as session context.
 if [ -f "START-HERE.md" ]; then

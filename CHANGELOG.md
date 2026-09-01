@@ -1,5 +1,21 @@
 # Changelog — the notrest harness
 
+## 4.5.1 — 2026-09-01
+
+**The map, and one law on every surface.**
+
+- `docs/MAP.md` (new, golden-registered): the whole plugin probed live — 11 hooks, ~50
+  instruments with their exit grammars, all 32 skills in plain sentences, the estate
+  files by writer and reader, and 14 loose threads for the gap review.
+- **The two-law split is closed** (map threads 2-3): the SessionStart echo now states the
+  owner's 2026-08-30 amendment instead of the superseded opus-only rule it was telling
+  every new session; spawn-gate's header comment matches its own code; and `spend report`
+  learns the amendment era-guarded in the file's own style — a sonnet lane is compliant
+  only when PROVABLY dated after 2026-08-31, an undatable stamp still buys no amnesty
+  (the fixture caught the first draft giving one), and pre-amendment sonnet stays a
+  violation of the law then in force. The live ledger's verdict flipped 4 → CLEAN.
+- Cockpit restarted (opted always-on and found down); graph rescanned post-4.5.0.
+
 ## 4.5.0 — 2026-09-01
 
 **The whole docket ships, the tiered swarm becomes the 32nd verb, and the done-when

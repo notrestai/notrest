@@ -60,8 +60,11 @@ CROSS_VENDOR_LANES = {"gpt", "chatroom-gpt", "connector-openai"}
 POLICY_DATE = "2026-07-15"          # the day the owner set opus-only Claude offload
 POLICY_BINDS_FROM = "2026-07-16"    # first day an entry is judged by it (see guard above)
 CODEX_POLICY_DATE = "2026-08-06"    # Codex adapter release day (day itself grandfathered)
+SONNET_POLICY_DATE = "2026-08-30"   # owner amendment: explicit sonnet lawful, tier-declared
+SONNET_BINDS_FROM = "2026-08-31"    # same day-grandfather convention as the others
 CODEX_BINDS_FROM = "2026-08-07"
-POLICY_NAME = "policy v4.3: runtime worker (Claude=opus, Codex=gpt-5.6-sol)"
+POLICY_NAME = ("policy v4.5: runtime worker (Claude=opus, sonnet lawful from "
+               "2026-08-31 amendment; Codex=gpt-5.6-sol)")
 LEGACY_NAME = "pre-2026-07-15 rule: fable never below the seat"
 
 OPUS_RE = re.compile(r"opus", re.I)
@@ -112,6 +115,14 @@ def classify(ts, lane, model):
     if model.lower() in UNKNOWN_MODELS:
         return "unverifiable"
     if OPUS_RE.search(model):
+        return "compliant"
+    # The 2026-08-30 amendment: explicit sonnet is lawful FROM the amendment; a sonnet
+    # lane dated before it is judged by the opus-only law then in force. The TIER
+    # declaration lives in the brief, which this ledger cannot read — the gate enforced
+    # it at the door; the audit records the model era-honestly.
+    # FAIL CLOSED on an undatable stamp (the fixture's own law: no amnesty) — a sonnet
+    # entry is compliant only when its date PROVABLY falls under the amendment.
+    if re.search(r"sonnet", model, re.I) and d and d >= SONNET_BINDS_FROM:
         return "compliant"
     # The Codex model becomes lawful only after the adapter exists. A backdated Codex
     # receipt must not rewrite the policy that actually governed that old lane.

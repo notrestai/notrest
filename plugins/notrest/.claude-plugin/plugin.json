@@ -1,7 +1,7 @@
 {
   "name": "notrest",
   "displayName": "Not Rest Inc. — ORACLE session harness",
-  "version": "4.5.0",
+  "version": "4.5.1",
   "description": "A cross-runtime session harness by Not Rest Inc. — shared estate, instruments, and thirty-two skills, with native adapters for Claude and Codex. Claude keeps lifecycle hooks and explicit Opus lanes; Codex uses AGENTS.md, native packaging, explicit gpt-5.6-sol lanes when delegation is authorized, and honest post-checks where hooks do not exist.",
   "author": {
     "name": "Not Rest Inc.",

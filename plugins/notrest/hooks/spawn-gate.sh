@@ -8,7 +8,7 @@
 # wrong credit. This closes that gap: the violation is refused at the door.
 #
 # THE LAW (owner-set 2026-07-15): every offloaded job sets model "opus" EXPLICITLY.
-# Never sonnet, never haiku, never subagent_type "fork" (a fork inherits the seat and
+# Opus default; explicit sonnet lawful for declared mechanical/DRAFT-tier briefs (owner 2026-08-30); never haiku, never subagent_type "fork" (a fork
 # bills its credit). Omitting the model is a violation, not a default.
 #
 # PAYLOAD, verified against this repo's own transcripts before this hook was written

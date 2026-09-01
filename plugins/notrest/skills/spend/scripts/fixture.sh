@@ -45,7 +45,7 @@ echo "── 1. the live rule bites: post-policy non-opus offload lanes"
 R=$(mk "$(E '2026-07-20 10:00Z' subagent claude-sonnet-5)")
 chk "post-policy sonnet on subagent → exit 4" "$(run "$R")" "4"
 grep -q 'ROUTING VIOLATIONS (1)' "$OUT" && ok "  names it a routing violation" || no "  names it a routing violation" "$(cat "$OUT")"
-grep -q 'policy v4.3: runtime worker (Claude=opus, Codex=gpt-5.6-sol)' "$OUT" \
+grep -q 'policy v4.5: runtime worker (Claude=opus, sonnet lawful from 2026-08-31 amendment; Codex=gpt-5.6-sol)' "$OUT" \
   && ok "  verdict names the rule version it enforces (greppable fingerprint)" \
   || no "  verdict names the rule version it enforces"
 
@@ -86,6 +86,12 @@ echo "── 5. an undatable stamp buys no amnesty (fail closed)"
 R=$(mk 'lane=subagent model=claude-sonnet-5 tokens=1 grade=observed purpose="x"' \
        "$(E 'not-a-date' subagent claude-sonnet-5)")
 chk "garbled timestamp + sonnet → exit 4" "$(run "$R")" "4"
+
+echo "── 5b. the 2026-08-30 amendment, era-guarded both directions"
+R=$(mk "$(E '2026-09-01 10:00Z' subagent claude-sonnet-5)")
+chk "post-amendment explicit sonnet → CLEAN" "$(run "$R")" "0"
+R=$(mk "$(E '2026-08-15 10:00Z' subagent claude-sonnet-5)")
+chk "pre-amendment sonnet stays a violation of the law then in force" "$(run "$R")" "4"
 
 echo "── 6. cross-vendor allowlist: exempt, but counted separately"
 R=$(mk "$(E '2026-07-20 10:00Z' gpt gpt-5.6)")
@@ -129,7 +135,7 @@ import json,sys
 d=json.load(open('$OUT'))
 assert d['verdict']=='VIOLATION', d['verdict']
 assert d['exit']==4, d['exit']
-assert d['policy']=='policy v4.3: runtime worker (Claude=opus, Codex=gpt-5.6-sol)', d['policy']
+assert d['policy']=='policy v4.5: runtime worker (Claude=opus, sonnet lawful from 2026-08-31 amendment; Codex=gpt-5.6-sol)', d['policy']
 assert len(d['violations'])==1, d['violations']
 assert d['counts']['violation']==1, d['counts']
 " 2>"$TMP/jerr" && ok "  json carries verdict/exit/policy/violations/counts" \
