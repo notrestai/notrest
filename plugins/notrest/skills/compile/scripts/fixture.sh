@@ -263,6 +263,70 @@ has "…and the existing work is untouched" "SENTINEL" "$O/demo-runtime/runner.p
 python3 "$CP" scaffold --root "$R" --slug "///" >/dev/null 2>&1
 t "an unusable slug is refused" "$?" "2"
 
+echo "── L · auto: the standing authorization round-trips, and is never a licence to install"
+
+A="$W/autoroot"; mkdir -p "$A"
+MARK="$A/compile/.auto-build"
+
+python3 "$CP" auto --root "$A" > "$W/auto.txt" 2>&1
+t "bare auto with no marker exits 5" "$?" "5"
+has "…and says how to turn it on" "auto --on" "$W/auto.txt"
+t "…and wrote nothing" "$([ -e "$MARK" ] && echo wrote || echo none)" "none"
+
+# Refuter F2 (2026-09-01, CONFIRMED pre-fix): auto wrote its marker at a cwd-relative
+# root the hooks never read, and --off at the real root could not clear it. Now a
+# --root that is not the estate root the hooks resolve is REFUSED, exit 2, naming it.
+G="$W/gitestate"; mkdir -p "$G/sub"; ( cd "$G" && git init -q ) >/dev/null 2>&1
+python3 "$CP" auto --root "$G/sub" --on > "$W/auto-sub.txt" 2>&1
+t "auto --on at a git SUBdir is refused" "$?" "2"
+has "…naming the root the hooks resolve" "not the estate root the hooks resolve" "$W/auto-sub.txt"
+t "…and no stray marker landed" "$([ -e "$G/sub/compile/.auto-build" ] && echo stray || echo none)" "none"
+python3 "$CP" auto --root "$G" --on >/dev/null 2>&1
+t "auto --on at the git TOPLEVEL is accepted" "$?" "0"
+
+python3 "$CP" auto --root "$A" --on > "$W/auto.txt" 2>&1
+t "auto --on exits 0" "$?" "0"
+t "…and the marker exists" "$([ -f "$MARK" ] && echo yes || echo no)" "yes"
+has "…and the opt-in restates the hard law where the owner reads it" \
+  "never auto-installs" "$W/auto.txt"
+has "…naming what it actually authorizes" "authorizes DISPATCH only" "$W/auto.txt"
+t "the marker is ONE json line" "$(wc -l < "$MARK" | tr -d ' ')" "1"
+t "the marker parses, and says opted=true" "$(python3 -c '
+import json,sys
+d = json.load(open(sys.argv[1]))
+print(d.get("opted") is True and isinstance(d.get("stamp"), str) and bool(d["stamp"]))
+' "$MARK")" "True"
+t "…with a UTC stamp in the estate's own grammar" "$(python3 -c '
+import json,re,sys
+print(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}Z",
+                        json.load(open(sys.argv[1]))["stamp"])))
+' "$MARK")" "True"
+t "the atomic write left no .tmp behind" \
+  "$([ -e "$MARK.tmp" ] && echo left || echo none)" "none"
+
+python3 "$CP" auto --root "$A" > "$W/auto.txt" 2>&1
+t "bare auto with the marker exits 0" "$?" "0"
+has "…and reports when it was opted" "auto-build: ON since" "$W/auto.txt"
+
+python3 "$CP" auto --root "$A" --off >/dev/null 2>&1
+t "auto --off exits 0" "$?" "0"
+t "…and the marker is gone" "$([ -e "$MARK" ] && echo left || echo none)" "none"
+python3 "$CP" auto --root "$A" >/dev/null 2>&1
+t "status after --off is 5 again" "$?" "5"
+python3 "$CP" auto --root "$A" --off >/dev/null 2>&1
+t "--off on an already-off estate is still 0" "$?" "0"
+
+# A corrupt marker is NOT an opt-in — the same ruling the hook makes, made here too.
+for BADMARK in 'garbage{' '{"opted": false}' '[]' '{}' ''; do
+  printf '%s' "$BADMARK" > "$MARK"
+  python3 "$CP" auto --root "$A" >/dev/null 2>&1
+  t "malformed marker [$BADMARK] reads as NOT opted (5)" "$?" "5"
+done
+rm -f "$MARK"
+
+python3 "$CP" auto --root "$A" --on --off >/dev/null 2>&1
+t "--on and --off together are refused (2)" "$?" "2"
+
 echo
 echo "compile fixture: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -1,5 +1,38 @@
 # Changelog — the notrest harness
 
+## 4.4.1 — 2026-09-01
+
+**Repetition becomes code without being asked, the tiered swarm becomes doctrine, and a
+measured A/B maps where it pays.**
+
+- **Auto-build (compile):** `compile.py auto --on` writes a standing authorization marker;
+  the SessionStart nudge then escalates from "say /compile X" to a directive the seat
+  executes — one opus builder lane, one ripe candidate per session, isolated under
+  `compile/<slug>/`, benchmarked, receipted. Shipping stays the owner's act forever; the
+  echo restates the law. Built with three levels of watched-red fixture proof, then a
+  kernel refuter round: the marker is now gitignored (standing authorization must never
+  propagate by clone), `auto` refuses a --root the hooks would not resolve (exit 2,
+  naming the real root), and the hook applies COORD-grade containment to a symlinked
+  marker. Hostile-marker corpus (12 arms), injection, and isolation attacks all survived.
+- **The tiered swarm** (seat → opus lanes → sonnet workers as tools) enters agentswarm
+  doctrine, live-proven: the spawn-gate fires at nesting depth 2 (an unlawful nested
+  spawn is refused verbatim; a lawful sonnet worker runs and is receipted). The model
+  rule carries the owner's 2026-08-30 amendment — opus default, explicit sonnet lawful
+  for declared mechanical/DRAFT-tier work — and eval's OFFLOAD-POLICY checker learns the
+  amended law with all three edges fixture-proven (sonnet+tier passes, bare sonnet fails,
+  haiku is never laundered).
+- **Measured A/B** (31-file mechanical sweep): the FLAT solo-opus lane beat the tiered
+  arm 60.8k vs 270.2k tokens and 70s vs 216s — on a task small enough to script. The
+  honest law it produced: tiering pays when the reading must pass through model context;
+  when a script can do the extraction, the script wins — which is the compile thesis.
+  Fixed per-lane overhead needs a large payload to amortize.
+- **Hooks-fight audit:** registrations disjoint, pulse never writes COORD by design,
+  20 concurrent session-starts raced a live scan with zero failures — and the one real
+  finding fixed: `compile scan`'s candidates.json/md writes are now tmp+replace atomic
+  (three readers race a detached writer; torn writes are now impossible, not survivable).
+- Latent fixture flake fixed (an arm's `est establish` fired a detached pulse whose scan
+  raced its hand-written candidates); depth-2 receipt fidelity docketed as item 7.
+
 ## 4.4.0 — 2026-08-31
 
 **The owner's hardening sweep lands, and the battery that gated it caught what the sweep's

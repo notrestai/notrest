@@ -139,8 +139,19 @@ inject() {
   fi
 }
 
-inject "sonnet spawn directive"  OFFLOAD-POLICY \
+inject "sonnet spawn directive (no tier declared)"  OFFLOAD-POLICY \
   'printf "\nSpawn the lane with model: \"sonnet\" for cheapness.\n" >> "$P/skills/agentswarm/SKILL.md"'
+inject "haiku spawn directive (tier language does NOT launder it)"  OFFLOAD-POLICY \
+  'printf "\nSpawn the mechanical DRAFT-tier lane with model: \"haiku\".\n" >> "$P/skills/agentswarm/SKILL.md"'
+# The amended lawful form must NOT flip the check: sonnet + a declared tier on the
+# same line stays green (owner amendment 2026-08-30). Same mutation shape as inject,
+# but asserting exit 0 — a lawful sentence that reds the gate means the gate is stale.
+W="$TMP/w"; rm -rf "$W"; cp -R "$BASE" "$W"; P="$W/plugins/notrest"
+printf '\nUse model: "sonnet" only where the brief names the work mechanical (DRAFT-tier).\n' >> "$P/skills/agentswarm/SKILL.md"
+python3 "$EVAL" check --root "$W" > "$TMP/out" 2>&1
+rc=$?
+if [ "$rc" -eq 0 ]; then ok "sonnet WITH declared tier stays lawful, exit 0"; else
+  bad "sonnet WITH tier flipped the suite (exit $rc)"; grep -E '^FAIL ' "$TMP/out"; fi
 
 inject "label-less research skill" HONESTY-LABELS \
   'sed -i.bak "s/^Every claim carries.*$/Every claim is stated plainly./" "$P/skills/researcher/SKILL.md" && rm -f "$P/skills/researcher/SKILL.md.bak"'

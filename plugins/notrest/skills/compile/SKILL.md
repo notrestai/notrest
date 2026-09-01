@@ -72,6 +72,9 @@ python3 <compile-skill>/scripts/compile.py report --root "$ROOT"
   appends a ruling to `compile/decisions.md`, which the next scan carries back into
   `candidates.md`. Rulings match on slug **and** on the recorded `sig=` core, so a candidate
   the scanner renames as the ledger grows keeps its ruling.
+- **`auto [--on|--off]`** — the standing authorization (see below). `--on` writes
+  `compile/.auto-build`, `--off` removes it, bare prints status: **exit 0** opted in,
+  **exit 5** not. It authorizes DISPATCH only and never touches installation.
 
 The same script also carries the ritual's two scaffolding verbs — documented where they are
 used, in Steps 1 and 2:
@@ -82,10 +85,10 @@ used, in Steps 1 and 2:
 - **`scaffold --slug S`** — the `compile/<slug>/` runtime skeleton. **Exit 2** if the directory
   already exists; it never overwrites a runtime.
 
-Exit codes: `scan` 0 · `report` 0/3 · `contract` 0/3 · `scaffold` 0/2 · bad arguments 2 · an
-invalid status 1.
+Exit codes: `scan` 0 · `report` 0/3 · `contract` 0/3 · `scaffold` 0/2 · `auto` 0/5 · bad
+arguments 2 · an invalid status 1.
 
-The skill's own contract test is `scripts/fixture.sh` — 80 assertions over a synthetic estate;
+The skill's own contract test is `scripts/fixture.sh` — 110 assertions over a synthetic estate;
 run it after any change to `compile.py`.
 
 ### How it decides two entries are the same job
@@ -132,6 +135,32 @@ over.
   the ledger says otherwise.
 
 ---
+
+## Auto-build — standing authorization
+
+Detection is automatic and the SessionStart nudge is automatic; the *build* used to wait on
+a human typing `/compile`. `compile.py auto --on` closes that gap without moving the safety
+line one inch.
+
+- `python3 <compile-skill>/scripts/compile.py auto --on --root "$ROOT"` writes
+  `compile/.auto-build` — one JSON line, `{"opted": true, "stamp": "<UTC>"}`. `--off` removes
+  it; bare `auto` prints status (exit 0 opted in, exit 5 not). The marker is the **owner's
+  standing authorization**, on disk where it can be read and revoked.
+- With the marker present and a ripe `NEW` candidate scanned, the SessionStart hook stops
+  nudging and prints **`[notrest] AUTO-BUILD opted in: …`**. **Treat that echo as a
+  directive**: dispatch ONE persistent Opus builder lane for the named candidate, this
+  session, without asking again.
+- **One candidate per session — never more.** The echo names exactly one; the rest keep
+  waiting. A session that compiles two candidates has exceeded the authorization.
+- **From dispatch onward the ritual is unchanged**: Step 1 contract → Steps 2–3 build →
+  Step 4 an independent refuter lane → Steps 5–6 the seat's gates and the FAIR benchmark →
+  Step 7 the quality law. Standing authorization buys the *start*, never a shortcut.
+- A missing or malformed marker is **not** an opt-in: the hook falls back to the old nudge
+  silently, and `auto` reports OFF. A corrupt opt-in is no opt-in.
+- **What it never authorizes: installation.** The runtime stays isolated under
+  `compile/<slug>/`, nothing installs itself, and shipping remains a versioned release the
+  owner gates by hand — forever, marker or no marker (Part 3).
+
 
 # Part 2 · Compilation is a ritual run
 
@@ -356,6 +385,8 @@ not inputs, so no fair replay exists.
 - The one-time compilation cost has its own section and was not amortized anywhere.
 - `compile/<slug>/` is the only place anything was installed, and the readiness tier claimed
   matches what was actually run.
+- If this run started from an AUTO-BUILD echo, exactly ONE candidate was built and nothing
+  was installed — the standing authorization covers dispatch, never the ship.
 - The verdict page was opened and looked at — or the dossier says plainly that it was not.
 - Every lane carried `model: "opus"` and has a spend ledger line; `spend.py report` ran.
 

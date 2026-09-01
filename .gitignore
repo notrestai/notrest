@@ -13,6 +13,7 @@ compile/*/.fixture-scratch/
 /compile/candidates.md
 /compile/candidates.json
 /compile/decisions.md
+/compile/.auto-build
 # Run artifacts from the RETIRED external runner (`claude plugin eval --output-dir
 # evals/results`). Kept ignored so any stray old artifacts stay out of the tree; the
 # retired cases themselves live tracked at plugins/notrest/evals-legacy-external-runner/.

@@ -255,14 +255,18 @@ stamp is computed from `date -u` at run time: a fixture carrying a literal stamp
 and flips silently as the clock moves. It refuses to judge a lane it cannot find —
 COULD-NOT-TEST at exit 2, never a pass over an absent subject.
 
-## The model rule (owner-set 2026-07-15, absolute — regardless of what the seat is)
+## The model rule (owner-set 2026-07-15, amended 2026-08-30 — regardless of the seat)
 
-**Every offloaded job runs on Opus.** Set `model: "opus"` explicitly — the alias, which
-floats to the latest Opus — on every Agent call and every Workflow `agent()` call: no
-sonnet, no haiku, and never a silently inherited seat model. This holds whatever model
-holds the seat. The owner chose closest-to-seat quality on all delegated work over
-per-token savings; it supersedes the earlier sonnet/haiku difficulty ladder wherever the
-swarm operates. Three guards stay on:
+**Opus is the default for every offloaded job; explicit sonnet is lawful for a lane the
+brief declares mechanical/DRAFT-tier.** Set the model explicitly — `model: "opus"` (the
+alias, which floats to the latest Opus) for anything carrying judgment, and
+`model: "sonnet"` only where the dispatching brief names the work mechanical/DRAFT-tier —
+on every Agent call and
+every Workflow `agent()` call: no haiku, and never a silently inherited seat model. This
+holds whatever model holds the seat. The tier declaration lives in the BRIEF, because the
+spawn-gate cannot read intentions — it admits explicit opus or sonnet at the door, refuses
+everything else, and the audit layer (spend receipts + the banked brief) is where a
+sonnet lane that was quietly doing judgment work gets caught. Three guards stay on:
 
 - **Fable never rides in a subagent.** (Fable-specific law — it is about Fable credit and
   stays absolute.) Under a Fable seat an omitted `model` silently inherits Fable, and the
@@ -436,6 +440,39 @@ rule 6 — re-running the verification exit-code-checked, grepping each claimed 
 the tree, refuting the riskiest artifact. The digest spends one lane's context instead of
 the seat's; it never spends the seat's judgment. **Why the split is law: a summarizer that
 also gates is how "all lanes green" becomes a claim nobody checked.**
+
+## The tiered swarm — sonnet as a tool inside an opus lane (owner-proven 2026-08-31)
+
+Three layers, each one absorbing the flood for the layer above; the owner ran this live
+and the throughput gain is why it is doctrine:
+
+1. **The seat** (Fable or Opus) — decomposes into domains, dispatches ONE opus lane per
+   domain, judges what returns, applies every edit, gates every ship. Never rides below
+   itself.
+2. **The opus lane** — owns its domain, and may fan its own mechanical breadth out to
+   **sonnet workers as tools**: several parallel `model: "sonnet"` spawns for reads,
+   sweeps, extractions — the work where volume beats depth. The lane MERGES its workers'
+   raw returns itself, because merging is judgment and judgment is opus work.
+3. **The sonnet workers** — bounded, mechanical, DRAFT-tier by declaration in the lane's
+   own dispatching text; they return raw material, never conclusions.
+
+The laws compose downward, and both merge points obey them:
+
+- **Synthesis at fan-in — digest, never verdict — applies at BOTH merges.** The opus lane
+  compresses its workers without deciding for the seat; the seat's synthesis lane (when
+  four-plus lanes return) compresses without deciding for the owner. A verdict rendered
+  two layers down is an oracle nobody can cross-examine.
+- **The gate holds at depth 2.** Spawn-gate is a PreToolUse hook on `Agent|Task`, so a
+  lane's own spawns pass the same door the seat's do: explicit opus or sonnet admitted,
+  omitted models and haiku refused, forks banned at every depth.
+- **Receipts at every layer — with one honest limit.** Every worker is a lane;
+  SubagentStop receipts it with its model recorded (live-proven 2026-08-31: a nested
+  sonnet worker was receipted, an unlawful nested spawn was refused at the door). But a
+  depth-2 receipt currently lands estimate-grade (`tokens=unknown`), so a spend roll-up
+  over a tiered run UNDER-COUNTS layer 3 rather than missing it. Enforcement is exact;
+  accounting at depth 2 is lossy — docketed, not hidden.
+- **Depth stops at three.** A sonnet worker does not spawn. If a worker needs a worker,
+  the decomposition was wrong one layer up — redraw the domains instead.
 
 ## Trail-walk — how the seat judges
 

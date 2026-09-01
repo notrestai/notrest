@@ -154,7 +154,29 @@ r = [x for x in c if x.get("ripe") and x.get("status") == "NEW"]
 if r: print(r[0]["slug"], r[0]["occurrences"])' "$REPO_ROOT/compile/candidates.json" 2>/dev/null)"
   if [ -n "$COMPILE_TOP" ]; then
     read -r CSLUG CSEEN <<< "$COMPILE_TOP"
-    echo "[notrest] Ripe compile candidate: $CSLUG seen ${CSEEN}x — repeated work the estate already recorded. Say /compile $CSLUG to move its stable parts into code (or compile.py decide --status DECLINED to silence)."
+    # compile/.auto-build is the owner's STANDING AUTHORIZATION, written by
+    # `compile.py auto --on`. It upgrades this line from a nudge a human must answer
+    # into a directive the seat may act on — and it authorizes exactly ONE thing:
+    # DISPATCHING a builder lane. It never authorizes installation. A compiled runtime
+    # still lives isolated under compile/<slug>/ and shipping stays a release the owner
+    # gates, so the echo restates that law rather than leaving it to be remembered.
+    # A missing, unreadable or malformed marker falls back to the old nudge SILENTLY:
+    # a corrupt opt-in is not an opt-in, and a hook must never break the session.
+    # Containment (refuter F3, 2026-09-01): a marker whose realpath escapes the estate
+    # is not this estate's authorization — same law the resolver applies to COORD.md.
+    NR_AUTOBUILD=""
+    if [ -f "$REPO_ROOT/compile/.auto-build" ] \
+       && nr_contained "$REPO_ROOT" "$REPO_ROOT/compile/.auto-build"; then
+      NR_AUTOBUILD="$(python3 -c 'import json,sys
+try: d = json.load(open(sys.argv[1]))
+except Exception: sys.exit(0)
+if isinstance(d, dict) and d.get("opted") is True: sys.stdout.write("y")' "$REPO_ROOT/compile/.auto-build" 2>/dev/null)"
+    fi
+    if [ -n "$NR_AUTOBUILD" ]; then
+      echo "[notrest] AUTO-BUILD opted in: dispatch ONE opus builder lane this session for ripe candidate $CSLUG (/compile $CSLUG) — isolated under compile/$CSLUG/, benchmarked, receipted; NEVER installed: shipping stays the owner's act."
+    else
+      echo "[notrest] Ripe compile candidate: $CSLUG seen ${CSEEN}x — repeated work the estate already recorded. Say /compile $CSLUG to move its stable parts into code (or compile.py decide --status DECLINED to silence)."
+    fi
   fi
 fi
 # A lane blackboard is COORD-<LANE>.md — NOT the machine-written ledgers

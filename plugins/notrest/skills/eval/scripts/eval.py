@@ -36,7 +36,12 @@ SPAWN_MARK = re.compile(r"subagent_type|Agent tool|spawn_agent|agent\(|"
                         r"model:\s*\"?(?:opus|gpt-5\.6-sol)", re.I)
 CLAUDE_MODEL_RE = re.compile(r"\bopus\b", re.I)
 CODEX_MODEL_RE = re.compile(r"\bgpt-5\.6-sol\b", re.I)
-DOWNGRADE_RE = re.compile(r"model[\"']?\s*[:=]\s*[\"']?\s*(sonnet|haiku)", re.I)
+# Owner-amended 2026-08-30: explicit sonnet is lawful WHEN the same line declares the
+# mechanical/DRAFT tier (the spawn-gate admits it; the brief carries the tier). Haiku
+# is never lawful and a tier declaration does not launder it.
+HAIKU_RE = re.compile(r"model[\"']?\s*[:=]\s*[\"']?\s*haiku", re.I)
+SONNET_RE = re.compile(r"model[\"']?\s*[:=]\s*[\"']?\s*sonnet", re.I)
+TIER_RE = re.compile(r"mechanical|draft[- ]?tier", re.I)
 FORK_RE = re.compile(r"subagent_type:\s*[\"']?fork", re.I)
 FORKBAN_RE = re.compile(r"^.*\bfork\b.*$", re.I | re.M)
 NEGATION_RE = re.compile(r"never|ban|forbid|not allowed|no fork", re.I)
@@ -141,21 +146,32 @@ def locate(root):
 def check_offload(root, plug, skills):
     ID = "OFFLOAD-POLICY"
     law = ("every documented spawn maps both runtimes: Codex=gpt-5.6-sol, "
-           "Claude=opus; inherited forks banned")
+           "Claude=opus (explicit sonnet lawful only with a declared mechanical/"
+           "DRAFT tier — owner amendment 2026-08-30); haiku and inherited forks banned")
     out, spawners = [], []
     for name, (d, txt) in skills.items():
         f = rel(root, os.path.join(d, "SKILL.md"))
         # A line that names sonnet/haiku/fork alongside a negation IS the law,
         # not a breach of it. Only an unnegated directive is a violation.
         m = None
-        for pat in (DOWNGRADE_RE, FORK_RE):
+        for pat in (HAIKU_RE, SONNET_RE, FORK_RE):
             for hit in pat.finditer(txt):
                 bol = txt.rfind("\n", 0, hit.start()) + 1
                 eol = txt.find("\n", hit.end())
                 line = txt[bol:eol if eol > 0 else len(txt)]
-                if not NEGATION_RE.search(line):
-                    m = hit
-                    break
+                if NEGATION_RE.search(line):
+                    continue          # naming-to-ban IS the law
+                # The tier declaration may wrap onto the sentence's neighbouring lines
+                # — prose wraps both directions — so the exemption window is the hit
+                # line plus one line each side. Negations stay same-line: a ban should
+                # not be claimable from a neighbour.
+                bol2 = txt.rfind("\n", 0, max(bol - 1, 0)) + 1
+                eol2 = txt.find("\n", (eol + 1) if eol > 0 else len(txt))
+                window = txt[bol2:eol2 if eol2 > 0 else len(txt)]
+                if pat is SONNET_RE and TIER_RE.search(window):
+                    continue          # amended law: sonnet + declared tier is lawful
+                m = hit
+                break
             if m:
                 break
         if m:

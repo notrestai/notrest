@@ -402,7 +402,13 @@ print('refused' if err else 'established')" 2>&1)" "refused"
 # N-2: a CLAUDE.md-ONLY subproject is the ordinary Claude Code shape and must never be
 # adopted by an established parent. Parent carries a ripe compile candidate to prove no
 # leakage of the parent's estate into the child's session.
-PAR="$W/parent"; mkdir -p "$PAR"; est establish --root "$PAR" >/dev/null 2>&1
+# Scaffolded BY HAND, not via `est establish`: establish fires seed_pulse(), whose
+# DETACHED estate-pulse.sh runs a real compile scan that races the hand-written
+# candidates.json below (latent flake found 2026-09-01 while building the auto-build
+# arms — this arm won the race only because it runs the hook once, promptly).
+PAR="$W/parent"; mkdir -p "$PAR"
+printf '# COORD.md — session coordination ledger\n\n## LEDGER\n' > "$PAR/COORD.md"
+printf '# parent project\n' > "$PAR/README.md"
 mkdir -p "$PAR/compile"
 printf '{"candidates":[{"slug":"parent-only-candidate","occurrences":9,"ripe":true,"status":"NEW"}]}\n' \
   > "$PAR/compile/candidates.json"
@@ -610,6 +616,66 @@ for BADMARK in 'garbage{' '{\"port\":\"not-a-number\"}' '{\"port\":0}' '{}' ''; 
   hasnt "malformed marker [$BADMARK] keeps the hook silent" "Cockpit is opted always-on" "$W/o"
 done
 rm -f "$CKN/graph/.cockpit-always"
+
+echo "── v4.4: the auto-build standing authorization (dispatch, never install)"
+
+# The marker authorizes DISPATCH only. Three states are asserted here: absent (the old
+# nudge, byte-for-byte the same), present-and-valid (the AUTO-BUILD directive replaces
+# it), and malformed (silently the OLD nudge — a corrupt opt-in must never be read as an
+# authorization, and must never break the session).
+# A git root, NOT `est establish`: establish.py fires a DETACHED pulse refresher that
+# runs a real compile scan and would race this arm by overwriting the synthetic
+# candidates.json. git init reaches the same REPO_ROOT with no background writer.
+AB="$W/autobuild"; mkdir -p "$AB/compile"; ( cd "$AB" && git init -q ) >/dev/null 2>&1
+printf '{"candidates":[{"slug":"release-ritual","occurrences":7,"ripe":true,"status":"NEW"}]}\n' \
+  > "$AB/compile/candidates.json"
+
+( cd "$AB" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+t "auto-build: no marker → hook exits 0" "$?" "0"
+has "no marker → the OLD ripe nudge is unchanged" \
+  "Ripe compile candidate: release-ritual seen 7x" "$W/o"
+hasnt "no marker → nothing claims an authorization" "AUTO-BUILD opted in" "$W/o"
+
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$AB/compile/.auto-build"
+( cd "$AB" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+t "auto-build: marker present → hook exits 0" "$?" "0"
+has "marker → the echo carries the authorization" "AUTO-BUILD opted in" "$W/o"
+has "…and names ONE opus lane for the ripe candidate" \
+  "dispatch ONE opus builder lane this session for ripe candidate release-ritual" "$W/o"
+has "…keeps the runtime isolated under compile/<slug>/" \
+  "isolated under compile/release-ritual/" "$W/o"
+has "…and restates the hard law in the echo itself" \
+  "NEVER installed: shipping stays the owner's act" "$W/o"
+hasnt "…and REPLACES the old nudge rather than doubling it" "Ripe compile candidate" "$W/o"
+
+for BADMARK in 'garbage{' '{"opted": false}' '[]' '{}' ''; do
+  printf '%s' "$BADMARK" > "$AB/compile/.auto-build"
+  ( cd "$AB" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+  t "malformed marker [$BADMARK] → hook still exits 0" "$?" "0"
+  hasnt "malformed marker [$BADMARK] claims no authorization" "AUTO-BUILD opted in" "$W/o"
+  has "malformed marker [$BADMARK] falls back to the old nudge" \
+    "Ripe compile candidate: release-ritual" "$W/o"
+done
+# Refuter F3 (2026-09-01, CONFIRMED pre-fix with pasted output): a marker whose
+# realpath ESCAPES the estate was honored, unlike an escaping COORD.md. Now the hook
+# applies the same containment law — an out-of-estate marker is no authorization.
+mkdir -p "$W/other-estate/compile"
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$W/other-estate/compile/.auto-build"
+ln -sfn "$W/other-estate/compile/.auto-build" "$AB/compile/.auto-build"
+( cd "$AB" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+t "escaping-symlink marker → hook still exits 0" "$?" "0"
+hasnt "escaping-symlink marker claims NO authorization" "AUTO-BUILD opted in" "$W/o"
+has "…and falls back to the old nudge" "Ripe compile candidate: release-ritual" "$W/o"
+rm -f "$AB/compile/.auto-build"
+
+# An opt-in is not a licence to invent work: with nothing ripe, neither echo fires.
+AB2="$W/autobuild-noripe"; mkdir -p "$AB2/compile"; ( cd "$AB2" && git init -q ) >/dev/null 2>&1
+printf '{"candidates":[{"slug":"cold","occurrences":2,"ripe":false,"status":"NEW"}]}\n' \
+  > "$AB2/compile/candidates.json"
+printf '{"opted": true, "stamp": "2026-08-31 12:00Z"}\n' > "$AB2/compile/.auto-build"
+( cd "$AB2" && bash "$W/hooks/session-start.sh" ) > "$W/o" 2>&1
+t "opted in but nothing ripe → hook exits 0" "$?" "0"
+hasnt "opted in but nothing ripe → no AUTO-BUILD echo" "AUTO-BUILD opted in" "$W/o"
 
 echo "── v4.0.0: the continuation packet"
 

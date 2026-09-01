@@ -47,6 +47,14 @@ The F-12(a) hostile corpus (non-UTF-8, CRLF, fenced-example markers, duplicate/u
 markers, escaping symlink, read-only, partial `both`) runs against `CLAUDE.md` only. Clone
 it for `AGENTS.md`; findings 2-3 above sit in exactly that gap.
 
+## 7 · Nested-lane spend fidelity (added 2026-08-31)
+A depth-2 lane's auto-receipt lands `tokens=unknown grade=estimate` with an empty
+purpose even when the parent's tool result carries exact figures (live-proven during the
+tiered-swarm proof; same degraded shape as the older `model=?` ledger rows). Enforcement
+at depth 2 is exact — the gate refuses unlawful nested spawns — but a `/spend` roll-up
+under-counts layer 3. Fix belongs in the agent-ledger hook's receipt writer (kernel:
+refuter round).
+
 ## Also carried
 - Cross-runtime pickup ritual made explicit in the notrest SKILL continuation section
   (`--surface both` as the one-time bridge; Codex takes the files-only mentor fallback;

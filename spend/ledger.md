@@ -169,3 +169,12 @@
 [2026-08-22 18:10Z] lane=subagent model=claude-opus-5 tokens=16281406 grade=observed purpose="auto-receipt: Round 1 complete. Work is in the working tree, uncommitted," calls=82 secs=682 agent=ae1449ff1af9bd4d0
 [2026-09-01 04:30Z] lane=subagent model=claude-opus-5 tokens=611087 grade=observed purpose="auto-receipt: I'll start by reading the fixture log and the failing arms." calls=7 secs=46 agent=ae15ada3259c6bfbe
 [2026-09-01 04:32Z] lane=subagent model=claude-opus-5 tokens=1848623 grade=observed purpose="auto-receipt: Diagnosis complete. Two root causes, both in the newly merge" calls=16 secs=194 agent=a2e80f4829f139688
+[2026-09-01 04:42Z] lane=subagent model=sonnet tokens=unknown grade=estimate purpose="auto-receipt: " calls=? secs=0 agent=a10cd965b589d9d4b
+[2026-09-01 04:42Z] lane=subagent model=claude-opus-5 tokens=528405 grade=observed purpose="auto-receipt: Gate fired. Let me check whether the nested lane got receipt" calls=4 secs=29 agent=a14ec6e4d40a8996f
+[2026-09-01 04:52Z] lane=subagent model=claude-opus-5 tokens=5813995 grade=observed purpose="auto-receipt: Build complete, all four items landed, all gates green. Noth" calls=41 secs=413 agent=a919d1e88eac3361c
+[2026-09-01 04:59Z] lane=subagent model=claude-opus-5 tokens=2851969 grade=observed purpose="auto-receipt: I'll start by reading the target diff and setting up scratch" calls=23 secs=289 agent=a6e2459a76443bb5f
+[2026-09-01 05:01Z] lane=subagent model=claude-sonnet-5 tokens=414023 grade=observed purpose="auto-receipt: This confirms the extraction matches the source text (7 dist" calls=3 secs=32 agent=a45b01b4a7243ca9a
+[2026-09-01 05:01Z] lane=subagent model=claude-opus-5 tokens=687889 grade=observed purpose="auto-receipt: | skill | desc words | /slash triggers in desc | scripts//re" calls=7 secs=70 agent=aa14a8db90dac9961
+[2026-09-01 05:02Z] lane=subagent model=claude-sonnet-5 tokens=1316849 grade=observed purpose="auto-receipt: All totals match `wc -l`, and files end with a trailing newl" calls=10 secs=113 agent=a46e0d3d7b8396fa3
+[2026-09-01 05:03Z] lane=subagent model=claude-sonnet-5 tokens=1480639 grade=observed purpose="auto-receipt: mentor | 54 | 1 | 4 | 187 notrest | 79 | 1 | 3 | 327 oracle" calls=10 secs=151 agent=a0a3ce955d113c209
+[2026-09-01 05:03Z] lane=subagent model=claude-opus-5 tokens=386970 grade=observed purpose="auto-receipt: | skill | desc words | /slash triggers | cited paths | body" calls=4 secs=216 agent=aa758f516657de69f

@@ -697,8 +697,15 @@ def cmd_scan(a):
             "params": {"sim": a.sim, "min_df": a.min_df, "boiler": BOILER,
                        "core_share": CORE_SHARE, "ripe_at": RIPE_AT},
             "candidates": cands}
-    (out / CANDIDATES_JSON).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
-    (out / CANDIDATES_MD).write_text(render_md(data), encoding="utf-8")
+    # tmp + replace (hooks-fight audit, 2026-09-01): three readers hit this file —
+    # session-start's nudge, the pulse layer, and report — while the DETACHED pulse
+    # scan rewrites it. Readers guard against torn JSON, but a torn write should be
+    # impossible, not merely survivable.
+    for name, body in ((CANDIDATES_JSON, json.dumps(data, indent=1) + "\n"),
+                       (CANDIDATES_MD, render_md(data))):
+        tmp = out / (name + ".tmp")
+        tmp.write_text(body, encoding="utf-8")
+        tmp.replace(out / name)
     ripe = [c for c in cands if c["ripe"]]
     print(f"{out / CANDIDATES_MD}: {len(cands)} candidate(s), {len(ripe)} ripe "
           f"(from {sum(len(v) for v in families.values())} estate entries"
@@ -778,6 +785,103 @@ def cmd_decide(a):
         print(f"[compile] note: {a.slug!r} is not in the last scan — ruling stored anyway "
               f"(no sig recorded, so carry-over is slug-exact only)")
     return 0
+
+
+# ── auto: the owner's standing authorization to BUILD a ripe candidate ────────
+#
+# The gap this closes: the scanner is automatic and the nudge is automatic, but the
+# build waited on a human typing /compile. `auto --on` leaves a marker the SessionStart
+# hook reads, which turns that nudge into a directive the seat may act on.
+#
+# What the marker authorizes is exactly one thing: DISPATCHING a builder lane. It does
+# not authorize installation, and it never can. A compiled runtime stays isolated under
+# compile/<slug>/ and wiring it in is a versioned release the owner gates — Part 3 of
+# the skill, unchanged. Kept as a FILE rather than a flag so the standing authorization
+# is visible on disk, survives the seat, and can be revoked by deleting it.
+AUTO_MARK = ".auto-build"
+
+
+def _auto_opted(p):
+    """True only for a well-formed opt-in. A corrupt marker is not an opt-in."""
+    raw = _read(p)
+    if not raw:
+        return False
+    try:
+        d = json.loads(raw)
+    except Exception:
+        return False
+    return isinstance(d, dict) and d.get("opted") is True
+
+
+def _estate_root_mismatch(root):
+    """The path the HOOKS would resolve, when it differs from the given root — else None.
+    Mirrors estate-root.sh only far enough to REFUSE rather than guess (refuter F2,
+    2026-09-01: a marker written at a subdirectory is read by nobody, and --off at the
+    real root cannot clear it). Git toplevel first; else the nearest ancestor carrying
+    COORD.md within 3 levels. Duplicating the full resolver would be a second copy of
+    it — this is a refusal predicate, not a resolver."""
+    import os as _os
+    import subprocess as _sp
+    r = _os.path.realpath(str(root))
+    try:
+        top = _sp.run(["git", "-C", r, "rev-parse", "--show-toplevel"],
+                      capture_output=True, text=True, timeout=10)
+        if top.returncode == 0:
+            t = _os.path.realpath(top.stdout.strip())
+            return t if t != r else None
+    except Exception:
+        pass
+    if _os.path.isfile(_os.path.join(r, "COORD.md")):
+        return None
+    d = r
+    for _ in range(3):
+        d = _os.path.dirname(d)
+        if not d or d == "/":
+            break
+        if _os.path.isfile(_os.path.join(d, "COORD.md")):
+            return d
+    return None
+
+
+def cmd_auto(a):
+    real = _estate_root_mismatch(str(outdir(a).parent))
+    if real:
+        sys.stderr.write("auto-build: %s is not the estate root the hooks resolve — the "
+                         "marker there would be read by nobody. Use --root %s\n"
+                         % (outdir(a).parent, real))
+        return 2
+    out = outdir(a)
+    p = out / AUTO_MARK
+    if a.off:
+        was = p.exists()
+        try:
+            p.unlink()
+        except OSError:
+            pass
+        print("auto-build: OFF" + ("" if was else " (was already off)") + f" — {p}")
+        return 0
+    if a.on:
+        out.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+        # tmp + replace: a half-written marker must never be readable as an opt-in.
+        tmp = out / (AUTO_MARK + ".tmp")
+        tmp.write_text(json.dumps({"opted": True, "stamp": stamp}) + "\n", encoding="utf-8")
+        tmp.replace(p)
+        print(f"auto-build: ON ({stamp}) — {p}")
+        print("[compile] this authorizes DISPATCH only: a compiled runtime still never "
+              "auto-installs. Shipping stays the owner's act.")
+        return 0
+    if _auto_opted(p):
+        try:
+            stamp = json.loads(_read(p)).get("stamp", "?")
+        except Exception:
+            stamp = "?"
+        print(f"auto-build: ON since {stamp} — {p}")
+        return 0
+    print("auto-build: OFF" + (" (marker present but unreadable — treated as OFF)"
+                               if p.exists() else "")
+          + f" — turn it on with: compile.py auto --on --root {a.root}")
+    return 5
 
 
 # ── contract: Step 1 of the ritual, pre-filled from the trail ─────────────────
@@ -1246,6 +1350,16 @@ def main():
     c.add_argument("--write", default=None, metavar="PATH",
                    help="write the draft to a file instead of stdout")
     c.set_defaults(f=cmd_contract)
+
+    au = sub.add_parser("auto",
+                        help="standing authorization to build a ripe candidate; "
+                             "bare = status (0 opted / 5 not)")
+    au.add_argument("--root", default=".")
+    au.add_argument("--out", default="compile")
+    g = au.add_mutually_exclusive_group()
+    g.add_argument("--on", action="store_true", help="write compile/.auto-build")
+    g.add_argument("--off", action="store_true", help="remove compile/.auto-build")
+    au.set_defaults(f=cmd_auto)
 
     sc = sub.add_parser("scaffold",
                         help="create compile/<slug>/ skeleton; never overwrites (exit 2)")
