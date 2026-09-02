@@ -1,6 +1,6 @@
 {
   "name": "notrest",
-  "version": "4.6.1",
+  "version": "4.6.2",
   "description": "A cross-runtime working-session harness for Codex and Claude: establishment, continuity, evidence-led planning, deterministic health checks, and thirty-two composable skills.",
   "author": {
     "name": "Not Rest Inc.",

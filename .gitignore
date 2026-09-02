@@ -3,6 +3,14 @@
 # the file-graph scan output at the REPO ROOT only — anchored, or this would also
 # ignore plugins/notrest/skills/graph/ (gitignore matches any depth otherwise)
 /graph/
+# F6: a scan run from inside the plugin wrote its output to plugins/notrest/graph/,
+# which the root anchor above does NOT cover — 4 derived files, 125 KB, shipped to
+# every consumer for five weeks referenced by nothing. Anchored per plugin dir, so
+# plugins/*/skills/graph/ (the skill itself) stays tracked. doctor's GITIGNORE check
+# now FAILS on tracked derived output here, so the rule cannot rot into a comment.
+plugins/*/graph/
+plugins/*/compile/candidates.*
+plugins/*/compile/decisions.md
 # compile.py's repeated-work scan output at the REPO ROOT only — derived, regenerated
 # by every scan (same rationale as /graph/). Anchored, so the skill's own directory
 # (plugins/notrest/skills/compile/) stays tracked.

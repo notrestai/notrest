@@ -34,6 +34,7 @@ import os
 import pathlib
 import re
 import sys
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
@@ -288,12 +289,47 @@ def wjaccard(a, b, w):
     return inter / union if union else 0.0
 
 
-def agglomerate(sigs, w, thr):
+def _wsum(sig, w):
+    return sum(w.get(t, 1) for t in sig)
+
+
+# F5: 96% of a 45 s estate scan was spent inside wjaccard (cProfile, 2026-09-01: 86.3 s
+# of 89.7 s cumulative, 437 M generator calls under `sum`). TWO recomputations, both
+# avoidable, neither changing a single output byte:
+#   1. |a ∪ b| was summed from scratch on every call. Weights are INTEGER document
+#      frequencies, so sum(a|b) == sum(a) + sum(b) - sum(a&b) EXACTLY — no float drift
+#      to reason about — and each signature's own total is computed once.
+#   2. agglomerate clears its cluster-pair cache after every merge (it must: the
+#      clusters changed). The ITEM-pair scores it is built from never change, so they
+#      were being recomputed from zero on every one of the merge passes. Memoized here.
+# ⛔ THE ALGORITHM IS UNTOUCHED. Average-link, the same merge order, the same threshold
+# test. This is the same arithmetic performed once instead of many times — proven by
+# byte-comparing candidates.json/md before and after on this estate.
+def agglomerate(sigs, w, thr, progress=None):
     """Average-link agglomerative merge. Average-link (not single-link) on
     purpose: single-link chains two unrelated rituals together through one
     shared word, and a chained cluster is a lie about what repeated."""
     clusters = [[i] for i in range(len(sigs))]
     cache = {}
+    totals = [_wsum(sg, w) for sg in sigs]
+    pw = {}
+
+    def pair(i, j):
+        key = (i, j) if i < j else (j, i)
+        v = pw.get(key)
+        if v is None:
+            a_, b_ = sigs[key[0]], sigs[key[1]]
+            if not a_ or not b_:
+                v = 0.0
+            else:
+                inter = sum(w.get(t, 1) for t in (a_ & b_))
+                if not inter:
+                    v = 0.0
+                else:
+                    union = totals[key[0]] + totals[key[1]] - inter
+                    v = inter / union if union else 0.0
+            pw[key] = v
+        return v
 
     def link(ca, cb):
         key = (id(ca), id(cb))
@@ -302,11 +338,12 @@ def agglomerate(sigs, w, thr):
         tot = 0.0
         for i in ca:
             for j in cb:
-                tot += wjaccard(sigs[i], sigs[j], w)
+                tot += pair(i, j)
         v = tot / (len(ca) * len(cb))
         cache[key] = v
         return v
 
+    merges = 0
     while True:
         best = None
         for a in range(len(clusters)):
@@ -319,6 +356,9 @@ def agglomerate(sigs, w, thr):
         _, a, b = best
         clusters[a] = clusters[a] + clusters.pop(b)
         cache.clear()
+        merges += 1
+        if progress:
+            progress(len(clusters), merges)
     return clusters
 
 
@@ -659,17 +699,45 @@ def cmd_scan(a):
          "items": len(families["spend"])},
     ]
 
+    # F5: the scan is an O(n^2)-per-merge-pass clustering over the whole estate and takes
+    # TENS OF SECONDS. A tool that prints nothing for that long is indistinguishable from
+    # a hung one — the 4.6.1 audit lane killed it at 120 s and filed it as a hang. So it
+    # says what it is doing, on stderr (stdout stays the machine surface), per estate
+    # family and then no less often than every ~10 s inside the merge.
+    def say(msg):
+        sys.stderr.write("compile scan: %s\n" % msg)
+        sys.stderr.flush()
+
+    say("%d entries across %d ledger families — clustering (seconds; the cost is the "
+        "per-family merge, which reports below)"
+        % (sum(len(v) for v in families.values()), len(families)))
+
     cands = []
     for fam, items in families.items():
         if len(items) > MAX_ITEMS:
             notes.append(f"{fam}: {len(items)} entries, newest {MAX_ITEMS} scanned")
             items = items[-MAX_ITEMS:]
         if len(items) < LIST_AT:
+            say("%s: %d entries — under the %d-entry floor, not clustered"
+                % (fam, len(items), LIST_AT))
             continue
         df = procedure_vocab(items, a.min_df, BOILER)
         for it in items:
             it.sig = frozenset(t for t in it.toks if t in df)
-        cands += build_candidates(items, df, agglomerate([i.sig for i in items], df, a.sim))
+        say("%s: clustering %d entries over a %d-token vocabulary…" % (fam, len(items), len(df)))
+        t0 = [time.time()]
+
+        def tick(remaining, merges, _fam=fam, _t0=t0):
+            now = time.time()
+            if now - _t0[0] >= 10.0:
+                _t0[0] = now
+                say("%s: still merging — %d clusters left, %d merges so far"
+                    % (_fam, remaining, merges))
+
+        started = time.time()
+        cands += build_candidates(items, df,
+                                  agglomerate([i.sig for i in items], df, a.sim, tick))
+        say("%s: done in %.1fs" % (fam, time.time() - started))
     # Fusion weights come from ONE global document frequency: per-family weights
     # are not comparable across ledgers with different vocabularies.
     gdf = Counter()

@@ -78,13 +78,30 @@ def concept_hit(concept, tw, tf):
     return any(v in tw for v in stems(concept))
 
 
+def die(msg, code=2):
+    """F4: refuse in ONE line at rc=2, the posture every sibling lint already keeps
+    (plan_lint, runbook_lint, verdict_lint). A traceback is a crash report, not a
+    refusal — it tells the reader the tool broke when in fact the tool was misused."""
+    sys.stderr.write("score_snapshot: %s\n" % msg)
+    sys.exit(code)
+
+
 def load_output(a):
     if a.output_file:
-        with open(a.output_file, "r", encoding="utf-8") as f:
-            return f.read(), a.output_file
+        try:
+            with open(a.output_file, "r", encoding="utf-8") as f:
+                return f.read(), a.output_file
+        except IsADirectoryError:
+            die("--output-file is a directory, not a file: %s" % a.output_file)
+        except FileNotFoundError:
+            die("no such --output-file: %s" % a.output_file)
+        except OSError as e:
+            die("cannot read --output-file %s: %s" % (a.output_file, e.strerror or e))
+        except UnicodeDecodeError:
+            die("--output-file is not UTF-8 text: %s" % a.output_file)
     if a.output_text is not None:
         return a.output_text, "(inline text)"
-    sys.exit("need --output-file or --output-text")
+    die("need --output-file or --output-text")
 
 
 def score(a):
@@ -94,7 +111,7 @@ def score(a):
     ctrl = parse_concepts(a.control)
     prev = parse_concepts(a.prev)
     if not snap:
-        sys.exit("empty snapshot")
+        die("empty snapshot: --snapshot must name at least one concept")
 
     tf = fold(text)
     tw = word_set(tf)
@@ -177,8 +194,8 @@ def ledger_entry(run):
 
 def cmd_append(a):
     if not a.output_file:
-        sys.exit("append needs --output-file: a scored output must exist on disk, so the "
-                 "ledger entry can point at the thing that was scored")
+        die("append needs --output-file: a scored output must exist on disk, so the "
+            "ledger entry can point at the thing that was scored")
     metrics, snap, ctrl, prev = score(a)
     d = introspection_dir(a.root)
     runs = d / RUNS_DIR
@@ -284,7 +301,20 @@ def main():
     if argv and argv[0].startswith("-") and argv[0] not in ("-h", "--help"):
         argv = ["score"] + argv
 
-    ap = argparse.ArgumentParser(description="score, ledger and aggregate introspect snapshots")
+    ap = argparse.ArgumentParser(
+        description="score, ledger and aggregate introspect snapshots",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "the verbless (legacy) form:\n"
+            "  score_snapshot.py --snapshot \"a, b, c\" --output-file out.md\n"
+            "  A leading flag is read as the `score` subcommand, so every invocation\n"
+            "  written before this file grew subcommands still runs verbatim. It is\n"
+            "  what introspect/SKILL.md documents; BOTH forms are supported and\n"
+            "  neither is deprecated.\n"
+            "\n"
+            "refusals: a misuse (missing/unreadable --output-file, empty --snapshot,\n"
+            "  unknown subcommand) is one line on stderr at exit 2, never a traceback.\n"
+            "  `report` exits 3 below N=%d — that is a refusal, not a failure." % TREND_FLOOR))
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def scoring_args(p):
@@ -294,7 +324,8 @@ def main():
         p.add_argument("--output-file", default=None)
         p.add_argument("--output-text", default=None)
 
-    s = sub.add_parser("score", help="print the metrics JSON; writes nothing")
+    s = sub.add_parser("score", help="print the metrics JSON; writes nothing "
+                       "(also the verbless form: a leading flag implies it)")
     scoring_args(s)
     s.set_defaults(f=cmd_score)
 

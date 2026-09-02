@@ -140,7 +140,7 @@ cat > "$H/.claude-plugin/marketplace.json" <<'EOF'
   "metadata": { "description": "synthetic", "version": "1.0.0" },
   "plugins": [
     { "name": "fixtureplug", "source": "./plugins/fixtureplug", "version": "1.0.0",
-      "description": "A synthetic harness — two natural-language-invocable skills ride on it." },
+      "description": "A synthetic harness — two natural-language-invocable skills ride on it: alpha and beta." },
     { "name": "oracle-suite", "source": "./plugins/tomb", "version": "9.0.0",
       "description": "RENAMED — migration stub." }
   ]
@@ -171,6 +171,19 @@ cat > "$H/plugins/fixtureplug/README.md" <<'EOF'
 Two skills that compose: alpha and beta.
 EOF
 
+# M3: the ROSTER surfaces. The README is held to a TABLE ROW per skill (the table IS the
+# roster); the other three need only name each skill in prose.
+cat > "$H/README.md" <<'EOF'
+# fixtureplug — a synthetic harness
+
+Two skills ride on it.
+
+| Skill | What it does |
+|---|---|
+| **alpha** | The first lane. |
+| **beta** | The second lane. |
+EOF
+
 cat > "$H/plugins/fixtureplug/hooks/hooks.json" <<'EOF'
 {
   "hooks": {
@@ -195,10 +208,12 @@ The harness — plus two skills — from install to the first working loop.
 | You want to… | Say / invoke |
 |---|---|
 | Check the harness is healthy | "/doctor" → **doctor** |
+| Run the first lane | "/alpha" → **alpha** |
+| Run the second lane | "/beta" → **beta** |
 EOF
 
 cat > "$H/docs/oracle-skill-flow.html" <<'EOF'
-<html><body><header>fixtureplug v1.0.0</header><footer>v1.0.0</footer></body></html>
+<html><body><header>fixtureplug v1.0.0 — the two-skill harness</header><footer>v1.0.0</footer></body></html>
 EOF
 
 # HOOKS FIRED reads the clock, so the healthy estate is stamped NOW rather than with a
@@ -234,7 +249,7 @@ echo '{"generated":"2026-07-24 10:03Z","candidates":[]}' > "$H/compile/candidate
 echo "── A · healthy synthetic harness"
 runjson "$H"; t "healthy harness exits 0" "$RC" "0"
 t "--json parses" "$(py 'import json,sys;print("yes" if json.load(open(sys.argv[1]))["checks"] else "no")' "$W/out.json")" "yes"
-t "eleven checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "11"
+t "twelve checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "12"
 t "verdict is HEALTHY" "$(py 'import json,sys;print(json.load(open(sys.argv[1]))["verdict"])' "$W/out.json")" "HEALTHY"
 t "no check fails" "$(nfail)" "0"
 t "no check warns" "$(nwarn)" "0"
@@ -321,6 +336,145 @@ import sys,io,os
 p=os.path.join(sys.argv[1],"compile/candidates.json")
 io.open(p,"w",encoding="utf-8").write("{not json")'
 
+# ── M3 · the roster is the promise; the dirs are the delivery ────────────────────────
+# 4.6.1 shipped beam, mentor and tieredswarm with no README row and no mention anywhere a
+# reader browses, and every gate passed: SKILL COUNT compares a NUMBER to a number, so a
+# README that SAYS thirty-two while LISTING twenty-nine is arithmetically perfect.
+defect "a skill with no README table row" "ROSTER PARITY" '
+import sys,io,os,re
+p=os.path.join(sys.argv[1],"README.md")
+t=io.open(p,encoding="utf-8").read()
+io.open(p,"w",encoding="utf-8").write(t.replace("| **beta** | The second lane. |\n",""))'
+
+defect "a skill named nowhere in the tutorial" "ROSTER PARITY" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/TUTORIAL.md")
+t=io.open(p,encoding="utf-8").read()
+io.open(p,"w",encoding="utf-8").write(t.replace("| Run the second lane | \"/beta\" → **beta** |\n",""))'
+
+defect "a skill absent from the marketplace description" "ROSTER PARITY" '
+import sys,os,json
+p=os.path.join(sys.argv[1],".claude-plugin/marketplace.json")
+d=json.load(open(p))
+for e in d["plugins"]:
+    if e["name"]=="fixtureplug":
+        e["description"]=e["description"].replace(": alpha and beta",": alpha")
+json.dump(d,open(p,"w"),indent=2)'
+
+# a mention is not a row — the exact shape 4.6.1's README had for the three missing skills
+defect "a prose mention where the roster wants a row" "ROSTER PARITY" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"README.md")
+t=io.open(p,encoding="utf-8").read()
+io.open(p,"w",encoding="utf-8").write(
+    t.replace("| **beta** | The second lane. |\n","") + "\nbeta is also shipped.\n")'
+
+# a mutation that must change NOTHING — the refuter's nits are false-FAIL bugs, and the
+# only way to hold a false positive down is to assert the clean case out loud.
+nodefect(){  # $1 label · $2 python mutator (arg: repo dir)
+  N=$((N+1)); D="$W/case$N"; rm -rf "$D"; cp -R "$H" "$D"
+  python3 -c "$2" "$D" || { no "$1 — mutator failed"; return; }
+  runjson "$D"
+  t "$1 → still exit 0" "$RC" "0"
+  t "$1 → nothing fails" "$(nfail)" "0"
+}
+
+warndefect(){  # $1 label · $2 expected check · $3 python mutator (arg: repo dir)
+  N=$((N+1)); D="$W/case$N"; rm -rf "$D"; cp -R "$H" "$D"
+  python3 -c "$3" "$D" || { no "$1 — mutator failed"; return; }
+  runjson "$D"
+  t "$1 → exit 5" "$RC" "5"
+  t "$1 → $2 WARNs" "$(st "$2")" "WARN"
+  t "$1 → nothing fails" "$(nfail)" "0"
+}
+
+# ── F5 · a hyphen-joined suffix is still the name (refuter nit, 4.6.2) ────────────────
+# `(?![A-Za-z0-9_-])` rejected a trailing hyphen, so the estate's own prose — "the
+# mentor-dev ritual", "the oracle-suite core" — did not count as naming the skill, and the
+# roster gate would have raised a FAIL against a README that names it perfectly well.
+nodefect "a skill named with a hyphenated suffix still counts as named" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/TUTORIAL.md")
+t=io.open(p,encoding="utf-8").read()
+io.open(p,"w",encoding="utf-8").write(
+    t.replace("| Run the second lane | \"/beta\" → **beta** |",
+              "| Run the second lane | the beta-mode workflow |"))'
+nodefect "…and so does a hyphenated suffix in the marketplace description" '
+import sys,os,json
+p=os.path.join(sys.argv[1],".claude-plugin/marketplace.json")
+d=json.load(open(p))
+for e in d["plugins"]:
+    if e["name"]=="fixtureplug":
+        e["description"]=e["description"].replace(": alpha and beta",": alpha-lane and beta-lane")
+json.dump(d,open(p,"w"),indent=2)'
+# …while a LETTER-joined suffix is a different word and must still be caught
+defect "a plural is NOT a mention (the boundary still holds one way)" "ROSTER PARITY" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/TUTORIAL.md")
+t=io.open(p,encoding="utf-8").read()
+io.open(p,"w",encoding="utf-8").write(
+    t.replace("| Run the second lane | \"/beta\" → **beta** |",
+              "| Run the second lane | the betas workflow |"))'
+
+# ── F3 · the render states a COUNT, and a count in prose drifts like a version stamp ──
+defect "stale skill count in the render" "RENDER SURFACES" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/oracle-skill-flow.html")
+t=io.open(p,encoding="utf-8").read().replace("two-skill","three-skill")
+io.open(p,"w",encoding="utf-8").write(t)'
+
+defect "…and the spelled form is read too" "RENDER SURFACES" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/oracle-skill-flow.html")
+t=io.open(p,encoding="utf-8").read().replace("two-skill","31-skill")
+io.open(p,"w",encoding="utf-8").write(t)'
+
+# F7 (refuter nit, 4.6.2): unanchored, NSKILL_RE read ordinary prose as a count claim —
+# "a one-skill install" → 1 → COUNT DRIFT against a 2-skill tree. A count claim now counts
+# only where the page ALREADY makes a version claim: the text node the stamp lives in.
+nodefect "prose elsewhere on the page is NOT a count claim" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/oracle-skill-flow.html")
+t=io.open(p,encoding="utf-8").read().replace(
+    "</body>", "<p>Start with a one-skill install, then add the two-skill bundle.</p></body>")
+io.open(p,"w",encoding="utf-8").write(t)'
+nodefect "…even when the prose count is wildly wrong" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/oracle-skill-flow.html")
+t=io.open(p,encoding="utf-8").read().replace(
+    "</body>", "<p>the ninety-nine-skill era is over</p></body>")
+io.open(p,"w",encoding="utf-8").write(t)'
+# …and the real thing is still caught, in the element the release bump edits
+defect "drift INSIDE the stamped element is still caught" "RENDER SURFACES" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/oracle-skill-flow.html")
+t=io.open(p,encoding="utf-8").read().replace(
+    "v1.0.0 — the two-skill harness", "v1.0.0 — the seven-skill harness")
+io.open(p,"w",encoding="utf-8").write(t)'
+# R2 (review round, 4.6.2): anchoring to the stamp's own text node bought a SILENT PASS.
+# A template edit that wraps the count in its own element splits it from the stamp, the
+# anchor finds nothing, and the gate whose whole job is catching a stale count reports
+# success. The anchor stays; its blind spot is now audible.
+warndefect "a template edit that SPLITS the count from the stamp is not silent" "RENDER SURFACES" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/oracle-skill-flow.html")
+t=io.open(p,encoding="utf-8").read().replace(
+    "v1.0.0 — the two-skill harness", "v1.0.0 — the <b>two-skill</b> harness")
+io.open(p,"w",encoding="utf-8").write(t)'
+warndefect "…and so is a page that states no count at all" "RENDER SURFACES" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/oracle-skill-flow.html")
+t=io.open(p,encoding="utf-8").read().replace(" — the two-skill harness","")
+io.open(p,"w",encoding="utf-8").write(t)'
+# …while the LIVE shape — stamp and count in one element — still passes clean
+nodefect "the live render shape (count beside the stamp) passes with no warning" '
+import sys,io,os
+p=os.path.join(sys.argv[1],"docs/oracle-skill-flow.html")
+t=io.open(p,encoding="utf-8").read().replace(
+    "<header>fixtureplug v1.0.0 — the two-skill harness</header>",
+    "<header><span class=\"sub\">v1.0.0 &middot; two-skill harness &middot; intake</span></header>")
+io.open(p,"w",encoding="utf-8").write(t)'
+
 # TOKEN BUDGET's defect does not live in the tree — it lives in what the tree COSTS, which
 # only the CLI can say. The shim carries the injection, so the assertion stays offline.
 export FIXTURE_ALWAYS_ON="9,999"
@@ -329,6 +483,46 @@ t "over-budget always-on cost → exit 6" "$RC" "6"
 t "over-budget always-on cost → TOKEN BUDGET FAILs" "$(st 'TOKEN BUDGET')" "FAIL"
 t "over-budget always-on cost → nothing else fails" "$(nfail)" "1"
 unset FIXTURE_ALWAYS_ON
+
+# ── B1b · derived output must not ride in the package (F6) ───────────────────────────
+# 4.6.1 shipped plugins/notrest/graph/{graph,river}.{html,json} — 125 KB of scan output the
+# root-anchored /graph/ rule never covered, referenced by nothing, in every consumer's
+# install for five weeks. The probe needs a real work tree, so this case builds one.
+echo "── B1b · derived scan output tracked inside a plugin (F6)"
+G="$W/gitcase"; rm -rf "$G"; cp -R "$H" "$G"
+(
+  cd "$G" || exit 1
+  git init -q 2>/dev/null
+  git config user.name Fixture; git config user.email fixture@example.com
+  git config commit.gpgsign false
+  git add -A >/dev/null 2>&1
+  git -c commit.gpgsign=false commit -qm "the clean package" >/dev/null 2>&1
+) || { no "F6 git setup failed"; }
+runjson "$G"
+t "a clean work tree keeps GITIGNORE passing" "$(st GITIGNORE)" "PASS"
+grep -q 'no tracked derived graph/compile output' "$W/out.json" \
+  && ok "…and says so out loud, rather than staying silent" \
+  || no "the clean case never reported the tracked-output probe"
+mkdir -p "$G/plugins/fixtureplug/graph"
+echo '{"derived":true}' > "$G/plugins/fixtureplug/graph/graph.json"
+echo '<html>derived</html>' > "$G/plugins/fixtureplug/graph/graph.html"
+(cd "$G" && git add -f plugins/fixtureplug/graph >/dev/null 2>&1 && \
+   git -c commit.gpgsign=false commit -qm "oops: shipped the scan output" >/dev/null 2>&1)
+runjson "$G"
+t "tracked derived output → exit 6" "$RC" "6"
+t "tracked derived output → GITIGNORE FAILs" "$(st GITIGNORE)" "FAIL"
+t "tracked derived output → nothing else fails" "$(nfail)" "1"
+grep -q 'DERIVED OUTPUT SHIPPED' "$W/out.json" && ok "…named as a packaging defect" \
+  || no "the finding never named itself"
+grep -q 'plugins/fixtureplug/graph/graph.json' "$W/out.json" \
+  && ok "…listing the tracked files by path" || no "no path was named"
+# UNTRACKED derived output is not a packaging defect — it never reaches a consumer
+(cd "$G" && git rm -r -q --cached plugins/fixtureplug/graph >/dev/null 2>&1 && \
+   printf 'plugins/*/graph/\n' >> .gitignore && git add -A >/dev/null 2>&1 && \
+   git -c commit.gpgsign=false commit -qm "untrack it" >/dev/null 2>&1)
+runjson "$G"
+t "untracking it clears the finding, files still on disk" "$(st GITIGNORE)" "PASS"
+t "…and the anchored plugins/*/ rule does not ignore the skill dirs" "$(nfail)" "0"
 
 # ── B2 · the WARN classes: real findings that are not breakage ────────────────────────
 # doctor must be able to say "this is worth knowing" without saying "this is broken".

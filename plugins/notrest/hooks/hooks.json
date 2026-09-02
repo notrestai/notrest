@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/session-start.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/session-start.sh\"",
+            "timeout": 30
           }
         ]
       }
@@ -15,7 +16,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/session-end.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/session-end.sh\"",
+            "timeout": 20
           }
         ]
       }
@@ -25,11 +27,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/coord-nudge.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/coord-nudge.sh\"",
+            "timeout": 15
           },
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/router.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/router.sh\"",
+            "timeout": 15
           }
         ]
       }
@@ -40,7 +44,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/spawn-gate.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/spawn-gate.sh\"",
+            "timeout": 15
           }
         ]
       },
@@ -49,7 +54,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/pretool-gate.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/pretool-gate.sh\"",
+            "timeout": 300
           }
         ]
       }
@@ -60,7 +66,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/pre-compact.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/pre-compact.sh\"",
+            "timeout": 10
           }
         ]
       }
@@ -70,7 +77,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/agent-ledger.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/agent-ledger.sh\"",
+            "timeout": 30
           }
         ]
       }
@@ -80,10 +88,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/completion-gate.sh\""
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/completion-gate.sh\"",
+            "timeout": 60
           }
-        ],
-        "timeout": 60
+        ]
       }
     ]
   }

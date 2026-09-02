@@ -28,7 +28,33 @@
 # broken gate must never be able to trap a session. The note is not optional: a gate
 # that fails silently is indistinguishable from a gate that passed.
 
-PAYLOAD="$(cat 2>/dev/null || true)"
+# ── NR-STDIN (E2, 4.6.2) — BOUNDED READ: the payload or nothing, never a hang.
+# Contract, rationale and the bash-3.2 measurements live in hooks/pretool-gate.sh, which
+# owns the budget; the loop is copied rather than sourced because sourcing a sibling
+# costs a fork on that hook's fast path and would make reading stdin depend on a second
+# file. TOTAL stdin wall time is bounded by NR_STDIN_WAIT (5 s) plus the sub-second
+# granularity of SECONDS — not per read — and an idle stdin yields "", on which this
+# hook fails open.
+# The wait is a knob for fixtures, so it is VALIDATED, not trusted: a non-numeric -t
+# makes read fail instantly (a silently disarmed hook) and a huge one restores the
+# hang this fixes. Anything but 1-99 falls back to 5. `case`, so still no fork.
+case "${NR_STDIN_WAIT:-}" in [1-9]|[1-9][0-9]) ;; *) NR_STDIN_WAIT=5 ;; esac
+NR_RAW=""; NR_DL=$((SECONDS + NR_STDIN_WAIT))
+while :; do
+  NR_T=$((NR_DL - SECONDS))   # the REMAINING budget, never a fresh one per read (F4)
+  [ "$NR_T" -ge 1 ] || break
+  NR_LINE=""
+  IFS= read -r -t "$NR_T" NR_LINE || { NR_RAW="$NR_RAW$NR_LINE"; break; }
+  NR_RAW="$NR_RAW$NR_LINE"
+done
+PAYLOAD="$NR_RAW"
+
+# ── NOTHING TO CHECK IS NOT A MALFUNCTION (F7, 4.6.2). An EMPTY payload used to print
+# the unreadable-payload notice, so every stop with no payload on stdin — the fixtures,
+# any loader that hands the hook nothing — read as a gate that had failed. Empty means
+# no stop to gate: exit silently. A NON-EMPTY payload we cannot parse is still a
+# malfunction and still says so on stderr, per the fail-open law above.
+[ -n "$PAYLOAD" ] || exit 0
 
 # ── loop guard first: cheapest, and the one path that must never be skipped.
 # A payload we cannot parse ALLOWS rather than blocks — the loop guard lives in that
@@ -92,8 +118,11 @@ OVERRIDE=""
 [ "${NOTREST_GATE_OVERRIDE:-}" = "1" ] && OVERRIDE="env"
 
 # --timeout bounds each CHECK (RB-2: nothing between an arbitrary shell line and the
-# session capped it). The harness caps this hook in turn, via the "timeout" field on the
-# Stop entry in hooks.json — three layers, none of them trusting the one below it.
+# session capped it), --budget bounds all of them together. The harness caps this hook in
+# turn, via the "timeout" field on the Stop COMMAND OBJECT in hooks.json — three layers,
+# none of them trusting the one below it. (Placement corrected 2026-09-01: that timeout
+# sat on the matcher GROUP from 4.5.0, where the schema does not read it, so the outer
+# layer was configured and not in effect. 60 s outer vs --budget 50 is the margin.)
 REPORT="$(python3 "$CHECKER" "$ACTIVE" --cwd "$ROOT" --quiet --timeout 30 --budget 50 2>&1)"
 RC=$?
 

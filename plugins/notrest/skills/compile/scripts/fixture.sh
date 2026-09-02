@@ -491,6 +491,69 @@ hasnt "in-estate store grants NO authorization" "AUTO-BUILD opted in" "$W/o"
 has "…and the hook says why it ignored it" "inside the estate" "$W/o"
 has "…and falls back to the old nudge" "Ripe compile candidate: release-ritual" "$W/o"
 
+echo "── M · a bounded corpus scans in bounded time, and says so while it works (F5)"
+# The 4.6.1 audit lane killed `scan` at 120 s and filed it as a HANG. It was not hung: it
+# printed nothing for the whole run, and a silent long-running tool is indistinguishable
+# from a dead one. Two things are gated here, and neither is "it got faster" — speed is a
+# means; the promises are (1) a bounded corpus finishes inside a bound the SKILL.md states,
+# and (2) the run narrates itself so a reader can tell working from wedged.
+#
+# THE BOUND, AND WHY THIS NUMBER. 260 COORD entries over a ~48-token vocabulary — the shape
+# of a real estate's largest family, and the size the profile was taken at. Measured
+# 2026-09-01 on an idle M-series laptop: 2.1 s after the fix, 17.5 s before it. The gate is
+# 10 s: ~4.6x headroom over the measured time so a loaded CI box does not flake, and well
+# under the pre-fix cost so a regression to the old quadratic recomputation FAILS here
+# rather than merely feeling slow. Cost grows with the SQUARE of the largest family, so
+# raising this corpus means re-measuring the bound, not nudging it.
+PERF="$W/perf"; mkdir -p "$PERF/spend"
+python3 - "$PERF/COORD.md" 260 <<'PYGEN'
+import sys, random
+# seeded: the same corpus every run, or the bound is timing a different problem each time
+random.seed(20260901)
+vocab = ["parser","exporter","indexer","viewer","router","ledger","packet","fixture","gate",
+         "hook","volume","ruling","refuter","scanner","manifest","changelog","resolver","cache",
+         "budget","surface","transcript","commission","lane","estate","roster","render","stamp",
+         "anchor","marker","protocol","upgrade","backup","clause","policy","offload","seat",
+         "difficulty","bounded","judgment","dispatch","receipt","audit","docket","arm","corpus",
+         "profile","merge","cluster","threshold","signature","vocabulary","entry","seal","probe"]
+n = int(sys.argv[2])
+L = ["# COORD.md — session coordination ledger", "## LEDGER"]
+for i in range(n):
+    L.append("- [2026-03-%02d %02d:00Z] [main] %s -> %s | evidence: commit %06x"
+             % (1 + i % 28, i % 24, " ".join(random.sample(vocab, 7)),
+                " ".join(random.sample(vocab, 7)), 0xaa0000 + i))
+open(sys.argv[1], "w").write("\n".join(L) + "\n")
+PYGEN
+printf '# spend ledger — append-only via spend.py; grades: observed|estimate\n' > "$PERF/spend/ledger.md"
+t "the perf corpus is the size the bound was measured at" \
+  "$(grep -c '^- \[' "$PERF/COORD.md")" "260"
+
+PSTART="$(python3 -c 'import time;print(time.time())')"
+python3 "$CP" scan --root "$PERF" > "$W/perf.out" 2> "$W/perf.err"
+PRC=$?
+PELAPSED="$(python3 -c "import time;print('%.1f' % (time.time() - $PSTART))")"
+t "the bounded scan exits 0" "$PRC" "0"
+t "…inside the 10s bound (measured 2.1s; pre-fix 17.5s) — actual ${PELAPSED}s" \
+  "$(python3 -c "print('under' if $PELAPSED < 10.0 else 'OVER')")" "under"
+# (2) it must be VISIBLY alive: stdout stays the machine surface, stderr narrates.
+t "progress went to stderr, not stdout" \
+  "$(python3 -c "print('yes' if open('$W/perf.err').read().strip() else 'no')")" "yes"
+has "…naming the tool, so a piped log says who is talking" "compile scan:" "$W/perf.err"
+has "…and the family it is working on, with its entry count" "coord: clustering 260 entries" "$W/perf.err"
+has "…and reporting when that family finished" "coord: done in" "$W/perf.err"
+t "at least two progress lines reached stderr" \
+  "$(python3 -c "print(sum(1 for l in open('$W/perf.err') if l.strip().startswith('compile scan:')) >= 2)")" "True"
+hasnt "stdout stays clean of the narration" "compile scan:" "$W/perf.out"
+# the optimization is only lawful if it changed nothing: same corpus, same candidates
+cp "$PERF/compile/candidates.json" "$W/perf1.json"
+python3 "$CP" scan --root "$PERF" >/dev/null 2>&1
+t "…and the bounded scan is deterministic across runs" \
+  "$(python3 -c "
+import json
+a=json.load(open('$W/perf1.json')); b=json.load(open('$PERF/compile/candidates.json'))
+for d in (a,b): d.pop('generated',None)
+print(a==b)")" "True"
+
 echo
 echo "compile fixture: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

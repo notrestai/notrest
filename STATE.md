@@ -1,62 +1,106 @@
 # STATE — decisions, code, changes (newest on top)
 
-## Session 2026-07-25 — oracle-suite v2.8.1 → notrest v3.5.0 (15 releases)
+## Session 2026-09-01 — Director session 3: the 4.6.1 audit, and the 4.6.2 build
 
 ### Decisions
 
-- **Opus-only offload (owner, 2026-07-15).** Every job a session offloads runs on explicit
-  `opus`. Why: closest-to-Fable quality on delegated work; the spend ledger receipts the cost
-  so the policy stays revisable with numbers. Alternative weighed: the v2.7.0 sonnet/haiku
-  difficulty ladder (cheaper, lower quality) — superseded. `subagent_type: "fork"` banned from
-  any seat: forks ignore the model parameter and inherit the parent, which the exit-4 gate
-  cannot see.
-- **The seat-builder ritual (owner-ratified).** One persistent Opus builder lane per domain;
-  feedback rounds **resume the same lane**, never a fresh spawn. Why: the lane's context of the
-  code it wrote is both the token saving and the quality keeper.
-- **The speed law.** Receipts showed wall-clock tracks tool calls near-linearly (20-call lanes
-  ≈ 3.5 min; 72–77-call monoliths ≈ 22–24 min). Greenfield builds decompose into parallel
-  narrow lanes; builders get a style capsule inline, never a reading list; one fixture run per
-  lane; **release slicing** — gated work ships, never held hostage to an unrelated lane.
-- **Rename `oracle-suite` → `notrest`** (v3.0.0). Why: it outgrew "a suite of skills"; it is a
-  session harness and should carry the company's name. Repo renamed to `notrestai/notrest`; a
-  frozen `oracle-suite` tombstone at 9.0.0 keeps existing installs from stranding.
-- **External `claude plugin eval` ruled OUT (owner).** Measured: ~13 min/pass, $4.58, opaque to
-  the seat, **zero fixes in 45 minutes**. Replaced by in-house `/eval` — law conformance as a
-  **static fingerprint** (a well-encoded law leaves a fingerprint in the shipped text). Result:
-  0.06s, zero model tokens, and it found two real defects on its first run.
-- **COORD rolls, never compacts (owner design).** Archiving *moves* lines (crash window, and
-  the archive is never read); sealing *preserves* them. Seal at 500 → `COORD-001.md`, fresh
-  volume with a continues-pointer; agents ledger at 1000.
-- **The maiden compile is DIRECTIONAL, not PROVEN.** Five fair scenarios, but two of the nine
-  compared surfaces are round-trip identities that cannot fail. The earlier "5/5 PROVEN" claim
-  was withdrawn at the seat after the refuter proved the overclaim.
+- **The offload law was RULED AGAIN by the owner on 2026-09-01** — the ruling of record, banked
+  at `briefs/amendment-2026-09-01-offload-policy.md`, superseding the 2026-08-30 sonnet clause.
+  **The seat chooses each lane's model by the difficulty of the task and declares the choice**:
+  opus for judgment-bearing work (design, debugging, root-cause, kernel surfaces, refuters,
+  reviews, merges, anything under-specified), sonnet for bounded well-specified work (mechanical
+  edits with an exact target, sweeps, conversions, fixture runs, any job whose done-when is a
+  runnable check written before dispatch), and **when unsure, opus**.
+  Haiku is never lawful (a tier declaration does not launder it) and `subagent_type: "fork"` is
+  never an offload at all — a fork ignores the model parameter, inherits the seat and bills its
+  credit. Omitting the model is a violation, not a default. Enforced at the door by
+  `plugins/notrest/hooks/spawn-gate.sh` (PreToolUse); audited after the fact by
+  `plugins/notrest/skills/spend/scripts/spend.py report` (exit 4). Where the prose and the gate disagree, **the gate wins**.
+  Supersedes the 2026-07-15 opus-only rule recorded in the previous STATE entry.
+- **Tiering was benchmarked and mostly lost (2026-09-01, four rounds).** A flat solo opus lane
+  beat the tiered arm on the same judgment task on **both** axes — ~1.7x fewer tokens *and* a
+  deeper result — losing only ~12% of wall-clock. The pre-registered hypothesis lost twice of
+  two. The outcome is a narrow admission rule, not a recommendation: script it if it is
+  compilable, flat solo opus by default, tier only for context overflow, wide parallel reads
+  (`[unmeasured]`), or local models called as tools (`[operator-reported]`). Shipped as the
+  32nd skill, `tieredswarm`, with the gate documented before the shape.
+- **Teaching material is a release surface (4.6.1).** `RELEASE-SURFACE` correctly refused a
+  release that ignored the 16-file workshop pack. Material that quotes version-specific
+  behaviour — exit codes, verb counts — is now registered in
+  `evals/golden-release-surface.txt` like any other shipped file.
+- **A session opening in its own established estate IS resuming it (4.6.0).** The successor is
+  handed the trail as an injected packet instead of being told to go find it; 4.6.1 then
+  stood down the contradicting nudges after a field test showed a fresh session burning
+  ~88,000 tokens re-deriving an orientation the packet had delivered for ~800 — and reading a
+  START-HERE.md that was five weeks stale.
+- **Audit before fix, and the seat re-runs every repro.** The 4.6.1 package audit ran as three
+  find-only opus lanes with commissions banked *before* dispatch; no fix was commissioned until
+  the owner said GO. All 22 findings were re-reproduced at the seat, so
+  `docs/DOCKET-4.6.2.md` carries evidence rather than lane claims.
+- **A kernel change ships only through a refuter round.** Reaffirmed for 4.6.2: the E2 stdin
+  guard touches `plugins/notrest/hooks/**`, which `CLAUDE.md` names as a kernel surface.
+- **A block one version behind is STALE, not absent (4.6.2).** The protocol block moved
+  v2 → v3 to carry the 2026-09-01 offload ruling, and the old `found >= PROTOCOL_VERSION`
+  reading would have told every v2 estate "already established" and left it there forever.
+  Now `check` reports STALE and exits 5, the continuation packet keeps emitting while saying
+  so (withholding the trail would punish the successor for the estate's age), `establish`
+  upgrades in place byte-for-byte outside the markers, `BODY_V2` is kept as history rather
+  than deleted, and a body hand-edited away from canonical v2 is banked to
+  `<file>.notrest-v2.bak` before replacement — a local override is never silently relaxed.
+  This repo's `CLAUDE.md` and `AGENTS.md` are already v3.
+- **A long-running tool must narrate itself.** The 4.6.1 audit killed a silent 120 s
+  `compile.py scan` and filed it as a hang; it was not hung, it was mute. 4.6.2 adds stderr
+  progress and a permanent 10 s runtime arm over a seeded 260-entry corpus — the gate is not
+  "it got faster" but "a bounded corpus finishes inside a stated bound, and a reader can tell
+  working from wedged".
+- **Every hook declares its own timeout.** Only `Stop` was bounded before; the rest rode the
+  CLI default. The field sits on the command object, where the documented schema reads it.
+- **The docs class is closed by a gate, not by a sweep.** Roster parity (every skill directory
+  named on the README table and the marketplace description) is being added to `doctor`,
+  because the previous gates matched the literal string "32" rather than the roster and so let
+  M1/M2 through.
 
 ### Code & changes (load-bearing)
 
-- `plugins/notrest/hooks/agent-ledger.sh` — SubagentStop: writes `COORD-AGENTS.md` **and** the
-  spend receipt, idempotently (`agent=<id>` guard inside the flock'd critical section), honest
-  grading (`observed` with usage, `tokens=unknown grade=estimate` without).
-- `plugins/notrest/hooks/session-end.sh` — auto-cushion line + **volume rolling** (seal +
-  fsync before atomic replace; inode guard; marker-less files refused).
-- `plugins/notrest/skills/{eval,refuter,doctor,draft,recap,graph,compile,watch}/` — the
-  session's new skills. `eval.py` (8 static checks), `doctor.py` (8 install/estate checks),
-  `compile.py` (estate scanner: masking, df-weighting, **estate stopwords**, weak-source
-  demotion), `graph.py` (file graph + PM merge).
-- `compile/release-ritual/ship.py` — 853 lines, stdlib, **zero model calls**; the release
-  ritual compiled. Five historical ships replay at `surfaces=9 · differs=0 · PARITY PASS`.
-- `.gitignore` — narrowed: only derived scan output ignored; hand-built runtimes under
-  `compile/<slug>/` are **source and tracked**; fixture scratch trees excluded (a 28 MB tree
-  was caught before it could be committed).
+- `plugins/notrest/hooks/spawn-gate.sh` — PreToolUse. Denies an `Agent`/`Task` spawn that omits
+  its model, names haiku, or asks for a fork; `NOTREST_GATE_OVERRIDE=1` permits with a loud
+  receipt; any malformed payload passes through silently. The law in code, not in prose.
+- `plugins/notrest/hooks/session-start.sh` — injects the discipline anchor, the amended offload
+  rule, and (since 4.6.0) the auto-continuation packet; hoists the estate resolver above the
+  continuity nudges so it never orders a session to fetch what the packet already carried.
+  Session start on a large ledger went 13.71 s / 902 MB → 0.10 s / 18.4 MB.
+- `plugins/notrest/skills/notrest/scripts/establish.py` — `continuation --brief` is the resume
+  mechanism (~20 lines / ~3 KB on this repo). Hardened across three refuter rounds: records
+  split on `\n` alone, control characters render visibly, every data line is framed `| ` so
+  nothing quoted can reach column 0 or wear a `[notrest] ` prefix.
+- `plugins/notrest/skills/{doctor,eval}/scripts/` — the ship gate. `plugins/notrest/skills/doctor/scripts/doctor.py` = the install
+  and estate check (exit 0/5/6); `plugins/notrest/skills/eval/scripts/eval.py` = the law-conformance fingerprint (15 checks,
+  ~0.2 s, zero model tokens). Doctor checks the install; eval checks the laws.
+- `plugins/notrest/skills/sessionend/scripts/starthere_lint.py` — enforces that a resume file's
+  every cited path exists and no instruction stands on a gitignored artifact. It is why this
+  set of files can be trusted to run as written.
+- `docs/MAP.md` (4.5.1) — the whole plugin probed live: hooks, instruments with their exit
+  grammars, all 32 skills, the estate files by writer and reader.
 
 ### In progress / honest status
 
-- **`ship.py` is isolated and NOT installed.** DEMO tier proven (replay); USE tier
-  **NOT-LIVE-VERIFIED** (it has never executed a real ship); INSTALL tier described, not
-  executed. Version monotonicity unchecked.
-- **eval-green: deferred, not achieved.** Diagnosis artifacts kept; the kept-temp sandboxes
-  were cleaned up, so trace-level root-causing must be redone if resumed.
-- **Never live-proven claims:** successor escort (being proven by this very handoff), `watch`
-  (no watchlist has ever existed), PM cross-project registry (absent).
-- The Claude-5 "unhobbling" tension is **unresolved and named**: this harness grew its
-  per-session injection all week while Anthropic's guidance says to cut overconstraint. The
-  rightsizing pass is approved but not started.
+- **v4.6.2 is uncommitted work in the tree.** Three build lanes hold disjoint TOUCH-ONLY
+  scopes; the seat owns the manifests, `CHANGELOG.md`, the HTML stamps, the golden list, and
+  the commit. Do not read the docket as a list of things already done — check `git status`.
+- **E2 (hooks blocking on idle stdin) is `[unverified]` in production.** The CLI normally
+  closes stdin after the payload, so the impact is bounded by the default hook timeout rather
+  than demonstrated live.
+- **`doctor` exit 5 is the expected state**, with two standing warns: one COORD.md line from
+  2026-08-27T20:07Z that does not parse (append-only, so it stays), and app-side plugin packs
+  that shadow this tree's verbs and can only be disabled by the owner in the desktop app's
+  plugin panel — no CLI verb reaches that store.
+- **86 of the ledger's offload entries are unverifiable.** `spend report` says routing CLEAN on
+  110 evidenced entries and says, in the same breath, that the 86 are not evidence of
+  cleanliness. Quote both halves; never the first alone.
+- **The consumer install flow is untestable from here.** Installing `notrest@notrest` on this
+  machine shadows the in-place skills-dir runtime (live-proven 2026-07-25). Validation passes
+  at both levels; end-to-end remains `[unverified]`.
+- **The plan of record moved to the NAS on 2026-08-26** and no milestone has reached a Director
+  on this machine since. Anything roadmap-shaped in this repo is local and may be superseded.
+- **Deliberately deferred:** `plugins/notrest/skills/compile/scripts/compile.py scan` runs 117 s with no progress output and no stated
+  runtime (measure before optimizing), and the inert `+x` bits on 4 of 12 hook files.

@@ -1,6 +1,6 @@
 ---
 name: agentswarm
-description: "The delegation arrangement — the seat keeps decompose/judge/apply/gate and background lanes do the work. MODEL POLICY is runtime-explicit: Codex uses gpt-5.6-sol; Claude uses opus; inherited/full-history forks are forbidden. Builds run one persistent lane per domain, resumed for feedback. Use on /agentswarm, 'swarm this', 'offload this', or explicit delegation requests."
+description: "The delegation arrangement — the seat keeps decompose/judge/apply/gate; background lanes do the work. MODEL POLICY: seat picks by task difficulty — opus judgment, sonnet bounded, opus if unsure; Codex gpt-5.6-sol; no forks. Builds run one persistent lane per domain, resumed for feedback. Use on /agentswarm, 'swarm this', 'offload this', or explicit delegation requests."
 ---
 
 # agentswarm — the seat and the swarm
@@ -255,18 +255,27 @@ stamp is computed from `date -u` at run time: a fixture carrying a literal stamp
 and flips silently as the clock moves. It refuses to judge a lane it cannot find —
 COULD-NOT-TEST at exit 2, never a pass over an absent subject.
 
-## The model rule (owner-set 2026-07-15, amended 2026-08-30 — regardless of the seat)
+## The model rule (owner-set 2026-07-15; ruled again 2026-09-01 — regardless of the seat)
 
-**Opus is the default for every offloaded job; explicit sonnet is lawful for a lane the
-brief declares mechanical/DRAFT-tier.** Set the model explicitly — `model: "opus"` (the
-alias, which floats to the latest Opus) for anything carrying judgment, and
-`model: "sonnet"` only where the dispatching brief names the work mechanical/DRAFT-tier —
-on every Agent call and
-every Workflow `agent()` call: no haiku, and never a silently inherited seat model. This
-holds whatever model holds the seat. The tier declaration lives in the BRIEF, because the
-spawn-gate cannot read intentions — it admits explicit opus or sonnet at the door, refuses
-everything else, and the audit layer (spend receipts + the banked brief) is where a
-sonnet lane that was quietly doing judgment work gets caught. Three guards stay on:
+**The seat chooses each lane's model by the DIFFICULTY of the task, and declares the
+choice.** Owner ruling 2026-09-01, superseding the 2026-08-30 mechanical/DRAFT-tier
+clause; full text at `briefs/amendment-2026-09-01-offload-policy.md`. The routing table:
+
+| Tier | Model | The work it covers |
+|---|---|---|
+| **judgment** | `opus` | Design, debugging, root-cause. Kernel surfaces (hooks, `establish.py`, ledger writers). Refuters and reviews. Merges. Anything ambiguous or under-specified. Any commission whose done-when the seat cannot state as a command. |
+| **bounded** | `sonnet` | Mechanical edits with an exact target. Format conversions. Inventory sweeps. Fixture/battery runs. Drafts under a tight contract. Any job whose done-when is a runnable check the seat wrote before dispatch. |
+
+**When unsure, opus.** Difficulty is the seat's call, and the brief records it: the
+dispatching text states the tier and the model it implies — `tier: judgment -> opus` or
+`tier: bounded -> sonnet` — with one line of why, so the receipt (spend ledger, `COORD-AGENTS.md`) is checkable
+against the choice. Set the model explicitly on every Agent call and every Workflow
+`agent()` call — `"opus"` and `"sonnet"` are aliases that float to the latest of each —
+with no haiku and never a silently inherited seat model. This holds whatever model holds
+the seat. The declaration lives in the BRIEF, because the spawn-gate cannot read
+intentions: it admits explicit opus or sonnet at the door, refuses everything else, and
+the audit layer (spend receipts + the banked brief) is where a sonnet lane that was
+quietly doing judgment work gets caught. Three guards stay on:
 
 - **Fable never rides in a subagent.** (Fable-specific law — it is about Fable credit and
   stays absolute.) Under a Fable seat an omitted `model` silently inherits Fable, and the
@@ -447,8 +456,8 @@ Four benchmarked rounds narrowed this topology to a gate, in order: **script it 
 compilable** (round A: flat+script 60,832 tok beat tiered 270,186); **flat solo opus by
 default** for judgment that fits one context (round B: flat 291,645 tok and deeper beat
 sonnet-tiered 502,687 — dominated on both axes); **tier only for context overflow or wide
-parallelism with a lean fan-in**, both `[unmeasured]`; **sonnet workers only under a
-declared mechanical/DRAFT tier** (rounds C/D: opus workers recover depth, replicated within
+parallelism with a lean fan-in**, both `[unmeasured]`; **sonnet workers only where the
+seat has judged the work bounded and declared it** (rounds C/D: opus workers recover depth, replicated within
 3%, and D's free-choice orchestrator routed all-opus on its own). Merging stays opus, depth
 stops at three, digest-never-verdict binds both merge points, and depth-2 receipts land
 estimate-grade so `/spend` under-counts layer 3.

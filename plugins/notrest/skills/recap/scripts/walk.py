@@ -672,7 +672,12 @@ def load(root):
     entries += read_findings(root, inv)
     clamped = monotone_epochs(entries)
     if clamped:
+        # S82/E1: this is a DISCLOSURE row, not a source — but every inventory consumer
+        # (emit_inventory, cmd_prefill, the --json shape) reads the same six keys off every
+        # row. Omitting them made the disclosure itself the crash. entries/malformed stay 0
+        # because STAMP-ORDER contributes no entries of its own; the count lives in the note.
         inv.append({"source": "STAMP-ORDER", "path": "-", "present": True,
+                    "entries": 0, "malformed": 0, "first": "", "last": "",
                     "note": ("%d entr(y/ies) carry a stamp that contradicts their position in an "
                              "append-only source; ordered by position and DISCLOSED here, never "
                              "silently re-stamped" % clamped)})

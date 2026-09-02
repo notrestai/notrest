@@ -65,6 +65,16 @@ python3 <compile-skill>/scripts/compile.py report --root "$ROOT"
   `<root>/compile/candidates.md` (the reading copy) and `candidates.json` (what `report` and
   the ritual read). Optional `--transcripts DIR` adds repeated Bash-command 5-grams from
   session `.jsonl` files; it is never required and never assumed.
+  **Runtime, measured (F5, 2026-09-01):** ~2 s on a 378-entry estate (260 COORD lines, 78
+  agent lines, 40 spend lines) on an idle M-series laptop — **seconds, not minutes**. It was
+  **~45 s** through v4.6.1: cProfile put 96% of the wall clock inside the pairwise
+  similarity, which recomputed the union weight of every signature pair on every merge pass;
+  the arithmetic is now done once and the output is byte-identical (proven by an A/B on a
+  frozen corpus). Cost grows with the SQUARE of the largest family, so a many-thousand-line
+  COORD will still take minutes. **`scan` narrates itself on stderr** — one line per ledger
+  family with its entry count and elapsed time, plus a "still merging" line at least every
+  10 s — so a long scan is visibly alive rather than indistinguishable from a hang. stdout
+  stays the machine surface; redirect stderr if you want it silent.
 - **`report`** — one `[compile] RIPE …` line per ripe candidate. **Exit 3** when at least one
   ripe candidate is still `NEW`, so a hook can branch on it for free; **exit 0** otherwise —
   including when nothing has been scanned yet, because a hook must never break.

@@ -37,10 +37,30 @@ t "stemming matches 'buffer' against 'buffering'" \
 python3 "$S" score --snapshot "deadline" --output-text "the deadline moved" > "$W/s2.json" 2>&1
 t "the explicit 'score' subcommand works too" "$?" "0"
 t "--output-text scores inline" "$(Q "$W/s2.json" "d['verbalized_rate']")" "1.0"
-python3 "$S" score --snapshot "" --output-text "x" >/dev/null 2>&1
-t "an empty snapshot is refused" "$?" "1"
-python3 "$S" score --snapshot "a" >/dev/null 2>&1
-t "no output source is refused" "$?" "1"
+# F4: a misuse refuses in ONE line at rc=2 — the posture plan_lint/runbook_lint/
+# verdict_lint already keep. rc=1 with a traceback said "the tool broke" when what
+# happened was "the tool was misused", and a caller cannot tell those apart.
+python3 "$S" score --snapshot "" --output-text "x" > "$W/e1.err" 2>&1
+t "an empty snapshot is refused at 2" "$?" "2"
+t "…in one line" "$(wc -l < "$W/e1.err" | tr -d ' ')" "1"
+hasnt "…with no traceback" "Traceback" "$W/e1.err"
+has "…named by the tool" "score_snapshot:" "$W/e1.err"
+python3 "$S" score --snapshot "a" > "$W/e2.err" 2>&1
+t "no output source is refused at 2" "$?" "2"
+t "…in one line" "$(wc -l < "$W/e2.err" | tr -d ' ')" "1"
+python3 "$S" score --snapshot "a" --output-file "$W/does-not-exist.md" > "$W/e3.err" 2>&1
+t "a missing --output-file is refused at 2, not a FileNotFoundError" "$?" "2"
+t "…in one line" "$(wc -l < "$W/e3.err" | tr -d ' ')" "1"
+hasnt "…with no traceback" "Traceback" "$W/e3.err"
+has "…naming the path it could not read" "does-not-exist.md" "$W/e3.err"
+python3 "$S" score --snapshot "a" --output-file "$W" > "$W/e4.err" 2>&1
+t "an --output-file that is a directory is refused at 2" "$?" "2"
+hasnt "…with no traceback" "Traceback" "$W/e4.err"
+python3 "$S" --help > "$W/help.txt" 2>&1; t "--help exits 0" "$?" "0"
+has "the documented verbless form is VISIBLE in --help" "the verbless (legacy) form" "$W/help.txt"
+has "…shown as a runnable line" 'score_snapshot.py --snapshot "a, b, c" --output-file out.md' "$W/help.txt"
+has "…and the score subcommand says it is the same thing" "a leading flag implies it" "$W/help.txt"
+has "--help states the refusal posture" "one line on stderr at exit 2" "$W/help.txt"
 
 echo "── B · lift compares the report against the control on the SAME output"
 python3 "$S" score --snapshot "deadline, buffer, cache, tarot" \
@@ -89,8 +109,8 @@ after=open('$L',encoding='utf-8').read()
 print(after.startswith(before))")" "True"
 has "an absent control is recorded as absent, not as zero" "control (context-only): absent" "$L"
 has "a missing interpretation is labelled, not invented" "[unverified] not recorded" "$L"
-t "append without --output-file is refused" \
-  "$(python3 "$S" append --root "$R" --label x --snapshot a --output-text y >/dev/null 2>&1; echo $?)" "1"
+t "append without --output-file is refused at 2" \
+  "$(python3 "$S" append --root "$R" --label x --snapshot a --output-text y >/dev/null 2>&1; echo $?)" "2"
 
 echo "── E · report REFUSES trend language under N=10"
 python3 "$S" report --root "$R" > "$W/r1.out" 2>&1

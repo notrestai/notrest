@@ -65,3 +65,4 @@ plugins/notrest/skills/sessionend/references/live-handoff-template.md
 plugins/notrest/skills/spend/SKILL.md
 plugins/notrest/skills/spend/scripts/fixture.sh
 plugins/notrest/skills/spend/scripts/spend.py
+docs/DOCKET-4.6.2.md

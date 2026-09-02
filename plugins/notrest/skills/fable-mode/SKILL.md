@@ -8,7 +8,9 @@ description: "Operate this session under the Fable discipline — probe before b
 **Runtime adapter.** The discipline is runtime-neutral. Read `AGENTS.md` on Codex and
 `CLAUDE.md` on Claude. Authorized Codex workers use explicit `model: "gpt-5.6-sol"` with
 `fork_turns: "none"` or a bounded recent-turn fork; Claude workers use explicit
-`model: "opus"` and never `subagent_type: "fork"`. Every historical “Opus lane” below
+`model: "opus"` for judgment-bearing work and `"sonnet"` for bounded, well-specified
+work — the seat's call by difficulty, declared in the brief (owner ruling 2026-09-01) —
+and never `subagent_type: "fork"`. Every historical “Opus lane” below
 means the runtime's explicit frontier worker when running on Codex. Codex has no Claude
 lifecycle hooks, so explicit probes and banking carry the discipline there.
 
@@ -101,16 +103,37 @@ and skipping it is how a confident build ships broken.
 11. **Fable never rides in a subagent (offload model policy).** When this session runs
     on Fable (`claude-fable-5`), every spawned agent — Agent tool, Workflow `agent()`
     (ultracode/deep-research/review fan-outs), panel lenses, pipeline stages — MUST
-    carry an explicit model, and the owner-set policy (2026-07-15) is **opus for
-    every offloaded job** — not sonnet, not haiku, never an inherited fable. Omitting
-    the model silently inherits Fable and bills Fable credit — the omission is the
-    violation. Fable is the orchestrator seat, not the fan-out; work that truly needs
-    Fable runs in the main loop, and delegation runs through **agentswarm** (the
-    seat keeps decompose/judge/apply/gate; concurrent background Opus lanes do the
-    rest; never `/model`-switch the seat — a switch burns its cache, a subagent
-    doesn't). When the suite's **spend** skill is present, receipt the rule: log each
-    spawn's observed tokens to its ledger and close fan-out sessions with `spend.py
-    report` (exit 4 = a violation to surface, never smooth).
+    carry an **explicit model**. Owner-set 2026-07-15 (opus-only), amended
+    2026-08-30, and **ruled again by the owner on 2026-09-01** — the ruling of record,
+    full text at `briefs/amendment-2026-09-01-offload-policy.md`: **the seat chooses each
+    lane's model by the difficulty of the task, and declares the choice.**
+    - **opus** — judgment-bearing work: design, debugging, root-cause, kernel surfaces
+      (hooks, `establish.py`, ledger writers), refuters and reviews, merges, anything
+      ambiguous or under-specified, any commission whose done-when the seat cannot state
+      as a command.
+    - **sonnet** — bounded, well-specified work: mechanical edits with an exact target,
+      format conversions, inventory sweeps, fixture/battery runs, drafts under a tight
+      contract, any job whose done-when is a runnable check the seat wrote before dispatch.
+    - **When unsure, opus.** Difficulty is the seat's call; the brief records it.
+    - **Declared, not implied** — the dispatching brief names the model and the tier with
+      one line of why, so the receipt is checkable against the choice.
+
+    Never haiku — a tier declaration does not launder it — and never `subagent_type: "fork"`:
+    a fork ignores the model parameter, inherits the seat and bills its credit, so it is not
+    an offload at all however it is spelled.
+    Omitting the model silently inherits Fable and bills Fable credit — **the omission
+    is the violation, not a default.** This is enforced in code, not remembered:
+    the PreToolUse gate `hooks/spawn-gate.sh` refuses a violating `Agent`/`Task` call
+    at the door (`NOTREST_GATE_OVERRIDE=1` permits with a loud receipt), and the
+    SessionStart echo prints the same rule every session. Where this prose and the
+    gate ever disagree, **the gate wins.** Fable is the orchestrator seat, not the
+    fan-out; work that truly needs Fable runs in the main loop, and delegation runs
+    through **agentswarm** (the seat keeps decompose/judge/apply/gate; concurrent
+    background Opus lanes do the rest; never `/model`-switch the seat — a switch burns
+    its cache, a subagent doesn't). In the tiered shape, merging stays opus and depth
+    stops at three. When the suite's **spend** skill is present, receipt the rule: log
+    each spawn's observed tokens to its ledger and close fan-out sessions with
+    `spend.py report` (exit 4 = a violation to surface, never smooth).
 11a. **An absence of records is not evidence of absence.** A clean bill of health is only
     honest when the negative was POSITIVELY recorded — "no session was ever created",
     "nothing was sent", "zero lanes ran" — because a report that found nothing and a
@@ -262,8 +285,9 @@ An outage changes the ROUTE, never the goal — and it never justifies a soft li
 - **Fan-out via subagents when reading would flood you.** Sweeps across many files/
   sources go to agents that return conclusions, not dumps — your context is the
   scarcest resource you manage. Every fan-out obeys Hard Rule 11: on a Fable session,
-  spawned agents carry an explicit model — opus for every offloaded job under the
-  owner policy — never an inherited fable. EXCEPTION: under a metered-key regime (a fable-director
+  spawned agents carry an explicit model the seat chose by the task's difficulty and
+  declared in the brief (owner ruling 2026-09-01) — opus for judgment, sonnet for bounded
+  work, opus when unsure — never haiku, never a fork, never an inherited fable. EXCEPTION: under a metered-key regime (a fable-director
   seat), in-session subagents are banned — the lanes are the explorers. Know which
   regime you're in before spawning anything.
 - **Price every call.** Tokens, wall-clock, permission prompts, failure domain — pick

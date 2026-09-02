@@ -7,9 +7,19 @@
 # violation) — which means a mis-routed lane was caught after it had already burned the
 # wrong credit. This closes that gap: the violation is refused at the door.
 #
-# THE LAW (owner-set 2026-07-15): every offloaded job sets model "opus" EXPLICITLY.
-# Opus default; explicit sonnet lawful for declared mechanical/DRAFT-tier briefs (owner 2026-08-30); never haiku, never subagent_type "fork" (a fork
-# bills its credit). Omitting the model is a violation, not a default.
+# THE LAW (owner-set 2026-07-15; amended 2026-09-01, superseding the 2026-08-30
+# sonnet clause): THE SEAT CHOOSES EACH LANE'S MODEL BY THE DIFFICULTY OF THE TASK
+# AND DECLARES THE CHOICE IN THE DISPATCHING BRIEF — "model: opus — tier: judgment"
+# for judgment-bearing work (design, debugging, root-cause, kernel surfaces,
+# refuters and reviews, merges, anything ambiguous or under-specified), "model:
+# sonnet — tier: bounded" for bounded, well-specified work whose done-when is a
+# runnable check the seat wrote before dispatch; when unsure, opus.
+#
+# WHAT THIS GATE REFUSES IS NOT A MATTER OF DIFFICULTY, and is unchanged by the
+# amendment: never haiku (a tier declaration does not launder it), never
+# subagent_type "fork" (a fork inherits the seat and bills its credit), and a spawn
+# that omits the model is a violation, not a default. The tier discipline itself
+# lives in the brief and the receipts (spend.py) — this hook cannot read briefs.
 #
 # PAYLOAD, verified against this repo's own transcripts before this hook was written
 # (87 real spawns): tool_name is "Agent" in this harness; other surfaces call it "Task".
@@ -23,7 +33,26 @@
 # is worse than no gate), and ANY malformed input passes through silently — a broken
 # hook must never break a session.
 
-PAYLOAD="$(cat 2>/dev/null || true)"
+# ── NR-STDIN (E2, 4.6.2) — BOUNDED READ: the payload or nothing, never a hang.
+# Contract, rationale and the bash-3.2 measurements live in hooks/pretool-gate.sh, which
+# owns the budget; the loop is copied rather than sourced because sourcing a sibling
+# costs a fork on that hook's fast path and would make reading stdin depend on a second
+# file. TOTAL stdin wall time is bounded by NR_STDIN_WAIT (5 s) plus the sub-second
+# granularity of SECONDS — not per read — and an idle stdin yields "", on which this
+# hook fails open.
+# The wait is a knob for fixtures, so it is VALIDATED, not trusted: a non-numeric -t
+# makes read fail instantly (a silently disarmed hook) and a huge one restores the
+# hang this fixes. Anything but 1-99 falls back to 5. `case`, so still no fork.
+case "${NR_STDIN_WAIT:-}" in [1-9]|[1-9][0-9]) ;; *) NR_STDIN_WAIT=5 ;; esac
+NR_RAW=""; NR_DL=$((SECONDS + NR_STDIN_WAIT))
+while :; do
+  NR_T=$((NR_DL - SECONDS))   # the REMAINING budget, never a fresh one per read (F4)
+  [ "$NR_T" -ge 1 ] || break
+  NR_LINE=""
+  IFS= read -r -t "$NR_T" NR_LINE || { NR_RAW="$NR_RAW$NR_LINE"; break; }
+  NR_RAW="$NR_RAW$NR_LINE"
+done
+PAYLOAD="$NR_RAW"
 [ -n "$PAYLOAD" ] || exit 0
 
 # Parse defensively. Anything unexpected → empty fields → the pass-through path below.
@@ -79,10 +108,12 @@ print(json.dumps({"systemMessage": msg,
   exit 0
 }
 
-FIX='   fix: set model="opus" on the Agent/Task call (and never subagent_type="fork").
-   The law: every offloaded job runs on explicit Opus — no sonnet, no haiku, no fork
-   (a fork inherits the seat and bills its credit). Omitting the model is a violation,
-   not a default. Contract: /notrest:agentswarm · receipts: /notrest:spend'
+FIX='   fix: declare the model on the Agent/Task call, chosen by task difficulty:
+   model="opus" for judgment-bearing work, model="sonnet" for a bounded, well-specified
+   job whose done-when is a runnable check; when unsure, opus. Never haiku, never
+   subagent_type="fork" (a fork inherits the seat and bills its credit). Omitting the
+   model is a violation, not a default; the brief records the tier.
+   Contract: /notrest:agentswarm · receipts: /notrest:spend'
 
 # ── RULE 1 · THE FORK BAN. A fork ignores the model parameter and inherits the seat,
 # so it is never a lawful offload however it is spelled.
@@ -93,10 +124,10 @@ case "$STYPE" in
     ;;
 esac
 
-# ── RULE 2 · THE MODEL MUST BE EXPLICIT: OPUS OR SONNET (owner-amended 2026-08-30).
-# Opus default; sonnet lawful for lanes the brief declares mechanical/DRAFT-tier — the tier
-# discipline lives in the estate's audit layer (CLAUDE.md spine block), not in this hook,
-# which cannot read briefs. Haiku and omitted models remain refused at the door.
+# ── RULE 2 · THE MODEL MUST BE EXPLICIT: OPUS OR SONNET (owner-amended 2026-09-01).
+# WHICH of the two is the seat's call, made on the difficulty of the task and declared in
+# the brief; this hook cannot read briefs and does not try to. It enforces the half that
+# is not a judgment: haiku and omitted models are refused at the door.
 NORM="$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')"
 case "$NORM" in
   *opus*|*sonnet*) exit 0 ;;             # lawful: explicit opus or sonnet
@@ -106,7 +137,7 @@ case "$NORM" in
     ;;
   *)
     [ -n "$OVERRIDE" ] && overridden "model=$MODEL on \"$DESC\""
-    block "notrest spawn gate: model=\"$MODEL\" — the offload law allows explicit opus or sonnet only (owner-amended 2026-08-30; was opus-only 2026-07-15). haiku and other models are refused at the door rather than audited after the burn." "$FIX"
+    block "notrest spawn gate: model=\"$MODEL\" — the offload law allows explicit opus or sonnet only; the seat picks between them by task difficulty and declares the tier in the brief (owner 2026-09-01). haiku and other models are refused at the door rather than audited after the burn." "$FIX"
     ;;
 esac
 

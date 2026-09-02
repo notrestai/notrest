@@ -130,6 +130,7 @@ Three hard constraints on any case added here:
 bash plugins/notrest/skills/eval/scripts/fixture.sh           # exit 0 = every assertion held
 bash plugins/notrest/skills/eval/scripts/router-fixture.sh    # exit 0 = the routing law holds
 bash plugins/notrest/skills/eval/scripts/pretool-fixture.sh   # exit 0 = the hard gate has teeth
+bash plugins/notrest/skills/eval/scripts/hooks-stdin-fixture.sh # exit 0 = no hook can hang on stdin (kernel arm, 4.6.2)
 ```
 
 `fixture.sh` (28 assertions) builds a synthetic mini-harness that passes clean, then injects
@@ -146,6 +147,11 @@ token WARNs instead of failing; `ROUTE-CONFORMANCE` warns on an unbacked route b
 silent for one a later line, a findings record, or the 3-line grace window covers, and for one
 the ledger says was deliberately declined; and `--baseline` adds a section without moving the
 exit code — unchanged, regressed, and missing-file all asserted.
+
+`hooks-stdin-fixture.sh` (32 assertions) is the kernel arm added in 4.6.2: it holds each stdin-reading
+hook's stdin OPEN with a fifo and asserts the hook still returns inside its bound, pairs every
+no-hang arm with a real-effect arm on the same hook (a reader that reads nothing is not a fix),
+and checks the banner fallback, the empty-stdin silence, file modes and per-command timeouts.
 
 `router-fixture.sh` (31 assertions) is the one behavior fixture in the suite that costs
 nothing: it pipes real `UserPromptSubmit` payloads through `hooks/router.sh` and asserts each

@@ -59,7 +59,7 @@ EXIT_OK, EXIT_USAGE, EXIT_PARTIAL, EXIT_NONE = 0, 2, 5, 6
 PROJECT_MARKERS = ("AGENTS.md", "CLAUDE.md", "README.md", "package.json", "pyproject.toml",
                    "COORD.md")
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 BLOCK_CLOSE = "<!-- /notrest:protocol -->"
 # Line-anchored on purpose, and every search runs over FENCE-MASKED text: an unanchored
 # search matches the marker inside a fenced documentation EXAMPLE, and a file that merely
@@ -105,6 +105,12 @@ BODY_V1 = """## notrest protocol
   ~500 lines it seals whole as `COORD-<NNN>.md` and a fresh volume opens.
 - **Close** a working session with `/sessionend`. **Drift check:** `/notrest check`."""
 
+# ⛔ BODY_V2 IS HISTORY AND IS NEVER EDITED AGAIN. It is kept EXACTLY as v4.6.1 shipped
+# it so an estate carrying a v2 block can still be proven UNTOUCHED (safe to replace) or
+# HAND-EDITED (bank a copy, say so). Editing a shipped body in place destroys that proof
+# and, worse, is silently INERT: `foundation_state` short-circuits on
+# `found >= PROTOCOL_VERSION`, so every estate already at v2 would have been told "already
+# current" and never received the new law. A law change is a VERSION BUMP.
 BODY_V2 = """## notrest protocol
 
 - **Fable discipline** — ORIENT -> PROBE -> ACT -> PROVE -> BANK. Probe the live
@@ -126,7 +132,33 @@ BODY_V2 = """## notrest protocol
   ~500 lines it seals whole as `COORD-<NNN>.md` and a fresh volume opens.
 - **Close** a working session with `/sessionend`. **Drift check:** `/notrest check`."""
 
-CANONICAL_BODIES = {1: BODY_V1, 2: BODY_V2}
+# v3 — owner amendment 2026-09-01: the seat chooses each lane's model by the DIFFICULTY of
+# the task and DECLARES the choice, superseding v2's flat "Claude lanes set opus". The bans
+# did not move (haiku, forks, an omitted model). Everything else is v2 byte for byte.
+BODY_V3 = """## notrest protocol
+
+- **Fable discipline** — ORIENT -> PROBE -> ACT -> PROVE -> BANK. Probe the live
+  system before reasoning; a done/works/fixed claim needs in-transcript evidence
+  (exit code, diff, status) or it is labeled `[unverified]`; bank state before stopping.
+  Full contract: `/notrest:fable-mode`.
+- **Runtime-explicit offload rule** — delegate only when the user asks or the host policy
+  permits it. Claude lanes set the model EXPLICITLY, chosen by the seat on the difficulty
+  of the task and declared in the dispatching brief: `\"opus\"` for judgment-bearing work,
+  `\"sonnet\"` for bounded well-specified work whose done-when is a runnable check the seat
+  wrote before dispatch. When unsure, opus. Never haiku, never `subagent_type: \"fork\"`;
+  omitting the model is a violation, not a default. Codex lanes set `\"gpt-5.6-sol\"`
+  explicitly and, because a model override cannot use a full-history inherited fork, use
+  `fork_turns: \"none\"` or a bounded recent-turn fork. Never substitute one runtime's model
+  for the other. A build keeps one persistent builder lane per domain, resumed for feedback.
+- **Enforcement honesty** — Claude lifecycle hooks may enforce and receipt laws. Codex
+  v4.3 has no equivalent plugin hook surface: `AGENTS.md`, the selected skill, Doctor,
+  Eval, and consumer-side evidence carry the law. Never claim a hook ran on Codex.
+- **COORD law** — one honest ledger line per substantive prompt when its work lands:
+  `ask -> landed | evidence`. `COORD.md` is append-only and is never compacted: at
+  ~500 lines it seals whole as `COORD-<NNN>.md` and a fresh volume opens.
+- **Close** a working session with `/sessionend`. **Drift check:** `/notrest check`."""
+
+CANONICAL_BODIES = {1: BODY_V1, 2: BODY_V2, 3: BODY_V3}
 
 # ── STRICTNESS REGRESSION GUARD (S57).
 #
@@ -944,8 +976,29 @@ def packet(root, surface="claude"):
         st, _detail, ver = foundation_state(root, runtime)
         states[runtime] = {"status": st, "version": ver,
                            "file": SURFACE_FILES[runtime]}
-    established = cs == PASS and all(v["status"] == PASS for v in states.values())
+    # ⛔ A BLOCK ONE VERSION BEHIND IS STALE, NOT ABSENT (4.6.2, v2 -> v3 round).
+    # `established` gated on PASS, and foundation_state returns WARN for a block whose
+    # version is simply older than current. So the moment PROTOCOL_VERSION moved, every
+    # estate still carrying the previous block was reported "carries no continuable
+    # estate" and the trail packet was SUPPRESSED ENTIRELY — a successor seat told there
+    # is no trail, in an estate whose whole trail is sitting right there, because a
+    # comment header said v2. Staleness is a fact to REPORT, never a reason to withhold
+    # the ledger. Only the stale case is admitted: a block that is unterminated, fenced,
+    # ambiguous or missing still returns version None and still fails established.
+    # F8 (refuter, 4.6.2): the first cut admitted ANY version below current, which let a
+    # **v0** block — a marker shape that predates every canonical body this file knows, and
+    # that CANONICAL_BODIES cannot even name — count as a continuable estate. Only a version
+    # this tool has actually shipped is stale-but-usable, so the window is 1 <= v < current.
+    # Below 1 and at-or-above current are handled elsewhere: 0 is not a block we recognise,
+    # and >= current is already PASS.
+    def _stale_version(v):
+        return v["version"] is not None and 1 <= v["version"] < PROTOCOL_VERSION
+
+    def _usable(v):
+        return v["status"] == PASS or (v["status"] == WARN and _stale_version(v))
+    established = cs == PASS and all(_usable(v) for v in states.values())
     versions = sorted(set(v["version"] for v in states.values() if v["version"] is not None))
+    stale = [SURFACE_FILES[r] for r, v in states.items() if _stale_version(v)]
     return {
         "root": root,
         "surface": surface,
@@ -955,6 +1008,8 @@ def packet(root, surface="claude"):
         "claude_block": states.get("claude", {}).get("status"),
         "agents_block": states.get("codex", {}).get("status"),
         "protocol_version": versions[0] if len(versions) == 1 else versions,
+        "protocol_current": PROTOCOL_VERSION,
+        "protocol_stale": sorted(stale),
         "coord_lines_shown": len(coord),
         "coord_lines_scanned": len(all_coord),
         "coord_read_cap_bytes": LEDGER_READ_CAP,
@@ -1079,9 +1134,13 @@ def print_brief(root, surface, p):
     # The root is a field like any other — a directory name is content somebody chose, and
     # an unclipped, unframed path was the one field that could still reach column 0.
     dline(out, "root: %s" % root)
-    dline(out, "ESTABLISHED · protocol v%s · surface=%s · COORD volumes sealed: %d · agent "
-                "volumes sealed: %d" % (p["protocol_version"], surface,
-                                        p["coord_sealed_volumes"], p["agents_sealed_volumes"]))
+    dline(out, "ESTABLISHED · protocol v%s%s · surface=%s · COORD volumes sealed: %d · agent "
+                "volumes sealed: %d"
+               % (p["protocol_version"],
+                  (" (STALE — current is v%d; run /notrest to upgrade %s)"
+                   % (p["protocol_current"], ", ".join(p["protocol_stale"])))
+                  if p["protocol_stale"] else "",
+                  surface, p["coord_sealed_volumes"], p["agents_sealed_volumes"]))
     if p["git_repo"] and p["git_head"]:
         # %s, not %d: `git status` can fail (a corrupt .git/index) while `rev-parse HEAD`
         # succeeds, and then dirty is None. %d raised TypeError and the hook injected a
@@ -1197,8 +1256,12 @@ def _cmd_continuation(args):
     if getattr(args, "brief", False):
         return print_brief(root, surface, p)
     print("notrest continuation — %s" % root)
-    print("  ESTABLISHED · protocol v%s · COORD volumes sealed: %d · agent volumes sealed: %d"
-          % (p["protocol_version"], p["coord_sealed_volumes"], p["agents_sealed_volumes"]))
+    print("  ESTABLISHED · protocol v%s%s · COORD volumes sealed: %d · agent volumes sealed: %d"
+          % (p["protocol_version"],
+             (" (STALE — current is v%d; run /notrest to upgrade %s)"
+              % (p["protocol_current"], ", ".join(p["protocol_stale"])))
+             if p["protocol_stale"] else "",
+             p["coord_sealed_volumes"], p["agents_sealed_volumes"]))
     if p["git_repo"] and p["git_head"]:
         # %s, not %d — dirty is None when `git status` fails under a live HEAD.
         print("  git %s · %s dirty file(s) · last commit: %s"

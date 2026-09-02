@@ -1,5 +1,63 @@
 # Changelog — the notrest harness
 
+## 4.6.2 — 2026-09-01
+
+**The package audited itself and fixed what it found; the seat now picks the lane's model by
+the difficulty of the task.**
+
+Three find-only lanes audited the 4.6.1 package (docs/DOCKET-4.6.2.md, 22 findings, every one
+re-run at the seat); three persistent builder lanes fixed them under disjoint touch scopes; a
+refuter round attacked the kernel diff before this shipped.
+
+- **OFFLOAD POLICY re-amended by the owner (2026-09-01):** the seat chooses each lane's model by
+  task difficulty — opus for judgment-bearing work, sonnet for bounded well-specified work,
+  opus when unsure — and DECLARES the choice in the brief. Haiku, forks and omitted models stay
+  denied. Single source of truth: `briefs/amendment-2026-09-01-offload-policy.md`; carried by
+  the SessionStart echo, spawn-gate, establish's protocol block (**protocol v3** — estates at
+  v2 are reported STALE by `check` and the packet, and `establish` upgrades the block in place
+  byte-for-byte, banking a hand-edited v2 body to `.notrest-v2.bak`; the bump exposed and fixed a
+  packet defect: a stale block used to suppress the whole trail packet, telling a successor there
+  was no continuable estate), eval's OFFLOAD-POLICY check, README,
+  fable-mode, agentswarm (the difficulty rubric is its routing table) and tieredswarm.
+- **Hooks cannot hang.** Five of six stdin-reading hooks read stdin unbounded; an open idle
+  stdin held them forever (fifo test: rc=124). Every hook now reads with a bounded wait and
+  hooks.json declares a timeout on every event. Timeouts live on each COMMAND object, where the docs put them — the
+  matcher-group placement 4.5.0 used for Stop was never in effect. Fixture: hooks-stdin, 32 arms,
+  red 11 times against 4.6.1.
+- **`/recap` walk was dead on any estate with an out-of-order stamp** — this one included:
+  the STAMP-ORDER inventory row lacked the keys the emitter reads (`KeyError: 'entries'`).
+  Fixed, with a red-first arm; the recap fixture had no arm for that path (the vacuous-pass
+  species — 100/0 green while the primary verb was broken).
+- **Three gates that let the docs drift:** doctor gains ROSTER PARITY (every skill dir must be
+  named in the README table, the plugin README, the marketplace description and the tutorial),
+  RENDER SURFACES now checks the N-skill count as well as the version, and GITIGNORE fails on
+  tracked derived graph/compile output under any plugin dir. All three were red against 4.6.1
+  as shipped: the README table had 29 rows for 32 skills (beam, mentor, tieredswarm), mentor
+  was on no README at all, the HTML said 31, and 125 KB of July scan output was tracked inside
+  the package. All fixed.
+- **`compile.py scan` 117 s → 2 s** (profile: one weighted-jaccard hot spot at 96% of wall;
+  memoized item pairs, exact set identity, output byte-identical) with progress on stderr and
+  the runtime class stated in the skill.
+- **Error posture:** `score_snapshot.py` refuses a missing file in one line at exit 2 like its
+  sibling lints, and its help names the documented verbless form.
+- **Currency:** START-HERE, HANDOFF and STATE rewritten from the ledger (they described
+  v3.5.0); MAP and UNDERSTANDING re-stamped; README and fable-mode carried a superseded law.
+  Correction to the 4.6.0 entry: the brief packet on this repo is 20 lines, not 18.
+- **The refuter round earned its law.** Against the kernel diff it found three defects and five
+  nits, all fixed red-first before this shipped: the widened tier vocabulary would have let a
+  "sonnet for everything" surface pass OFFLOAD-POLICY (the exemption now keys on a declaration
+  shape — an absolute beside sonnet fails first, otherwise the window must name opus too or carry
+  a tier declaration); the stdin-wait knob's validation had no fixture arm (reverting it kept the
+  suite green while a haiku spawn slipped through); a plugin's SessionEnd hook runs under the
+  CLI's shared 1.5 s pool whatever timeout it declares (read off the 2.1.237 binary, unverified
+  live) so session-end no longer reads stdin at all and writes its cushion in 0.07 s; the guard's
+  worst case was twice the wait and is now the wait itself (each read gets the remaining budget);
+  a trailing hyphen made doctor read `mentor-dev` as no mention; prose like "a one-skill install"
+  counted as a count claim (the count is now read only beside the version stamp); a `v0` block
+  was admitted as stale-but-continuable. 404-case differential over the memoized compile scan:
+  zero diffs. A second refuter pass reviewed the fixes before the ship.
+- Release surface: `docs/DOCKET-4.6.2.md` registered.
+
 ## 4.6.1 — 2026-09-01
 
 **The packet now silences the nudges that told a session to go fetch what the packet

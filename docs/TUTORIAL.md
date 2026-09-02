@@ -72,6 +72,8 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | Save everything before stopping | "/sessionend" → **sessionend** |
 | Work with discipline all session | automatic (hook) · full contract: **/fable-mode** |
 | Run a multi-SESSION dev team | "/fable-director" → **fable-director** |
+| Be escorted by a second session while you build | "/mentor" / "mentor the build" → **mentor** |
+| Leave mid-build without killing the lanes | "/beam up" / "I have to leave" → **beam** |
 | Delegate heavy work fast (any seat + Opus lanes) | "swarm this" / "/agentswarm" → **agentswarm** |
 | Decide whether to tier a job (or just run it flat) | "should I tier this" / "/tieredswarm" → **tieredswarm** |
 | Ask "what do we already know about X?" | "index the dossiers" → **archivist** |
@@ -103,4 +105,4 @@ Every skill enforces: real sources only (invented citations are banned), tiered 
 
 ## 7. Costs, quick
 
-Full runs search the web and write files; `--quick` variants stay in chat and cost a fraction. Search budgets are built in (a researcher run defaults to ~20 searches, factcheck ~3 per claim). You can always say "max 5 searches" or "keep it quick" — the skills honor stated caps and say what was traded away. Delegated fan-out runs on explicit Opus whatever model holds the seat (the owner offload policy — and Fable never rides in a subagent), via **agentswarm**; the **spend** ledger receipts every lane so the routing stays checkable, not asserted.
+Full runs search the web and write files; `--quick` variants stay in chat and cost a fraction. Search budgets are built in (a researcher run defaults to ~20 searches, factcheck ~3 per claim). You can always say "max 5 searches" or "keep it quick" — the skills honor stated caps and say what was traded away. Delegated fan-out carries an explicit model whatever model holds the seat, and the seat picks it by the difficulty of the task and declares the choice in the brief — opus for judgment-bearing work, sonnet for bounded well-specified work, opus when unsure (owner ruling 2026-09-01); never haiku, never a fork, never an inherited Fable, and an omitted model is a violation rather than a default — via **agentswarm**; the **spend** ledger receipts every lane so the routing stays checkable, not asserted.

@@ -290,6 +290,45 @@ hasnt "no traceback reached the output" "Traceback" "$W/garb.txt"
 python3 "$WP" spans --root "$R2" >/dev/null 2>&1;   t "spans survives the same garbage" "$?" "0"
 python3 "$WP" prefill --root "$R2" >/dev/null 2>&1; t "prefill survives the same garbage" "$?" "0"
 
+echo "── K · a stamp that contradicts append order is DISCLOSED, not fatal (E1)"
+# S82/E1: the STAMP-ORDER inventory row is built by a different hand than the source rows.
+# Every consumer (emit_inventory, cmd_prefill, --json) reads entries/malformed/first/last off
+# EVERY row, so a disclosure row missing them killed the primary verb on any real estate.
+R3="$W/repo3"; mkdir -p "$R3"
+cat > "$R3/COORD.md" <<'EOF'
+# COORD.md — session coordination ledger
+## LEDGER
+- [2026-02-02 09:00Z] [main] first line, honest stamp -> landed | evidence: none
+- [2026-02-01 08:00Z] [main] STAMPBACKWARDS second line, stamp precedes the first -> landed | evidence: none
+- [2026-02-03 10:00Z] [main] third line, honest again -> landed | evidence: none
+EOF
+python3 "$WP" walk --root "$R3" > "$W/stamp.txt" 2>&1;  t "walk on a stamp-contradicting estate exits 0" "$?" "0"
+hasnt "…and no traceback reached the output" "Traceback" "$W/stamp.txt"
+has "…the disclosure row is printed in the inventory" "STAMP-ORDER" "$W/stamp.txt"
+has "…naming the count and refusing to re-stamp" "never silently re-stamped" "$W/stamp.txt"
+python3 "$WP" walk --root "$R3" --json > "$W/stamp.json" 2>"$W/stamp.jsonerr"; t "walk --json survives it too" "$?" "0"
+K(){ python3 -c "
+import json,sys
+d=json.load(open('$W/stamp.json'))
+inv=d['inventory']; e=d['entries']
+print(eval(sys.argv[1], {'d':d,'inv':inv,'e':e}))
+" "$1"; }
+t "the disclosure row carries every key an inventory row must" \
+  "$(K "sorted(set(('source','path','present','entries','malformed','first','last','note')) - set([r for r in inv if r['source']=='STAMP-ORDER'][0]))")" "[]"
+t "…and claims no entries of its own (the count lives in the note)" \
+  "$(K "[(r['entries'],r['malformed']) for r in inv if r['source']=='STAMP-ORDER'][0]")" "(0, 0)"
+t "the backwards-stamped line keeps its own stamp verbatim" \
+  "$(K "[x['ts'] for x in e if 'STAMPBACKWARDS' in x['head']][0]")" "2026-02-01 08:00Z"
+t "…but never orders before the line it positionally follows" \
+  "$(K "[x['head'][:20] for x in e].index([x['head'][:20] for x in e if 'STAMPBACKWARDS' in x['head']][0]) == 1")" "True"
+python3 "$WP" walk --root "$R3" --since 2026-02-01 >/dev/null 2>&1; t "walk --since survives it" "$?" "0"
+python3 "$WP" spans --root "$R3" >/dev/null 2>&1; t "spans survives it" "$?" "0"
+python3 "$WP" prefill --root "$R3" > "$W/stamp.js" 2>&1; t "prefill survives it" "$?" "0"
+hasnt "…and never lists the disclosure row as a source of entries" "STAMP-ORDER (" "$W/stamp.js"
+# the real estate this shipped broken on: the plugin's own repo, if we are inside one
+t "the same estate walks green twice (deterministic under clamping)" \
+  "$(python3 "$WP" walk --root "$R3" > "$W/stamp2.txt" 2>&1; cmp -s "$W/stamp.txt" "$W/stamp2.txt"; echo $?)" "0"
+
 echo
 echo "recap fixture: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

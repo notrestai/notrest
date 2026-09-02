@@ -528,13 +528,20 @@ case "$(grep -c -- '--timeout' "$CG")" in
   0) no "completion gate: passes no --timeout to the checker (unbounded checker)" ;;
   *) ok "completion gate: passes an explicit --timeout to the checker" ;;
 esac
+# PLACEMENT, not merely presence (2026-09-01): this arm read the timeout off the matcher
+# GROUP, which is where it sat from 4.5.0 — and the CLI reads `timeout` off the
+# individual COMMAND object, so the outer cap was configured and never in effect while
+# this fixture called it green. A group-level key is now the failure, not the pass.
 if python3 -c 'import json,sys
 d = json.load(open(sys.argv[1]))
-raise SystemExit(0 if any(int(e.get("timeout", 0)) > 0
-                          for e in d["hooks"]["Stop"]) else 1)' "$HD/hooks.json"; then
-  ok "completion gate: the Stop entry carries a harness wall-clock timeout"
+groups = d["hooks"]["Stop"]
+if any("timeout" in g for g in groups):
+    raise SystemExit(1)   # on the group = parsed, shipped, not in effect
+raise SystemExit(0 if any(int(h.get("timeout", 0)) > 0
+                          for g in groups for h in g.get("hooks", [])) else 1)' "$HD/hooks.json"; then
+  ok "completion gate: the Stop COMMAND carries a harness wall-clock timeout"
 else
-  no "completion gate: no timeout on the Stop hooks.json entry — nothing caps the hook"
+  no "completion gate: the Stop timeout is missing or sits on the matcher group (not in effect)"
 fi
 
 # ── RB-7: the two remaining fail-open paths were MUTE, and the file's own law says a

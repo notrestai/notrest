@@ -110,9 +110,41 @@ est establish --surface codex --root "$PC" > "$W/o" 2>&1
 t "Codex establish → exit" "$?" "0"
 t "Codex foundation is AGENTS.md" "$([ -f "$PC/AGENTS.md" ] && echo y || echo n)" "y"
 t "Codex establish does not invent CLAUDE.md" "$([ -f "$PC/CLAUDE.md" ] && echo y || echo n)" "n"
-has "Codex block is protocol v2" "notrest:protocol v2" "$PC/AGENTS.md"
+has "Codex block is protocol v3" "notrest:protocol v3" "$PC/AGENTS.md"
 has "Codex block pins the Codex worker" "gpt-5.6-sol" "$PC/AGENTS.md"
 has "Codex block discloses the hook boundary" "Never claim a hook ran on Codex" "$PC/AGENTS.md"
+
+# ── the offload law the block writes into somebody else's project (owner amendment
+# 2026-09-01: the seat chooses the model by the difficulty of the task and declares it).
+# Asserted on BOTH surfaces and byte-compared, because the two renderings share this text
+# and a law that says one thing in CLAUDE.md and another in AGENTS.md is two laws.
+off(){ has "$1 · $2" "$3" "$4"; }
+for SURF in "claude:$P1/CLAUDE.md" "codex:$PC/AGENTS.md"; do
+  SN="${SURF%%:*}"; SF="${SURF#*:}"
+  off "$SN" "the seat chooses the model by difficulty" \
+      "chosen by the seat on the difficulty" "$SF"
+  off "$SN" "…and DECLARES the choice in the brief" "declared in the dispatching brief" "$SF"
+  off "$SN" "opus is named for judgment-bearing work" 'for judgment-bearing work' "$SF"
+  off "$SN" "sonnet is named for bounded well-specified work" \
+      'for
+  bounded well-specified work' "$SF"
+  off "$SN" "…gated on a done-when the seat wrote BEFORE dispatch" \
+      "a runnable check the seat" "$SF"
+  off "$SN" "when unsure, opus" "When unsure, opus" "$SF"
+  off "$SN" "haiku stays banned" "Never haiku" "$SF"
+  off "$SN" "forks stay banned" 'never `subagent_type: "fork"`' "$SF"
+  off "$SN" "an omitted model is a violation" "omitting the model is a violation" "$SF"
+done
+# the shared span must be byte-identical between the two renderings
+sed -n '/Runtime-explicit offload rule/,/resumes it for feedback/p' "$P1/CLAUDE.md" > "$W/off-claude"
+sed -n '/Runtime-explicit offload rule/,/resumes it for feedback/p' "$PC/AGENTS.md" > "$W/off-codex"
+cmp -s "$W/off-claude" "$W/off-codex"
+t "the offload clause is byte-identical on both surfaces" "$?" "0"
+# the block is read by every session of every estate that adopts it, so its SIZE is a
+# law too: 22 lines at v4.6.1, 24 after the 2026-09-01 offload amendment. Pinned, so a
+# future clause has to argue for its lines rather than sliding them in.
+t "…and the managed block stays close to its 22-line budget" \
+  "$(awk '/notrest:protocol v/,/\/notrest:protocol/' "$PC/AGENTS.md" | wc -l | tr -d ' ')" "24"
 PCK="$(ckt "$PC/AGENTS.md")"
 est establish --surface codex --root "$PC" >/dev/null 2>&1
 t "Codex establish is byte-idempotent" "$(ckt "$PC/AGENTS.md")" "$PCK"
@@ -293,7 +325,7 @@ K8="$(ckt "$P8/CLAUDE.md")"
 # unbounded pile of blocks (N-1), so the honest move is to write nothing and say why.
 est check --root "$P8" > "$W/o" 2>&1; t "fenced EXAMPLE is not the block → check" "$?" "5"
 has "check names the fence/mask disagreement" "inside a fenced/masked region" "$W/o"
-hasnt "check never claims the example IS the block" "block present at v2" "$W/o"
+hasnt "check never claims the example IS the block" "block present at v3" "$W/o"
 est establish --root "$P8" > "$W/o" 2>&1; t "fenced example → establish appends NOTHING" "$?" "5"
 t "the fenced example survives byte-for-byte" "$(ckt "$P8/CLAUDE.md")" "$K8"
 t "no second block was appended beside it" "$(grep -c 'notrest:protocol v1' "$P8/CLAUDE.md")" "1"
@@ -333,7 +365,7 @@ P3="$W/proj3"; mkdir -p "$P3"; : > "$P3/README.md"
 est check --root "$P3" > "$W/o" 2>&1; t "older block → check is PARTIAL" "$?" "5"
 est establish --root "$P3" > "$W/o" 2>&1; t "older block → establish" "$?" "0"
 t "still exactly ONE block after upgrade" "$(nblk "$P3/CLAUDE.md")" "1"
-has "block upgraded to v2" "notrest:protocol v2" "$P3/CLAUDE.md"
+has "block upgraded to v3" "notrest:protocol v3" "$P3/CLAUDE.md"
 hasnt "stale body gone" "stale body" "$P3/CLAUDE.md"
 has "text above the block survives" "TOP LINE" "$P3/CLAUDE.md"
 has "text below the block survives" "BOTTOM LINE" "$P3/CLAUDE.md"
@@ -341,6 +373,156 @@ has "in-block edits announced, not silent" "in-block edits discarded" "$W/o"
 t "the discarded body was banked" \
   "$([ -f "$P3/CLAUDE.md.notrest-v0.bak" ] && echo y || echo n)" "y"
 has "the backup holds the old body" "stale body WITH A HAND EDIT" "$P3/CLAUDE.md.notrest-v0.bak"
+
+# ── v2 -> v3: the offload amendment ships as a VERSION BUMP, not an in-place edit ─────
+# 4.6.2's first cut rewrote BODY_V2 where it stood. That is silently INERT: foundation_state
+# short-circuits on `found >= PROTOCOL_VERSION`, so every estate already at v2 is told
+# "already current" and NEVER receives the new law — a law change nobody can observe. It
+# also destroys the untouched/hand-edited proof, because the shipped v2 body no longer
+# matches what v2 estates carry. So: v2 is frozen as history, v3 carries the amendment, and
+# these arms hold that shape. The canonical bodies are read from establish.py itself — a
+# fixture that hand-types the body it is checking is checking its own typing.
+V2BLK="$W/v2block.txt"; V3BLK="$W/v3block.txt"
+pyest - "$EST" > "$V2BLK" <<'PY2'
+import importlib.util, sys
+sp = importlib.util.spec_from_file_location("e", sys.argv[1])
+m = importlib.util.module_from_spec(sp); sp.loader.exec_module(m)
+sys.stdout.write("%s\n%s\n%s\n" % (m.open_marker(2), m.CANONICAL_BODIES[2], m.BLOCK_CLOSE))
+PY2
+pyest - "$EST" > "$V3BLK" <<'PY2'
+import importlib.util, sys
+sp = importlib.util.spec_from_file_location("e", sys.argv[1])
+m = importlib.util.module_from_spec(sp); sp.loader.exec_module(m)
+sys.stdout.write(m.protocol_block())
+PY2
+t "the shipped v2 body is still available as history" \
+  "$(grep -c 'notrest:protocol v2' "$V2BLK")" "1"
+t "…and it is NOT the v3 body" "$(cmp -s "$V2BLK" "$V3BLK"; echo $?)" "1"
+hasnt "v2 never carried the difficulty rubric (it is why v3 exists)" \
+  "chosen by the seat on the difficulty" "$V2BLK"
+has "v3 does" "chosen by the seat on the difficulty" "$V3BLK"
+
+# an estate that adopted v2 and has not been touched since
+PV2="$W/proj-v2"; mkdir -p "$PV2"; : > "$PV2/README.md"
+{ printf 'THEIR OWN HEADING\n\n'; cat "$V2BLK"; printf '\nTHEIR OWN FOOTER\n'; } > "$PV2/CLAUDE.md"
+est check --root "$PV2" > "$W/o" 2>&1
+t "a v2 estate is reported STALE, not current" "$?" "5"
+has "…naming both versions" "block is v2; current is v3" "$W/o"
+has "…and saying what to run" "run \`establish\` to" "$W/o"
+hasnt "…and never calls it current" "already current" "$W/o"
+
+est establish --root "$PV2" > "$W/o" 2>&1; t "re-running establish upgrades it" "$?" "0"
+has "…announcing the replacement" "protocol block replaced v2 -> v3" "$W/o"
+t "still exactly ONE block" "$(nblk "$PV2/CLAUDE.md")" "1"
+# the whole point: the upgraded block is the v3 template, byte for byte
+awk '/notrest:protocol v3/,/\/notrest:protocol/' "$PV2/CLAUDE.md" > "$W/got-v3"
+cmp -s "$W/got-v3" <(sed -e '$d' "$V3BLK" 2>/dev/null || cat "$V3BLK")
+python3 - "$W/got-v3" "$V3BLK" > "$W/blkcmp" 2>&1 <<'PY2'
+import sys
+got = open(sys.argv[1], encoding="utf-8").read().strip("\n")
+want = open(sys.argv[2], encoding="utf-8").read().strip("\n")
+print("IDENTICAL" if got == want else "DIFFERS")
+PY2
+t "the upgraded block IS the v3 template, byte for byte" "$(cat "$W/blkcmp")" "IDENTICAL"
+has "the estate now carries the amended law" "chosen by the seat on the difficulty" "$PV2/CLAUDE.md"
+has "…and their own text above the block survives" "THEIR OWN HEADING" "$PV2/CLAUDE.md"
+has "…and below it" "THEIR OWN FOOTER" "$PV2/CLAUDE.md"
+t "an untouched v2 body is replaced with NO backup (nothing was lost)" \
+  "$([ -f "$PV2/CLAUDE.md.notrest-v2.bak" ] && echo y || echo n)" "n"
+est check --root "$PV2" > "$W/o" 2>&1; t "…and check is clean afterwards" "$?" "0"
+has "…reporting v3" "notrest:protocol block present at v3" "$W/o"
+KV2="$(ckt "$PV2/CLAUDE.md")"
+est establish --root "$PV2" >/dev/null 2>&1
+t "…and the upgrade is byte-idempotent" "$(ckt "$PV2/CLAUDE.md")" "$KV2"
+
+# a HAND-EDITED v2 block must still be detected and banked, never silently clobbered
+PV2E="$W/proj-v2-edited"; mkdir -p "$PV2E"; : > "$PV2E/README.md"
+python3 - "$V2BLK" "$PV2E/CLAUDE.md" <<'PY2'
+import sys
+blk = open(sys.argv[1], encoding="utf-8").read()
+blk = blk.replace("- **Close** a working session",
+                  "- **THEIR OWN HAND-ADDED CLAUSE** — never lose this line.\n- **Close** a working session")
+open(sys.argv[2], "w", encoding="utf-8").write(blk)
+PY2
+est establish --root "$PV2E" > "$W/o" 2>&1; t "a hand-edited v2 block still upgrades" "$?" "0"
+has "…and the edit is announced, not silent" "in-block edits discarded" "$W/o"
+t "…the old body was banked at its own version" \
+  "$([ -f "$PV2E/CLAUDE.md.notrest-v2.bak" ] && echo y || echo n)" "y"
+has "…and the banked copy holds their clause verbatim" \
+  "THEIR OWN HAND-ADDED CLAUSE" "$PV2E/CLAUDE.md.notrest-v2.bak"
+hasnt "…while the live block is the clean v3 template" \
+  "THEIR OWN HAND-ADDED CLAUSE" "$PV2E/CLAUDE.md"
+has "…which carries the amendment" "When unsure, opus" "$PV2E/CLAUDE.md"
+
+# the continuation packet reports the version it FOUND — a v2 estate must read v2 there,
+# or a successor session is told it inherited a law the file does not carry.
+PV2C="$W/proj-v2-packet"; mkdir -p "$PV2C"; : > "$PV2C/README.md"
+# establish FIRST so the estate is continuable (COORD.md + its ledger header), then wind
+# the block back to v2 — this is exactly the shape of an estate that adopted v2 and has
+# not re-run establish since.
+est establish --root "$PV2C" >/dev/null 2>&1
+{ printf 'THEIR HEADING\n\n'; cat "$V2BLK"; } > "$PV2C/CLAUDE.md"
+est continuation --root "$PV2C" > "$W/pk2" 2>&1; t "the packet still EMITS for a v2 estate" "$?" "0"
+# ⛔ the defect this arm exists for: `established` gated on PASS, and a stale block is
+# WARN — so the moment PROTOCOL_VERSION moved, every v2 estate was told it "carries no
+# continuable estate" and the trail was withheld from the successor seat entirely.
+hasnt "…and never claims the estate is uncontinuable" "carries no continuable estate" "$W/pk2"
+has "…reporting the version it FOUND" "protocol v2" "$W/pk2"
+has "…marked STALE, with the current version named" "STALE — current is v3" "$W/pk2"
+has "…and what to run, on the file that needs it" "run /notrest to upgrade CLAUDE.md" "$W/pk2"
+has "…while still handing over the ledger" "COORD volumes sealed:" "$W/pk2"
+# a block that is BROKEN (not merely old) is still not a continuable estate
+PBRK="$W/proj-broken-block"; mkdir -p "$PBRK"; : > "$PBRK/README.md"
+est establish --root "$PBRK" >/dev/null 2>&1
+printf '<!-- notrest:protocol v2 (managed by /notrest) -->\nbody with no closer\n' > "$PBRK/CLAUDE.md"
+est continuation --root "$PBRK" > "$W/pkbrk" 2>&1
+has "an UNTERMINATED block is still not continuable (only staleness is admitted)" \
+  "carries no continuable estate" "$W/pkbrk"
+est establish --root "$PV2C" >/dev/null 2>&1
+est continuation --root "$PV2C" > "$W/pk3" 2>&1
+has "…and the packet reads v3 once upgraded" "protocol v3" "$W/pk3"
+hasnt "…with the STALE marker gone" "STALE" "$W/pk3"
+# ── F8 (refuter nit, 4.6.2) · only a version this tool SHIPPED is stale-but-usable ────
+# The first cut admitted any version below current, so a **v0** block — a marker shape
+# predating every canonical body this file knows, one CANONICAL_BODIES cannot even name —
+# counted as a continuable estate. The window is 1 <= v < current: below it is not a block
+# we recognise, at or above it is already current.
+pkver(){  # $1 version to plant · echoes the packet's second line, or "" when refused
+  PVX="$W/proj-pk-v$1"; rm -rf "$PVX"; mkdir -p "$PVX"; : > "$PVX/README.md"
+  est establish --root "$PVX" >/dev/null 2>&1
+  pyest - "$EST" "$1" > "$PVX/CLAUDE.md" <<'PY3'
+import importlib.util, sys
+sp = importlib.util.spec_from_file_location("e", sys.argv[1])
+m = importlib.util.module_from_spec(sp); sp.loader.exec_module(m)
+v = int(sys.argv[2])
+body = m.CANONICAL_BODIES.get(v) or "a body from before this tool existed"
+sys.stdout.write("%s\n%s\n%s\n" % (m.open_marker(v), body, m.BLOCK_CLOSE))
+PY3
+  est continuation --root "$PVX" 2>&1 | sed -n '2p'
+}
+case "$(pkver 0)" in
+  *ESTABLISHED*) no "v0 must NOT be a continuable estate — got a packet for it";;
+  *)             ok "a v0 block is not a continuable estate (below every shipped body)";;
+esac
+case "$(pkver 2)" in
+  *"protocol v2 (STALE — current is v3"*) ok "a v2 block is ESTABLISHED and marked STALE";;
+  *) no "v2 was not reported stale — got [$(pkver 2)]";;
+esac
+case "$(pkver 3)" in
+  *"protocol v3"*STALE*) no "v3 is current and must not be marked stale";;
+  *"protocol v3"*)       ok "a v3 block is current, no stale marker";;
+  *) no "v3 did not read as current — got [$(pkver 3)]";;
+esac
+case "$(pkver 99)" in
+  *STALE*)                no "a version ABOVE current must not be called stale";;
+  *"protocol v99"*)       ok "a v99 block is ahead, never stale (nothing to upgrade to)";;
+  *) no "v99 did not read as established — got [$(pkver 99)]";;
+esac
+
+t "the packet's own fields agree" \
+  "$(est continuation --root "$PV2C" --json 2>/dev/null | python3 -c "
+import json,sys;d=json.load(sys.stdin)
+print((d['protocol_version'], d['protocol_current'], d['protocol_stale']))")" "(3, 3, [])"
 
 echo "── F-12(b): atomicity, proven by a mutant that would survive without it"
 
@@ -692,7 +874,7 @@ old = open(p, encoding="utf-8").read()
 open(p, "w", encoding="utf-8").write("# Notes\n\n```sh\necho never closed\n\n" + old)
 PY2
 est check --root "$P16" > "$W/o" 2>&1; t "unclosed fence → check still finds the block" "$?" "0"
-has "…and reports it at v2" "notrest:protocol block present at v2" "$W/o"
+has "…and reports it at v3" "notrest:protocol block present at v3" "$W/o"
 est establish --root "$P16" >/dev/null 2>&1
 est establish --root "$P16" >/dev/null 2>&1
 est establish --root "$P16" >/dev/null 2>&1

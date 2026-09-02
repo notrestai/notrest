@@ -36,12 +36,62 @@ SPAWN_MARK = re.compile(r"subagent_type|Agent tool|spawn_agent|agent\(|"
                         r"model:\s*\"?(?:opus|gpt-5\.6-sol)", re.I)
 CLAUDE_MODEL_RE = re.compile(r"\bopus\b", re.I)
 CODEX_MODEL_RE = re.compile(r"\bgpt-5\.6-sol\b", re.I)
-# Owner-amended 2026-08-30: explicit sonnet is lawful WHEN the same line declares the
-# mechanical/DRAFT tier (the spawn-gate admits it; the brief carries the tier). Haiku
-# is never lawful and a tier declaration does not launder it.
+# Owner-amended 2026-09-01 (supersedes 2026-08-30): the SEAT chooses each lane's model by
+# the DIFFICULTY of the task and declares the choice — opus for judgment-bearing work,
+# sonnet for bounded well-specified work whose done-when is a runnable check written before
+# dispatch. So explicit sonnet is lawful when the sentence (or a neighbouring line) carries
+# a tier declaration in EITHER vocabulary: the old mechanical/DRAFT-tier wording or the new
+# bounded/well-specified/difficulty wording. What did NOT move: haiku is never lawful and a
+# tier declaration does not launder it; a fork inherits the seat; an omitted model is a
+# violation, not a default. This check must never demand "opus for every offloaded job" —
+# that law was superseded, and a gate enforcing a dead law is a gate that blocks the truth.
 HAIKU_RE = re.compile(r"model[\"']?\s*[:=]\s*[\"']?\s*haiku", re.I)
 SONNET_RE = re.compile(r"model[\"']?\s*[:=]\s*[\"']?\s*sonnet", re.I)
-TIER_RE = re.compile(r"mechanical|draft[- ]?tier", re.I)
+# F2 (refuter round, 4.6.2) and its REVIEW ROUND. Two designs failed before this one, and
+# both failures were the same mistake made at different widths: judging a directive by the
+# WORDS NEAR IT rather than by its own shape.
+#
+#   cut 1 — exempt sonnet when the window carries the law's recital words (bounded /
+#   difficulty / well-specified). The QUOTATION became the licence: a skill that recited the
+#   amendment auto-exempted every sonnet directive beside it, including one saying the
+#   opposite. Repro that passed: `Delegation: choose by difficulty.` above
+#   `Every lane: model: "sonnet" — always, for all work including kernel design and refuters.`
+#
+#   cut 2 — exempt sonnet when the window names opus too, or carries a tier token; fail when
+#   the window carries an absolute. Leaked BOTH ways. A bare mention of opus was a licence, so
+#   `model: "sonnet" in all cases; opus is retired.` passed — the word "opus" appearing in a
+#   sentence that RETIRES opus. And the absolute swept the whole window, so a correct
+#   declaration was vetoed by an unrelated neighbouring line: `Opus by default for judgment.`
+#   above `model: "sonnet" — tier: bounded …` FAILED.
+#
+# ⛔ SO THE CHECK IS A GRAMMAR CHECK, AND ITS SCOPE IS ONE LINE. A sonnet directive is
+# lawful only when THE SAME LINE carries a DECLARATION TOKEN, and unlawful when THE SAME LINE
+# carries an absolute — no window, no vocabulary, no opus-mention licence. Neighbouring prose
+# cannot license a directive and cannot condemn one. That is the whole rule, and it is the
+# only version of it that has survived a refuter.
+SONNET_DECL_RE = re.compile(r"tier\s*[:=]\s*bounded|\bdraft[- ]?tier\b|\bmechanical\b", re.I)
+SONNET_ABSOLUTE_RE = re.compile(
+    r"\balways\b|\bevery\s+lane\b|\bevery\s+spawn\b|\bevery\s+job\b|\ball\s+work\b|"
+    r"\bfor\s+all\b|\bfor\s+everything\b|\bby\s+default\b|\bdefault\s+model\b|"
+    r"\bunconditional|\bin\s+all\s+cases\b|\bregardless\s+of\s+difficulty\b|"
+    r"\beach\s+lane\b", re.I)
+
+
+def sonnet_lawful(line):
+    """Does THIS LINE declare a bounded tier, without also claiming an absolute?
+
+    ⛔ BOUND, STATED WHERE IT IS IMPLEMENTED: this is a GRAMMAR check over
+    directive-shaped mentions of a model. It can see that a line declares a tier; it
+    cannot see whether the work was actually bounded, and it never tries to. Whether a
+    given lane deserved sonnet is the SEAT'S JUDGMENT, receipted in the spend ledger and
+    the dispatching brief. A PASS here means "the surface states the law in the shape the
+    law requires" — never "the routing was wise".
+    """
+    if SONNET_ABSOLUTE_RE.search(line):
+        return False
+    return bool(SONNET_DECL_RE.search(line))
+
+
 FORK_RE = re.compile(r"subagent_type:\s*[\"']?fork", re.I)
 FORKBAN_RE = re.compile(r"^.*\bfork\b.*$", re.I | re.M)
 NEGATION_RE = re.compile(r"never|ban|forbid|not allowed|no fork", re.I)
@@ -145,9 +195,12 @@ def locate(root):
 # ---------------------------------------------------------------------------
 def check_offload(root, plug, skills):
     ID = "OFFLOAD-POLICY"
-    law = ("every documented spawn maps both runtimes: Codex=gpt-5.6-sol, "
-           "Claude=opus (explicit sonnet lawful only with a declared mechanical/"
-           "DRAFT tier — owner amendment 2026-08-30); haiku and inherited forks banned")
+    law = ("GRAMMAR CHECK over directive-shaped model mentions (not a judgment about "
+           "routing): every documented spawn maps both runtimes (Codex=gpt-5.6-sol, "
+           "Claude names opus); a `model: sonnet` directive must declare its tier ON ITS "
+           "OWN LINE and claim no absolute; haiku, inherited forks and an omitted model "
+           "stay banned. Whether a lane DESERVED sonnet is the seat's judgment, receipted "
+           "in the spend ledger and the brief — a PASS here is never 'the routing was wise'")
     out, spawners = [], []
     for name, (d, txt) in skills.items():
         f = rel(root, os.path.join(d, "SKILL.md"))
@@ -161,15 +214,13 @@ def check_offload(root, plug, skills):
                 line = txt[bol:eol if eol > 0 else len(txt)]
                 if NEGATION_RE.search(line):
                     continue          # naming-to-ban IS the law
-                # The tier declaration may wrap onto the sentence's neighbouring lines
-                # — prose wraps both directions — so the exemption window is the hit
-                # line plus one line each side. Negations stay same-line: a ban should
-                # not be claimable from a neighbour.
-                bol2 = txt.rfind("\n", 0, max(bol - 1, 0)) + 1
-                eol2 = txt.find("\n", (eol + 1) if eol > 0 else len(txt))
-                window = txt[bol2:eol2 if eol2 > 0 else len(txt)]
-                if pat is SONNET_RE and TIER_RE.search(window):
-                    continue          # amended law: sonnet + declared tier is lawful
+                # ONE LINE, like the negation above it. An earlier cut widened this to a
+                # three-line window so a wrapped declaration would still count; what it
+                # actually bought was a licence any neighbouring sentence could grant and
+                # any neighbouring sentence could revoke. A directive that means to declare
+                # its tier can say so on its own line.
+                if pat is SONNET_RE and sonnet_lawful(line):
+                    continue          # amended law: sonnet WITH a declared tier is lawful
                 m = hit
                 break
             if m:

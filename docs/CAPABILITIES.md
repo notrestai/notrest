@@ -6,6 +6,17 @@ capable* — every upgrade buildable (a script, a hook, an MCP, a flag), none va
 Skill entries come from a three-lane Opus analyst pass over every SKILL.md and shipped
 script; toolset entries are seat-written from the day's live work.
 
+> **v4.6.2 currency note (2026-09-01):** this register is a DATED RECORD — the version-stamped
+> notes below are history and stay as written. Where an entry stated a *present-tense* count,
+> line length, exit grammar or law, it has been re-verified against the live tree and corrected
+> here; counts that will drift again were replaced with count-neutral phrasing plus the command
+> that prints the real number. Live at the time of this sweep: **32 skills · protocol block v3 ·
+> `doctor.py check` exit 5 (0 fail) · `eval.py check` exit 0 · `hooks.json` 7 events / 9 command
+> entries, each with its own `timeout`**. The offload law is the owner's **2026-09-01** ruling:
+> the seat picks each lane's model by the DIFFICULTY of the task and declares the choice — opus
+> for judgment, sonnet for bounded work, opus when unsure; never haiku, never a fork; an omitted
+> model is a violation. `plugins/notrest/hooks/spawn-gate.sh` refuses a violating spawn at the door.
+
 > **v4.3.0 runtime note (2026-08-06):** the estate and thirty-two skills now ship with
 > native Codex and Claude adapters. Codex discovery is `.codex-plugin/plugin.json`, its
 > project foundation is `AGENTS.md`, and authorized workers use `gpt-5.6-sol`. Claude
@@ -68,16 +79,16 @@ upgrades: none needed now — re-measure after the router ships.
 
 ## Toolsets — scripts and runtimes
 
-### doctor.py (8 checks, exit 0/5/6, read-only)
-does: install + estate physical — frontmatter, manifests/tombstone, count drift, hooks, estate integrity, install freshness, gitignore anchors, render stamps.
-upgrades: 1) **token-budget gate**: `claude plugin details` always-on ≤ budget (~3.6k) or FAIL with the diet command — locks the rightsizing as law. 2) skills-dir freshness: verify `~/.claude/skills/notrest` symlink resolves to this repo and `plugin list` says ✔ loaded (today it just SKIPs). 3) root README/CLAUDE.md count surfaces (coverage gap parked since v3.3.0).
+### doctor.py (a growing roster of named checks, exits 0/5/6/3/2, read-only)
+does: install + estate physical — frontmatter, manifests/tombstone, count drift, **roster parity** (every skill dir actually NAMED on the README table, the plugin README, the tutorial and the marketplace description), hooks that parse **and ever fired**, estate integrity, install freshness, **app-side shadow packs**, the **always-on token budget**, gitignore anchors (including derived output inside the package), and render stamps **plus the counts they claim**. The roster grows with each scar, so it is deliberately not spelled as a number here: `python3 plugins/notrest/skills/doctor/scripts/doctor.py check --root .` prints the live list and the tally.
+upgrades: 1) ~~token-budget gate~~ **SHIPPED** — TOKEN BUDGET is a named check with a stated ceiling. 2) skills-dir freshness: **SHIPPED** as INSTALL FRESHNESS (names the runtime, the tree version and HEAD, and whether any installed plugin shadows the name). 3) root README/CLAUDE.md count surfaces — **SHIPPED** in 4.6.2 as ROSTER PARITY.
 
-### eval.py (8 static law checks, 0.06s, zero tokens)
-does: law conformance as fingerprint — offload policy, honesty labels, script-owns-scanning, append-only estate, worker contract, trigger sanity, safety laws, hook contract.
-upgrades: 1) check #9 ROUTER (in flight). 2) an opt-in behavioral arm via the CLI's native `claude plugin eval` (our case format runs first-class now, with a no-plugin baseline) — the old runner died, the cases in evals-legacy-external-runner/ did not.
+### eval.py (the static law checks, exits 0/5/6/2, sub-second, zero tokens)
+does: law conformance as fingerprint — offload policy, honesty labels, script-owns-scanning, append-only estate, worker contract, trigger sanity, safety laws, hook contract, the routing enforcer, router/oracle route-table parity. Count and runtime are not pinned here because both move: `python3 plugins/notrest/skills/eval/scripts/eval.py check --root .` prints them (measured this sweep: 32 skills, 0 fail, 0 warn, ~0.2s).
+upgrades: 1) ~~check #9 ROUTER~~ **SHIPPED**, with ROUTE-TABLE-PARITY and ROUTE-CONFORMANCE beside it. 2) an opt-in behavioral arm via the CLI's native `claude plugin eval` (our case format runs first-class now, with a no-plugin baseline) — the old runner died, the cases in evals-legacy-external-runner/ did not.
 
 ### compile.py + compile/<slug>/ runtimes
-does: zero-token estate scanner finds work done ≥3× (18 candidates today); the ritual compiles stable parts into isolated, fair-benchmarked runtimes; ship.py (853 lines, replay-proven) is the maiden compile — NOT live-verified, no version-monotonicity check.
+does: zero-token estate scanner finds work done ≥3× (`compile.py report` prints the live count and exits 3 while any ripe candidate is unruled); the ritual compiles stable parts into isolated, fair-benchmarked runtimes; ship.py (853 lines, replay-proven) is the maiden compile — NOT live-verified, no version-monotonicity check.
 upgrades: 1) add the monotonicity guard, then run ship.py in replay beside the next real ship and decide graduation. 2) compile the next ripe candidate. 3) scanner learns the speed law: flag candidates whose receipts show high wall-clock (compilation saves the most there).
 
 ### spend.py
@@ -143,7 +154,7 @@ gap: The suite's biggest read — the whole estate, hand-merged in timestamp ord
 
 ### graph
 does: Script-built Obsidian-style file/reference graph for a repo or all registered repos, rendered self-contained and opened.
-how: `scripts/graph.py` (stdlib, 1089 lines): git-or-walk listing, wikilink/link/import/source/mention/transcript/pair edges, `graph/graph.{json,html}`, `register`/`all` merge with per-project cap 300; exit 0/2.
+how: `scripts/graph.py` (stdlib, single file): git-or-walk listing, wikilink/link/import/source/mention/transcript/pair edges, `graph/graph.{json,html}`, `register`/`all` merge with per-project cap 300; exit 0/2.
 upgrades: 1) Add `links <path>` / `orphans` / `stale` query subcommands over `graph.json` — the description promises "what links to this file" but only the HTML can answer it. 2) Incremental scan: cache per-file mtime+hash in graph.json so re-scans re-read only changed files (READ_CAP is 200KB/file today). 3) Replace the inlined 8790-8799 port loop in SKILL.md with `doctor/scripts/render-check.sh`, which already does exactly that and proves the 200.
 how (cockpit): `scripts/cockpit.py serve [--always] [--no-open]` + `status` — a loopback-only live window; `--always` writes `graph/.cockpit-always` with the bound port (atomic, after the bind), `status` probes `/health` in 0.5s and exits 0/5/6, and the SessionStart hook echoes one nudge when the marker is present. The page is THREE VIEWS (river/file graph/coord), one at a time, four controls in the bar (journey and lanes removed by the owner; the journey render + route remain) — the status chips and the library/chatroom/findings panels were removed by the owner, UI only: every /data route and the mail slot stay served. Both interactive renders ship ?selftest=1 — a DOM-and-state self-test writing SELFTEST PASS n/n into document.title, because handler presence is not interaction working. Every view opens staged (label budget K of N, phrase folds, flag clusters, ?embed=1 legend fold) — all client-side, so the byte-identical render law is untouched. The hook never probes, spawns or opens — surfacing is the seat's job, doing is not the hook's.
 gap: No CLI query path — every model-side graph question costs opening a page or slurping the JSON.
@@ -206,7 +217,7 @@ gap: Zero scripts on disk — `codex exec` appears only in prose, re-improvised 
 
 ### chatroom
 does: Append-only shared room files where any Claude session and GPT chat and coordinate; watches are the wakes.
-how: `scripts/room.py` (create/post/read/lines/watch/gpt-bridge, 192 lines, stdlib); flock-atomic posts; watch exit 0=new, 3=timeout; per-room persistent codex session in `.gptwork`; 4 posts/min throttle; local machine only.
+how: `scripts/room.py` (create/post/read/lines/watch/gpt-bridge, stdlib); flock-atomic posts; watch exit 0=new, 3=timeout; per-room persistent codex session in `.gptwork`; 4 posts/min throttle; local machine only.
 upgrades: 1) A `room.py join` subcommand doing read-tail + arm-watch + print the re-arm line in one call — the manual 3-step protocol is exactly where sessions go deaf. 2) Secrets guard inside `cmd_post` — regex scan for key/token/PEM/.env patterns and refuse; today "NO SECRETS ever" is prose while the bridge ships lines to OpenAI verbatim. 3) Log every `codex_call` to `spend.py --lane chatroom-gpt`; bridge spend is currently invisible to the ledger.
 gap: The load-bearing no-secrets law has no enforcement in the script that does the sending.
 
@@ -220,7 +231,7 @@ gap: The playtest proves it loads and draws, not that it plays.
 
 ### notrest
 does: The establishment AND CONTINUATION verb — a successor seat in an already-established folder reads a deterministic trail packet (`continuation`), asks the previous same-cwd session as its mentor, verifies at tier 0 (doctor+eval) and proceeds. The establishment verb — writes the two surfaces that make a project governed (`COORD.md` with the ledger header, a marker-delimited versioned protocol block in `CLAUDE.md`), then binds the invoking session to the protocol. `check` is the read-only drift check for "is this session following the plugin?".
-how: `establish.py check|establish|continuation [--root PATH] [--git-init] [--json]`, exits 0/5/6/2; `continuation` is read-only, clock-free and byte-identical twice (COORD tail 25, agent tail 10, sealed-volume counts, newest ship/gate/correction, briefs, the spend ledger's own last line read not shelled, git head/dirty/subject); every write idempotent and atomic (tmp + `os.replace`), the COORD scaffold reproduced verbatim from `session-start.sh` and asserted byte-equal by the fixture. Establishment facts drive the exit code; adoption facts (ledger lines beyond the scaffold, age of the newest line, agent/spend ledgers present) are INFO and can never move it — the script reports, the seat judges. A root that is neither a git repo nor carries a project marker is refused with exit 2. `fixture.sh` (78 asserts) also drives the four patched hooks in non-git and git roots.
+how: `establish.py check|establish|continuation [--root PATH] [--git-init] [--json]`, exits 0/5/6/2. **The protocol block is at v3** (4.6.2, carrying the 2026-09-01 offload ruling): a block ONE VERSION BEHIND is STALE, not absent — `check` says so and exits 5 instead of passing it as "already established", the continuation packet keeps emitting while naming `protocol_current` / `protocol_stale`, `establish` upgrades in place byte-for-byte outside the markers, the older `BODY_V2` is kept as history rather than deleted, and a body hand-edited away from the canonical older text is banked to `<file>.notrest-v2.bak` before replacement. `continuation` is read-only, clock-free and byte-identical twice (COORD tail 25, agent tail 10, sealed-volume counts, newest ship/gate/correction, briefs, the spend ledger's own last line read not shelled, git head/dirty/subject); every write idempotent and atomic (tmp + `os.replace`), the COORD scaffold reproduced verbatim from `session-start.sh` and asserted byte-equal by the fixture. Establishment facts drive the exit code; adoption facts (ledger lines beyond the scaffold, age of the newest line, agent/spend ledgers present) are INFO and can never move it — the script reports, the seat judges. A root that is neither a git repo nor carries a project marker is refused with exit 2. `fixture.sh` (78 asserts) also drives the four patched hooks in non-git and git roots.
 upgrades: 1) A `--json` mode so a scheduler or a parent lane can consume the establishment verdict without parsing lines. 2) Block versions beyond v1 need a migration note per bump — today an older block is replaced wholesale, which is right for prose and would be wrong the moment the block carries project-specific values. 3) `check` could read the newest COORD stamps against session start and say *this session has banked nothing yet*, turning the drift judgment into evidence rather than an inference.
 gap: It proves the FILES exist; it cannot prove a session is obeying them — adherence stays a labeled judgment, by construction.
 
@@ -238,7 +249,7 @@ gap: Five phases of judgment with zero deterministic support — the whole close
 
 ### fable-mode
 does: Loads the discipline contract — ORIENT→PROBE→ACT→PROVE→BANK, 11 hard rules, outage playbook, verification cookbook.
-how: 254 lines of prose, no scripts, no references dir. The SessionStart hook echoes a one-line anchor unconditionally; Hard Rule 11 carries the opus-only offload policy.
+how: prose only, no scripts, no references dir. The SessionStart hook echoes a one-line anchor unconditionally; Hard Rule 11 carries the offload policy as the owner ruled it on **2026-09-01** — the seat picks each lane's model by the difficulty of the task and declares the choice (opus for judgment, sonnet for bounded work, opus when unsure), never haiku, never a fork, and an omitted model is a violation.
 upgrades: 1) `scripts/prove.sh <kind> <target>` implementing the cookbook's recipes (405 route probe, md5 both sides, kill-9 respawn wait, container start-time vs mtime) so PROVE emits receipts instead of describing them. 2) A BANK guard: script compares the COORD ledger tail's timestamp against session start and warns when substantive turns landed with no line — the one hard rule that is mechanically checkable. 3) Split into a ~40-line always-loaded core + `references/` for the outage playbook, cookbook, and situational profiles; the anchor is already in the hook, so the full load is largely duplicated.
 gap: Wholly unenforceable prose — no instrument detects a violated rule.
 
@@ -253,7 +264,7 @@ does (v4.1.0): `scripts/swarm.py report [--window Nd] [--json]` — the decompos
 does: The default delegation arrangement — seat keeps decompose/judge/apply/gate; background Opus lanes do everything else.
 how: Ships NO scripts or references; every mechanism it names lives elsewhere (spend.py, `hooks/agent-ledger.sh` auto-receipt). Batched background spawns, tight return contracts, `model: "opus"` + fork ban, one persistent builder lane per domain resumed via SendMessage, trail-walk judging.
 upgrades: 1) `swarm.py verify --since <ts>` reading COORD-AGENTS.md + spend/ledger.md to prove every lane this session ran opus and got a receipt — the self-check turned into an exit code. 2) A lane-spec generator emitting the style capsule + interface spec + return contract + grep-able done-when, so specs come from a form instead of the seat's memory. 3) A persistent-lane registry (`domain → agent id`) written on spawn, so a post-compaction seat resumes the right builder lane instead of re-spawning and forfeiting its context.
-gap: Every law it states is unverifiable prose; nothing proves fork-ban or lane-resume held.
+gap: The fork ban and the explicit-model rule are no longer prose — `hooks/spawn-gate.sh` (PreToolUse) denies an omitted model, a haiku model or `subagent_type: "fork"` at the door, and `spend.py report` audits the receipts afterwards. Lane-RESUME (the seat-builder ritual) is still unverified prose: nothing detects a build that respawned instead of resuming.
 
 ### director
 does: Chains sibling ORACLE skills into a pipeline, one numbered stage folder each, output of N feeds N+1.
@@ -263,24 +274,24 @@ gap: No script — its own named failure mode ("the last stage never ran") is po
 
 ### spend
 does: Append-only model-spend ledger that makes offload routing checkable instead of asserted.
-how: `spend.py` (97 lines, flock append), `log`/`report`, grades observed|estimate, report exits 4 on violation. The SubagentStop hook auto-writes `lane=subagent` receipts byte-compatibly. **Violation test is `lane not in {main,director,seat} and "fable" in model`** — only the retired pre-2026-07-15 rule. A sonnet or haiku lane prints `routing: CLEAN`.
-upgrades: 1) Extend the gate to the live policy: any subagent/workflow lane whose model is not opus is a violation (exit 4), gpt lane allowlisted by name, with a policy-date guard so pre-2026-07-15 history stays lawful-at-the-time. 2) `--since` / `--session` filters and `--json`, so a per-round verdict can gate a ship ritual instead of only the whole-ledger verdict. 3) A `reconcile` mode diffing COORD-AGENTS.md entries against ledger lines to catch lanes that ran but were never receipted.
-gap: The instrument enforces the retired fable-only rule; non-opus lanes pass CLEAN today.
+how: `spend.py` (stdlib, flock append), `log`/`report`, grades observed|estimate, report exits 4 on violation. The SubagentStop hook auto-writes `lane=subagent` receipts byte-compatibly. **Violation test is `lane not in {main,director,seat} and "fable" in model`** — only the retired pre-2026-07-15 rule. A sonnet or haiku lane prints `routing: CLEAN`.
+upgrades: 1) ~~Extend the gate to the live policy~~ **SHIPPED** — `report` grades every observed lane against the runtime worker policy and is ERA-GUARDED, so a sonnet lane is compliant only when PROVABLY dated after the amendment, an undatable stamp buys no amnesty, and pre-amendment sonnet stays a violation of the law then in force. The gpt lane is allowlisted by name. It still says out loud how many entries are UNVERIFIABLE, and that those are not evidence of cleanliness. 2) `--since` / `--session` filters and `--json`, so a per-round verdict can gate a ship ritual instead of only the whole-ledger verdict. 3) A `reconcile` mode diffing COORD-AGENTS.md entries against ledger lines to catch lanes that ran but were never receipted.
+gap: It grades what was RECEIPTED. Lanes with no usable receipt are reported unverifiable rather than clean, and the pre-dispatch refusal lives in `hooks/spawn-gate.sh`, not here — this instrument audits after the burn.
 
 ### compile
 does: Mines the estate for jobs done 3+ times, then a seat ritual compiles the stable parts into an isolated runtime.
-how: `compile.py` (785 lines) scan/report/decide — df-weighted clustering with estate stopwords, cross-source fusion, weak-source demotion, report exit 3 on a ripe NEW; then a 9-step hand-run ritual (contract → partition → builder lane → refuter → gate → fair benchmark → quality law → cost → deliverable). `fixture.sh` + doctrine reference ship.
+how: `compile.py` (stdlib) scan/report/decide, narrating progress on stderr — df-weighted clustering with estate stopwords, cross-source fusion, weak-source demotion, report exit 3 on a ripe NEW; then a 9-step hand-run ritual (contract → partition → builder lane → refuter → gate → fair benchmark → quality law → cost → deliverable). `fixture.sh` + doctrine reference ship.
 upgrades: 1) `compile.py contract --slug S` emitting the Step-1 responsibility table pre-filled with trail citations (COORD line · agent id · commit · spend line), so the seat judges rather than walking the trail by hand. 2) A runtime scaffolder producing the `compile/<slug>/` skeleton (runner, typed schema stubs, validator, replay-fixture dir, benchmark harness) so the builder lane writes at call 1. 3) A `bench` subcommand computing the historical side's cost straight from the ledger, so benchmark provenance grades come from files instead of inference.
 gap: Detection is code; the nine-step compile ritual is entirely hand-run.
 
 ### doctor
-does: Read-only install-and-estate self-check — eight named checks, PASS/WARN/FAIL with the exact fix command.
+does: Read-only install-and-estate self-check — a roster of named checks (run it for the current list), PASS/WARN/FAIL with the exact fix command.
 how: `doctor.py check --root|--plugin [--json]`, exits 0/5/6/3/2, SKIP for absent inputs; every check descends from a named scar. `fixture.sh` asserts each injected defect flips exactly its own check. Ships render-check.sh, gategrep.sh, seat-tax-fixture.sh, coord-volume-fixture.sh.
 upgrades: 1) `--fix-script` emitting every fix line as one copy-paste block (still zero writes), turning a release close into a single paste. 2) New checks for what it cannot currently see: hooks that parse but never FIRED (assert a recent `[hook]` COORD line and a SubagentStop receipt for the last N agents), the loaded runtime mode (`notrest@skills-dir` symlink resolves to this tree), and the `claude plugin details` always-on token budget (≤ ~3.6k or FAIL with the diet command). 3) A `ship-gate.sh` composing doctor + eval + both fixtures into one exit code.
-gap: It proves hooks parse, never that they fired — a silent hook passes every check.
+gap: HOOKS FIRED now looks for marks a live hook would have left, but the check says so itself: a mark on the estate means something wrote it, not that every hook fires. Liveness evidence, not proof.
 
 ### eval
-does: Static law-conformance suite over the shipped text — eight checks, zero model tokens, seconds.
+does: Static law-conformance suite over the shipped text — a roster of checks (run it for the current count), zero model tokens, sub-second.
 how: `eval.py check --root [--json]`, exits 0/5/6/2; negation-aware line reading; every finding cites `file:line` plus a fix hint. `behavior --case` prints a bounded one-shot and its grader but never executes it. `fixture.sh` proves each violation flips only its own check.
 upgrades: 1) A `ROUTE-CONFORMANCE` check giving oracle's routing a fingerprint: the route table's targets all exist as skills, and a COORD `routed to /X` has downstream evidence. 2) A `references/*.md` citation check — `check_scripts` covers `scripts/*.py` only, so a skill citing a reference file it does not ship passes clean today. 3) `--baseline` diffing against the previous run so a release reports what conformance CHANGED, not just its current state.
 gap: Judges shipped text only — any law without a textual fingerprint is invisible to it.
@@ -298,8 +309,11 @@ gate goes mechanical (`git push` in this repo blocked while doctor/eval are red)
 SHADOW incident becomes impossible (`claude plugin install/update …notrest` blocked on
 this machine); always with `NOTREST_GATE_OVERRIDE=1` as the logged escape hatch, always
 fail-open on the gate's own errors. Rung 2: estate-write policy (hand-appends to
-machine-owned ledgers warned). Rung 3: lane-spawn policy (a non-opus offload blocked at
-the call, not discovered in the ledger).
+machine-owned ledgers warned). Rung 3: lane-spawn policy — **SHIPPED** as
+`hooks/spawn-gate.sh` (PreToolUse): an omitted model, a haiku model or
+`subagent_type: "fork"` is denied at the call rather than discovered in the ledger, with
+`NOTREST_GATE_OVERRIDE=1` permitting only with a loud receipt and any malformed payload
+passing through silently.
 
 **V2 — Autonomy (the harness runs without a seat).** Rung 1 (building):
 `doctor/scripts/pulse.sh` — one unattended heartbeat: all instruments + river refresh,
@@ -355,8 +369,8 @@ record in project A does not yet flag a citing record in project B.
 
 1. **Router hook** — SHIPPED v3.7.0: the enforcement layer for "use the suite's verbs".
 2. **spend.py gate upgrade** — jumped the queue on the analyst finding above: the exit-4 gate
-   still enforces the retired fable-only rule, so a sonnet/haiku lane passes CLEAN today.
-   Extend to the live opus-only policy (post-2026-07-15 entries, gpt lane allowlisted) +
+   now grades against the runtime worker policy, era-guarded, and the PRE-dispatch half
+   shipped as `hooks/spawn-gate.sh`. Remaining: the gpt lane allowlist edge cases +
    the COORD-AGENTS reconcile mode. The day's receipts cited a gate that can't see today's
    violations — that ends.
 3. **doctor upgrades** — token-budget check via `plugin details` (≤ ~3.6k or FAIL),
@@ -365,7 +379,7 @@ record in project A does not yet flag a citing record in project B.
    cross-cutting pattern: archivist step-0 scripted, per-option/per-claim Opus lanes,
    dossier lint gates, auto-receipts. The biggest "feels faster" lever for real work.
 5. **watch.py + prove watch live** — the script makes the never-proven claim cheap to prove.
-6. **Next compile** — 18 candidates scanned; each compiled ritual is zero-token repeats.
+6. **Next compile** — `compile.py report` names the ripe candidates and exits 3 while any is unruled; each compiled ritual is zero-token repeats.
 7. **On-invoke body diet** — director ~4.8k, fable-mode ~4.3k, recap ~4.1k per `plugin details`;
    fable-mode's core/references split is designed above.
 8. **notrest MCP server** — the estate as typed tools (spend/COORD/archivist/compile queries).

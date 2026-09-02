@@ -363,6 +363,7 @@ class Target(object):
             self.marketplace = None
         self.tutorial = self._first(os.path.join(root, "docs", "TUTORIAL.md"),
                                     os.path.join(primary or root, "docs", "TUTORIAL.md"))
+        self.readme = self._first(os.path.join(root, "README.md"))
         self.inner_readme = self._first(os.path.join(primary, "README.md")) if primary else None
         self.html = self._first(os.path.join(root, "docs", "oracle-skill-flow.html"))
         self.gitignore = self._first(os.path.join(root, ".gitignore"))
@@ -634,6 +635,104 @@ def check_skill_count(t):
         return WARN, detail + ["no count stated in: %s" % ", ".join(missing)], \
             "state the skill count (%d) in %s so drift stays detectable" % (n, ", ".join(missing))
     return PASS, detail + ["all sources agree on %d" % n], None
+
+
+# M3: a bold-name cell in a markdown table row — `| **beam** | …` — which is the shape
+# every roster table in this estate uses. The row is the promise; the dir is the delivery.
+ROSTER_ROW_RE = re.compile(r"^\s*\|\s*\**`?([A-Za-z0-9][A-Za-z0-9._-]*)`?\**\s*\|", re.M)
+
+
+def _names(text, name):
+    """Is this skill NAMED here? Case-insensitive, bounded so `graph` does not match
+    `graphs` and `oracle` DOES match the prose form ORACLE.
+
+    F5 (refuter, 4.6.2): the trailing guard also rejected a HYPHEN, so the estate's own
+    prose — "the mentor-dev ritual", "the oracle-suite core" — did not count as naming
+    `mentor` or `oracle`, and the roster gate would have raised a FAIL against a README
+    that names the skill perfectly well. A hyphen-joined suffix is still the name; a
+    LETTER-joined one ("mentors", "graphs") is a different word. The leading guard keeps
+    the hyphen, so "non-mentor" is not a mention of `mentor`."""
+    return bool(re.search(r"(?<![A-Za-z0-9_-])%s(?![A-Za-z0-9_])" % re.escape(name),
+                          text or "", re.I))
+
+
+def check_roster_parity(t):
+    """M3: SKILL COUNT compares a NUMBER against a number, so a README that says
+    thirty-two and lists twenty-nine passed the gate for five weeks (4.6.1 shipped
+    beam/mentor/tieredswarm undiscoverable). This check compares the ROSTER against the
+    dirs: every skill on disk must be NAMED on every shipped surface a reader browses.
+    The README is held to the stricter bar — a table ROW, not a passing mention — because
+    the README table IS the roster; the other three surfaces need only name it."""
+    dirs = [os.path.basename(d) for d in t.skill_dirs(t.primary)]
+    if not dirs:
+        return SKIP, ["no skills/ dir under %s" % t.rel(t.primary)], None
+
+    checks = []          # (label, missing_names) — a source absent from the tree is skipped
+    absent_sources = []
+
+    # In --plugin mode the root README IS the plugin's README; check it once, as prose.
+    if t.readme and t.readme != t.inner_readme:
+        txt = read(t.readme) or ""
+        rows = set(n.lower() for n in ROSTER_ROW_RE.findall(txt))
+        if rows:
+            # This README carries a roster TABLE, so the table is the promise: a passing
+            # mention in prose is not a row, and 4.6.1 shipped three skills that had one
+            # and not the other. An estate whose README has no table at all is held to the
+            # ordinary naming bar instead — the strict bar would be inventing a convention.
+            checks.append(("%s table rows" % t.rel(t.readme),
+                           [n for n in dirs if n.lower() not in rows]))
+        else:
+            checks.append(("%s (no roster table — naming bar only)" % t.rel(t.readme),
+                           [n for n in dirs if not _names(txt, n)]))
+    elif not t.readme:
+        absent_sources.append("README.md")
+
+    if t.inner_readme:
+        txt = read(t.inner_readme)
+        checks.append((t.rel(t.inner_readme), [n for n in dirs if not _names(txt, n)]))
+    else:
+        absent_sources.append("the plugin's own README.md")
+
+    if t.marketplace:
+        man, _ = jload(t.manifest(t.primary))
+        mk, _ = jload(t.marketplace)
+        entry = next((e for e in (mk or {}).get("plugins", [])
+                      if isinstance(e, dict) and e.get("name") == (man or {}).get("name")), None)
+        if entry:
+            desc = entry.get("description", "")
+            checks.append(("%s (%s entry description)" % (t.rel(t.marketplace),
+                                                          (man or {}).get("name")),
+                           [n for n in dirs if not _names(desc, n)]))
+        else:
+            absent_sources.append("the marketplace entry for this plugin")
+    else:
+        absent_sources.append("marketplace.json")
+
+    if t.tutorial:
+        txt = read(t.tutorial)
+        checks.append((t.rel(t.tutorial), [n for n in dirs if not _names(txt, n)]))
+    else:
+        absent_sources.append("docs/TUTORIAL.md")
+
+    if not checks:
+        return SKIP, ["no roster surface found (%s)" % ", ".join(absent_sources)], None
+
+    detail = ["%d skill dirs on disk" % len(dirs)]
+    for label, missing in checks:
+        detail.append("%s: %s" % (label, "names all %d" % len(dirs) if not missing
+                                  else "MISSING %d — %s" % (len(missing), ", ".join(missing))))
+    if absent_sources:
+        detail.append("not present, not checked: %s" % ", ".join(absent_sources))
+
+    short = [(l, m) for l, m in checks if m]
+    if short:
+        return FAIL, detail + ["ROSTER DRIFT: a shipped skill nobody can find is a skill "
+                               "nobody ships"], \
+            ("name %s in %s — the README needs a TABLE ROW (`| **<name>** | … |`), the other "
+             "surfaces need the name in their prose"
+             % (", ".join(sorted(set(n for _l, m in short for n in m))),
+                ", ".join(l for l, _m in short)))
+    return PASS, detail + ["every skill dir is named on every roster surface"], None
 
 
 HOOKPATH_RE = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?(/[^\"'\s]+)")
@@ -1230,7 +1329,58 @@ def check_gitignore(t):
                     detail.append("could not determine ignore status for %s" % t.rel(d))
         else:
             detail.append("not a git work tree — skill-dir ignore probe SKIPPED")
+
+    # F6: the mirror-image defect. The rules above keep the SKILL dirs tracked; nothing
+    # kept DERIVED output out of the package. A scan run from inside the plugin wrote
+    # plugins/notrest/graph/{graph,river}.{html,json} — 125 KB the root-anchored /graph/
+    # rule does not cover — and it shipped to every consumer for five weeks, referenced by
+    # nothing. Derived output under a plugin dir is a packaging defect, so it FAILS here.
+    rc, _ = run(["git", "rev-parse", "--is-inside-work-tree"], cwd=t.root)
+    if rc != 0:
+        detail.append("not a git work tree — tracked-derived-output probe SKIPPED")
+        return status, detail, fix
+    shipped = []
+    for p in t.plugins:
+        for derived in ("graph", "compile"):
+            rel = os.path.relpath(os.path.join(p, derived), t.root)
+            code, out = run(["git", "ls-files", "-z", "--", rel], cwd=t.root)
+            if code != 0:
+                continue
+            for f in [x for x in out.split("\0") if x]:
+                if f.lower().endswith((".json", ".html")):
+                    shipped.append(f)
+    if shipped:
+        status = FAIL
+        detail.append("DERIVED OUTPUT SHIPPED: %d tracked file(s) under a plugin's derived "
+                      "dir — %s" % (len(shipped), ", ".join(sorted(shipped)[:6])))
+        fix = ("git rm -r the derived output (%s) and add an anchored rule "
+               "('plugins/*/graph/', 'plugins/*/compile/candidates.*') to .gitignore — "
+               "scan output is regenerated per run and must never ride in the package"
+               % ", ".join(sorted(set(os.path.dirname(f) for f in shipped))))
+    else:
+        detail.append("no tracked derived graph/compile output under any plugin dir")
     return status, detail, fix
+
+
+# M3/F3: "31-skill harness" — the render's own claim about how big the harness is.
+# Digits or the spelled form ("thirty-one-skill"); WORD2NUM turns the word into a number.
+#
+# F7 (refuter, 4.6.2): unanchored, this reads ORDINARY PROSE as a count claim — "a one-skill
+# install", "our two-skill starter kit" — and FAILs the render against the tree with a number
+# nobody was claiming. So a count claim is only counted where the page ALREADY makes a
+# version claim: the same text node the vX.Y.Z stamp lives in. That is exactly the shape the
+# render uses ("v4.6.2 · 32-skill harness · …"), it is the element a release bump edits, and
+# it is the only place the page speaks in its own voice about what it is. Prose elsewhere is
+# prose. A page that states a count NOWHERE near a stamp is reported as not-stated, never
+# guessed — a gate that invents the claim it checks is worse than no gate.
+VERSION_STAMP_RE = re.compile(r"v\d+\.\d+\.\d+")
+NSKILL_RE = re.compile(r"\b(\d{1,3}|[A-Za-z]+(?:-[A-Za-z]+)?)-skill\b", re.I)
+TEXT_NODE_RE = re.compile(r"<[^>]*>")
+
+
+def stamped_nodes(html):
+    """Text nodes that carry a vX.Y.Z stamp — where the page speaks about itself."""
+    return [n for n in TEXT_NODE_RE.split(html or "") if VERSION_STAMP_RE.search(n)]
 
 
 def check_render_surfaces(t):
@@ -1238,23 +1388,74 @@ def check_render_surfaces(t):
         return SKIP, ["no docs/oracle-skill-flow.html under this target"], None
     man, _ = jload(t.manifest(t.primary))
     version = (man or {}).get("version")
-    stamps = re.findall(r"v\d+\.\d+\.\d+", read(t.html) or "")
+    html = read(t.html) or ""
+    stamps = VERSION_STAMP_RE.findall(html)
+    detail, status, fix = [], PASS, None
+
     if not stamps:
-        return WARN, ["%s carries no vX.Y.Z stamp" % t.rel(t.html)], \
-            "stamp the render with v%s (header + footer) so staleness is visible" % version
-    off = sorted(set(s for s in stamps if s != "v%s" % version))
-    detail = ["%s: %d stamps, %s" % (t.rel(t.html), len(stamps), ", ".join(sorted(set(stamps))))]
-    if off:
-        return FAIL, detail + ["STALE STAMP: expected v%s, found %s" % (version, ", ".join(off))], \
-            ("update the version stamps in %s (header + footer) to v%s — the rendered flow is a "
-             "shipped surface and a stale stamp ships a lie" % (t.rel(t.html), version))
-    return PASS, detail + ["matches plugin.json v%s" % version], None
+        status, fix = WARN, ("stamp the render with v%s (header + footer) so staleness is "
+                             "visible" % version)
+        detail.append("%s carries no vX.Y.Z stamp" % t.rel(t.html))
+    else:
+        off = sorted(set(x for x in stamps if x != "v%s" % version))
+        detail.append("%s: %d stamps, %s"
+                      % (t.rel(t.html), len(stamps), ", ".join(sorted(set(stamps)))))
+        if off:
+            status = FAIL
+            detail.append("STALE STAMP: expected v%s, found %s" % (version, ", ".join(off)))
+            fix = ("update the version stamps in %s (header + footer) to v%s — the rendered flow "
+                   "is a shipped surface and a stale stamp ships a lie" % (t.rel(t.html), version))
+        else:
+            detail.append("matches plugin.json v%s" % version)
+
+    # F3: the render also states a COUNT, and until 4.6.2 this check pinned only the
+    # version — so the page shipped "31-skill harness" beside 32 skill dirs and passed.
+    # A number in prose drifts exactly like a version stamp does; gate it the same way.
+    n = len(t.skill_dirs(t.primary))
+    claims = []
+    for tok in NSKILL_RE.findall(" \n".join(stamped_nodes(html))):
+        low = tok.lower()
+        val = int(low) if low.isdigit() else WORD2NUM.get(low)
+        if val is not None:
+            claims.append((tok, val))
+    if not claims:
+        # R2 (review round, 4.6.2): anchoring the claim to the stamp's own text node made a
+        # SILENT PASS possible — a template edit that wraps the count in its own element
+        # ("… v1.0.0 — the <b>two-skill</b> harness") splits the two apart, the anchor finds
+        # nothing, and the gate that exists to catch a stale count reports success. The
+        # anchor stays (prose elsewhere is still prose), but its own blind spot is now
+        # audible: if the page stamps a version and states no count beside it, say so.
+        if stamps:
+            status = WARN if status == PASS else status
+            detail.append("render states no skill count beside its version stamp — the "
+                          "count claim is unchecked (a count in its own element, or none "
+                          "at all, both land here)")
+            fix = (fix + " ; " if fix else "") + \
+                ("state the count in the same element as the version stamp in %s "
+                 "(e.g. 'v%s · %d-skill harness') so a release bump edits both at once, or "
+                 "confirm the page deliberately states no count"
+                 % (t.rel(t.html), version, n))
+        else:
+            detail.append("no version stamp, so no anchored count claim to check")
+    else:
+        wrong = sorted(set(tok for tok, val in claims if val != n))
+        detail.append("render claims %s-skill · %d skill dirs on disk"
+                      % ("/".join(sorted(set(tok for tok, _v in claims))), n))
+        if wrong:
+            status = FAIL
+            detail.append("COUNT DRIFT: the render says %s-skill, the tree holds %d"
+                          % (", ".join(wrong), n))
+            fix = (fix + " ; " if fix else "") + \
+                ("update the 'N-skill' phrase in %s to %d-skill — a rendered count is a claim "
+                 "the reader believes" % (t.rel(t.html), n))
+    return status, detail, fix
 
 
 CHECKS = [
     ("FRONTMATTER", check_frontmatter),
     ("MANIFESTS", check_manifests),
     ("SKILL COUNT", check_skill_count),
+    ("ROSTER PARITY", check_roster_parity),
     ("HOOKS", check_hooks),
     ("HOOKS FIRED", check_hooks_fired),
     ("ESTATE", check_estate),

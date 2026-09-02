@@ -18,9 +18,28 @@
 # exit 0 — a broken hook must never break a session teardown. The whole body is
 # wrapped so any error still exits 0.
 
-# ── drain stdin (the SessionEnd payload; unused — the estate root is the only
-# input this hook needs) so the writer never sees a broken pipe.
-cat >/dev/null 2>&1 || true
+# ── STDIN IS NOT READ AT ALL, AND THAT IS THE FIX (refuter F1, 2026-09-01).
+# This hook never used the SessionEnd payload — the estate root is its only input — and
+# the `cat` here existed solely so the writer would not see a broken pipe. It cost the
+# one thing this hook cannot spend: TIME. A PLUGIN SessionEnd hook runs under the CLI's
+# shared ~1.5 s SessionEnd abort no matter what `timeout` hooks.json declares (the
+# budget raise consults settings.json and agent hooks, never plugin hooks) — so the 5 s
+# bounded read every other hook uses could outlive the real budget and the cushion line,
+# the entire point of this hook, would never be written. [cited: refuter's read of CLI
+# 2.1.237; UNVERIFIED live by this lane.]
+# A sub-second read is not available here: this machine's /bin/bash is 3.2.57, whose
+# `read -t` rejects a fractional timeout ("invalid timeout specification") and whose
+# `-t 0` fails even when data is waiting — measured, both. So the honest choice is zero
+# wait, not a small one. Two shipped hooks (coord-nudge.sh, pre-compact.sh) have never
+# read stdin either, so an unread payload is already the normal case on this surface.
+# AND THE WRITER'S EPIPE IS SWALLOWED, NOT MERELY TOLERATED: on the CLI's synchronous
+# hook path the stdin error handler is attached and the promise is resolved on the SAME
+# TICK as the write/end, so an EPIPE rejection can never settle it — it cannot surface
+# as a hook failure. The async path goes further and logs "hook command likely exited
+# without reading stdin", i.e. the harness ANTICIPATES a non-reading hook rather than
+# treating one as an error. [read off the 2.1.237 binary by the refuter; unverified live.]
+# The 20 s in hooks.json stays: it is the INNER timer, and it is the one that would
+# matter if the pool ever stopped applying to plugin hooks.
 
 # ── estate root: ONE resolver, shared by every estate hook (hooks/estate-root.sh).
 # git root, else the nearest COORD.md walking up at most 3 levels — stopping at any

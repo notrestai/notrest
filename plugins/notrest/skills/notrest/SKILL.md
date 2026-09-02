@@ -90,7 +90,7 @@ immediately** — not deferred, not "from now on" in the abstract:
 
 - Append **one** ledger line to `COORD.md` recording the establishment
   (`- [YYYY-MM-DD HH:MMZ] [notrest] established the harness -> COORD.md + <foundation>
-  protocol block v2 | evidence: establish.py exit 0`). `COORD.md` is **append-only** —
+  protocol block v3 | evidence: establish.py exit 0`). `COORD.md` is **append-only** —
   add the line at the end; never rewrite COORD history.
 - Operate under the protocol **from this turn on**: fable discipline (ORIENT → PROBE →
   ACT → PROVE → BANK, evidence or the word *unverified*), the runtime offload rule
@@ -288,7 +288,7 @@ decision, never a side effect of establishing a ledger. Offer it; wait for the y
   working instead of being replaced by a regular file. The
   symlink-marching-out-of-the-repo defect class is a real scar here, twice over.
 - **Never edits the selected foundation outside its own marker block.** Everything beyond
-  `<!-- notrest:protocol v2 -->` … `<!-- /notrest:protocol -->` is the project's own text
+  `<!-- notrest:protocol v3 -->` … `<!-- /notrest:protocol -->` is the project's own text
   and survives **byte for byte** — the round trip preserves CRLF line endings and bytes
   that are not valid UTF-8, which a naive read-and-rewrite destroys silently. It is **not
   an encoding converter** and will not pretend to be one: a UTF-16 or UTF-32 foundation is
@@ -300,6 +300,14 @@ decision, never a side effect of establishing a ledger. Offer it; wait for the y
   documentation, not the block. If the markers are **ambiguous** — a stray opener above
   the block, or two blocks in one file — nothing is written at all and the finding names
   the line numbers: a tool that guesses which markers it owns eventually eats the file.
+- **A law change is a version bump, never an edit to a shipped body.** v3 (2026-09-01)
+  carries the amended offload rule — the seat picks each lane's model by task difficulty
+  and declares it — so an estate on **v2 reads STALE**: `check` says "block is v2; current
+  is v3", the continuation packet still emits and flags `protocol v2 (STALE …)` rather than
+  withholding the trail, and re-running `establish` replaces the block in place, upgrading
+  it to the v3 template byte for byte while banking any hand-edit. Editing a shipped body
+  where it stands would be *inert* — a v2 estate is told it is already current and never
+  sees the new law — and would destroy the untouched-vs-hand-edited proof.
 - **Never rewrites COORD history.** An existing `COORD.md` is left exactly as found —
   established means *the ledger exists*, not *the ledger is mine*.
 - **Never claims a session is compliant** because the files are present. See law 2.

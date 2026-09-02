@@ -1,6 +1,6 @@
 # MAP.md — the complete notrest plugin map
 
-**Version mapped:** v4.5.0 (`plugins/notrest/.claude-plugin/plugin.json`), commit `bd9fec0`.
+**Version mapped:** v4.6.2 (`plugins/notrest/.claude-plugin/plugin.json`), commit: the v4.6.2 release commit (`git log -1 --grep "v4.6.2"`).
 **Mapped:** 2026-09-01, by probing the live tree — every claim below comes from a file read
 or a command run during the mapping session. Nothing here is recalled.
 
@@ -20,7 +20,10 @@ machine writes, the session pays nothing, and a claim without evidence is labele
 
 Hooks are shell scripts the Claude Code harness runs at fixed moments. Nine are wired to
 lifecycle events in `plugins/notrest/hooks/hooks.json`. Two are shared helpers other hooks
-call. All eleven follow the same house law, asserted by `eval.py`'s HOOK-CONTRACT check:
+call. **Every wired command now declares its own `timeout`** (4.6.2) — 10 s to 300 s, sized per
+hook — and the field sits on the **command object**, not on the matcher group, which is where
+the documented schema reads it; before this, only `Stop` was bounded and the rest rode the CLI
+default. Verified by parse, not by eye: group-level `timeout` is `None` on all eight groups. All eleven follow the same house law, asserted by `eval.py`'s HOOK-CONTRACT check:
 **no `set -e`, always exit 0, silent on failure.** A hook that breaks must never break a
 session.
 
@@ -175,11 +178,18 @@ against it, and touch no real project. Every fixture is `exit 0 = all assertions
 
 ### doctor — "is the install healthy?"
 - **`doctor.py check`** — one read-only pass over the harness: front-matter YAML, manifest and
-  tombstone pins, skill-count drift, hooks that parse and ever fired, estate integrity,
-  which build is really running, the token budget, gitignore rules that swallow skills, stale
-  render stamps. Never repairs; every FAIL carries its fix command.
+  tombstone pins, skill-count drift, **roster parity** (4.6.2 — every skill directory is
+  actually NAMED on `README.md`'s table, `plugins/notrest/README.md`, `docs/TUTORIAL.md` and
+  the marketplace description, because the older check matched the literal count "32" rather
+  than the roster and so let a 29-row table pass), hooks that parse and ever fired, estate
+  integrity, which build is really running, the token budget, gitignore rules that swallow
+  skills, stale render stamps **and the counts they claim** (4.6.2 — a rendered "N-skill"
+  phrase is a claim the reader believes, so it is checked against the tree, not just the
+  version stamp). Never repairs; every FAIL carries its fix command.
   **Exits:** `0` all pass · `5` warnings only · `6` any fail · `3` target unusable · `2` usage.
-  *Live now:* 11 checks, 9 pass, 2 warn, exit 5.
+  *Live now (v4.6.2 as shipped):* 12 checks, 9 pass, 2 warn, 0 fail, exit 5 — the warns are the
+  pre-existing unparseable COORD line (2026-08-27, append-only so it stays) and the app-side
+  shadow packs that only the owner panel can remove.
 - **`pulse.sh`** — the estate heartbeat in one unattended command: runs every read-only
   instrument, banks one line to COORD, exits `0` green or `1` something wants a human. Built
   for a scheduler.
@@ -198,23 +208,44 @@ against it, and touch no real project. Every fixture is `exit 0 = all assertions
   append-only ledgers, worker contracts, safe front-matter, safety laws, silent hooks, the
   routing enforcer, router/oracle route-table parity. Pure stdlib, pure read, zero model tokens.
   **Exits:** `0` all pass · `5` warnings only · `6` any FAIL · `2` usage.
-  *Live now:* 32 skills, 15 checks, 0 fail, 0 warn, 0.21s.
+  *Live now (mid-4.6.2, working tree):* 32 skills, 15 checks, 0 fail, 0 warn, 0.22s.
 - **`eval.py behavior`** — prints an opt-in bounded model case; does **not** run it.
 - **Fixtures:** `fixture.sh` (builds a passing mini-harness, then injects one violation per
   check and asserts each flips *exactly* its own check), `pretool-fixture.sh` (pipes real
   PreToolUse payloads through the hard gate), `router-fixture.sh` (pipes real prompts through
-  the routing law).
+  the routing law), and **`hooks-stdin-fixture.sh`** (new in 4.6.2 — drives every stdin-reading
+  hook from a fifo that is held open and idle, so a hook that reads unbounded is caught as a
+  hang rather than discovered in a session; the arm was watched red against the 4.6.1 hooks).
 
 *The division of labour: **doctor checks the INSTALL, eval checks the LAWS.***
 
 ### notrest — "is the harness established here?"
 - **`establish.py check --root .`** — read-only: does this project have the estate at all?
   Reports COORD presence, the CLAUDE.md protocol block version, git, ledger line count and
-  age, and which auxiliary ledgers exist. *Live now:* ESTABLISHED, 209 ledger lines, exit 0.
+  age, and which auxiliary ledgers exist. *Live now:* ESTABLISHED, protocol **v3**, exit 0.
 - **`establish.py establish`** — writes the establishment surfaces, idempotent. *(Writes —
   not run this session.)* This is a kernel surface: it writes into other people's projects.
 - **`establish.py continuation`** — read-only: the packet a successor seat needs to continue
   a build already running.
+
+**The protocol block moved v2 → v3 in 4.6.2** (`PROTOCOL_VERSION = 3`, `establish.py:62`),
+carrying the owner's 2026-09-01 offload ruling as its own bullet — the seat picks each lane's
+model by the difficulty of the task and declares it. The upgrade is a version bump with
+manners, and the manners are the point:
+- **`BODY_V2` is KEPT as history, not deleted** (`:114`), beside `BODY_V3` (`:138`), because
+  an estate's block must be recognizable at the version it actually adopted.
+- **A block one version behind is STALE, not absent** (`:979`) — the older `found >=
+  PROTOCOL_VERSION` reading would have told every v2 estate "already established" and left
+  it there forever. `check` now reports the block STALE and exits `5`.
+- **The packet keeps emitting while it says STALE.** A stale block is a thing to upgrade, not
+  a reason to withhold the trail from a successor; the packet carries `protocol_current` and
+  `protocol_stale` (`:1004-1005`) so the reader knows which it got.
+- **`establish` upgrades in place, byte-for-byte outside the markers**, and a body that was
+  HAND-EDITED away from the canonical v2 text is banked to `<file>.notrest-v2.bak` (`:1468`)
+  before it is replaced — a local override is never silently relaxed.
+*This repo is already at v3* (`CLAUDE.md:55`, `AGENTS.md:38`), so `check` here now exits 0;
+the STALE-at-5 path was gated by the seat on this repo before the upgrade landed (COORD
+2026-09-02 00:20Z), not by me. `[verified: code read + live check/packet run]`
 - **`fixture.sh`** — asserts establish.py *and* the hook closures it depends on; runnable from
   a clean clone with only python3, bash and git.
 
@@ -261,6 +292,10 @@ against it, and touch no real project. Every fixture is `exit 0 = all assertions
 
 ### compile — "what work have we done three times?"
 - **`compile.py scan`** — clusters the estate and writes `compile/candidates.md`. *(Writes.)*
+  Since 4.6.2 it **narrates itself on stderr** (`compile.py:708`; stdout stays the machine
+  surface) — per ledger family, then no less often than every ~10 s inside the merge — because
+  the 4.6.1 audit lane killed a silent 120 s run and filed it as a hang. A tool that prints
+  nothing for tens of seconds is indistinguishable from a dead one.
 - **`compile.py report`** — one line per ripe candidate. **Exit `3` if any is NEW** (unruled).
   *Live now:* exit 3, 27 ripe candidates not yet ruled on.
 - **`compile.py decide`** — records a ruling that survives the next scan. *(Writes.)*
@@ -270,7 +305,15 @@ against it, and touch no real project. Every fixture is `exit 0 = all assertions
   estate at `~/.notrest/auto-build/<sha256>.json`, because an in-repo marker is writable by any
   lane — a lane could grant itself the authority to be dispatched.
 - **`compile.py scaffold`** — creates a `compile/<slug>/` skeleton; never overwrites (exit 2).
-- **`fixture.sh`** — asserts compile.py against a synthetic estate.
+- **`fixture.sh`** — asserts compile.py against a synthetic estate, and since 4.6.2 carries a
+  **permanent runtime arm** (§M): a seeded 260-entry corpus over a ~48-token vocabulary — the
+  shape of a real estate's largest family — must finish inside a **10 s** bound. The number is
+  argued, not picked: measured 2.1 s after the fix and 17.5 s before it, so the bound has ~4.6x
+  headroom against CI flake while still FAILING on a regression to the old quadratic
+  recomputation. Cost grows with the SQUARE of the largest family, so a bigger corpus means
+  re-measuring the bound rather than nudging it. Two promises are gated, and neither is "it got
+  faster": a bounded corpus finishes inside a bound the SKILL.md states, and the run narrates
+  itself so a reader can tell working from wedged.
 
 ### recap — "how did we get here?"
 - **`walk.py walk`** — merges COORD volumes, COORD-AGENTS, git history, the spend ledger and
@@ -422,6 +465,14 @@ Descriptions below are derived from each `SKILL.md`'s own frontmatter, read this
 ## 4. The estate files
 
 These live at the project root, not in the plugin. They are the durable record.
+
+**Derived output does not ship (4.6.2).** `plugins/notrest/graph/` held four tracked
+scan artefacts — `graph.{html,json}` and `river.{html,json}`, 125 KB generated 2026-07-27
+and referenced by nothing — which escaped `.gitignore` because the `/graph/` rule is
+anchored to the repo root and doctor's GITIGNORE check never looked inside the package.
+They were untracked in 4.6.2 and the gate now looks there. Every graph and river view is
+regenerated on demand by `graph.py`; a shipped copy is a stale claim about a tree that has
+since moved.
 
 | File | Who writes it | Who reads it |
 |---|---|---|

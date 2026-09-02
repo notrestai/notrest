@@ -15,7 +15,13 @@ fi
 # The /plugin UI does not list skills-dir runtimes — live-proven 2026-07-26/27: the
 # owner, not finding notrest there, reinstalled a marketplace copy FOUR times, each
 # one silently shadowing this runtime. This line is the visible truth; never cut it.
-NV="$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
+# CLAUDE_PLUGIN_ROOT is set by the plugin loader, and is NOT set when the hook is run
+# any other way (a fixture, a shell, a loader that forgets) — the banner then printed
+# "v?" and the one line that answers "is notrest installed?" said nothing. $0 always
+# knows: this file lives at <plugin root>/hooks/, so the root is its parent (F7, 4.6.2).
+NR_PLUG="${CLAUDE_PLUGIN_ROOT:-}"
+[ -n "$NR_PLUG" ] || NR_PLUG="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)"
+NV="$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$NR_PLUG/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
 echo "[notrest] v${NV:-?} @skills-dir — live from the repo tree (the /plugin UI hides skills-dir plugins; verify with: claude plugin list)"
 
 # ── fable discipline: bolted to the metal. Unconditional every session so the
@@ -26,8 +32,9 @@ echo "[notrest] Fable discipline is active: ORIENT -> PROBE -> ACT -> PROVE -> B
 
 # ── offload model policy: unconditional, so it reaches every fan-out surface
 # (Agent tool, Workflow/ultracode, deep-research, review panels) even when no
-# notrest skill is loaded. Owner-set 2026-07-15: opus-only offload.
-echo "[notrest] HARD RULE — offload: every spawned agent/Workflow lane sets its model explicitly — \"opus\" by default, \"sonnet\" only for a brief-declared mechanical/DRAFT-tier job (owner amendment 2026-08-30). Never haiku, never subagent_type \"fork\" (forks inherit the seat); omitting model is a violation, not a default. Delegate via /notrest:agentswarm; builds run ONE persistent lane — feedback RESUMES it (SendMessage), never a new spawn. Receipts auto-log; never hand-log. Never /model-switch the seat."
+# notrest skill is loaded. Owner-set 2026-07-15; amended 2026-09-01: the seat picks
+# the model by task difficulty and records the choice in the brief.
+echo "[notrest] HARD RULE — offload: the seat picks each lane's model BY TASK DIFFICULTY and DECLARES it in the brief — opus (tier: judgment) for design, debugging, kernel surfaces, reviews, anything ambiguous; sonnet (tier: bounded) when the done-when is a runnable check; opus when unsure (owner 2026-09-01). Never haiku, never subagent_type \"fork\" (forks inherit the seat); omitting model is a violation, not a default. Delegate via /notrest:agentswarm; builds run ONE persistent lane — feedback RESUMES it (SendMessage), never a new spawn. Receipts auto-log; never hand-log. Never /model-switch the seat."
 
 # ── WILL THE PACKET FIRE? Decided BEFORE the continuity nudges, because those nudges
 # ORDER a session to go read the very trail the packet is about to hand it. Field-proven

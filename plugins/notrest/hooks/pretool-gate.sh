@@ -25,13 +25,53 @@
 #             own permission prompt, which is not this gate's business.)
 # FAIL-OPEN — no set -e; every unexpected path (bad JSON, no python3, no git, slow
 #             stdin) exits 0 ALLOW. A broken gate must never brick the machine.
+#             THE HARNESS TIMEOUT IS ALSO A FAIL-OPEN PATH: per the hooks docs, a
+#             PreToolUse hook that exceeds its timeout does NOT block — the tool call
+#             continues and the hook's output is DISCARDED. So a gate killed on time is
+#             a red push allowed, silently. hooks.json therefore declares 300 s on THIS
+#             command (not the 600 s default, not a tight cap): doctor's own TOKEN
+#             BUDGET check shells out to the CLI with a 60 s subprocess timeout over up
+#             to four attempts plus a 15 s --version, so ~255 s is the instrument's
+#             worst case and the cap sits just above it. The `timeout` field belongs on
+#             the COMMAND object; on the matcher group it parses and does nothing.
 # BUDGET    — fires on EVERY Bash call on this machine. The miss path is one builtin
 #             read and one `case`: no fork, no python, no git, no repo detection.
 
 # ------------------------------------------------------------------ fast path
-# Builtin read (no fork). -t 5 so a stdin that never closes cannot hang the machine;
-# a truncated read simply misses the tokens below and allows.
-IFS= read -r -d '' -t 5 RAW
+# ── NR-STDIN (E2, 4.6.2) — BOUNDED READ: the payload or nothing, never a hang.
+# `cat` and `json.load(sys.stdin)` block forever on a stdin that is open and idle. The
+# CLI normally closes stdin after the payload, so the hazard is bounded rather than
+# proven live — but a hung hook takes the session with it, and the guard costs one
+# builtin read: no fork, no python, so the budget above still holds.
+# MEASURED on this machine (bash 3.2.57, the /bin/bash hooks.json invokes):
+#   · a payload written and CLOSED arrives whole on the first read — 256 KB in 0 s;
+#   · an idle stdin costs NR_STDIN_WAIT (5 s) and yields "" — every hook here fails
+#     open on an empty payload, so a deaf hook is the worst case, never a wedged one;
+#   · WORST CASE IS THE TOTAL, NOT THE PER-READ (refuter F4, 2026-09-01): each read is
+#     given only the REMAINING budget, so a drip feed — a line, a 4 s gap, the payload,
+#     then a writer that never closes — costs NR_STDIN_WAIT + the sub-second granularity
+#     of SECONDS, not 2x it. The earlier form handed every read a fresh 5 s and measured
+#     real 9.06 s on exactly that shape;
+#   · a payload that is newline-terminated and LEFT OPEN is still KEPT, which
+#     `read -r -d "" -t N` alone loses: bash discards a partial read on timeout.
+#   · an UNterminated payload on a stdin that never closes is still lost (same bash
+#     behaviour) — nothing a fork-free reader can do, and it fails open like the rest.
+# Lines are joined WITHOUT their newlines: JSON forbids a raw newline inside a string,
+# so the joined text parses identically and every substring match below is unaffected.
+# NR_LINE is cleared before each read because bash leaves it untouched on timeout.
+# The wait is a knob for fixtures, so it is VALIDATED, not trusted: a non-numeric -t
+# makes read fail instantly (a silently disarmed hook) and a huge one restores the
+# hang this fixes. Anything but 1-99 falls back to 5. `case`, so still no fork.
+case "${NR_STDIN_WAIT:-}" in [1-9]|[1-9][0-9]) ;; *) NR_STDIN_WAIT=5 ;; esac
+NR_RAW=""; NR_DL=$((SECONDS + NR_STDIN_WAIT))
+while :; do
+  NR_T=$((NR_DL - SECONDS))   # the REMAINING budget, never a fresh one per read (F4)
+  [ "$NR_T" -ge 1 ] || break
+  NR_LINE=""
+  IFS= read -r -t "$NR_T" NR_LINE || { NR_RAW="$NR_RAW$NR_LINE"; break; }
+  NR_RAW="$NR_RAW$NR_LINE"
+done
+RAW="$NR_RAW"
 # Neither rule can fire unless one of these literal two-word tokens is in the raw
 # payload. Tight on purpose: this repo's own paths ("…/oracle-suite-plugin",
 # "…/.claude/projects/…") must never match, or every call here would pay for python.

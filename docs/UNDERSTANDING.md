@@ -180,8 +180,9 @@ run in seconds.
 
 ## 6. Where it stands
 
-**Done and running:** the engine (v4.2.0, 32 skills), all instruments green, the cockpit,
-the estate, the library.
+**Done and running:** the engine (v4.6.2, 32 skills), all instruments green, the cockpit,
+the estate, the library. (For the version of record, read
+`plugins/notrest/.claude-plugin/plugin.json` — this line is a snapshot, the manifest is the fact.)
 
 **Built and gated, not live:** rig.rest v0.1 — ~1,536 fixture assertions across six
 suites, all model-free and network-free.

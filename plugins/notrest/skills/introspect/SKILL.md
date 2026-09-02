@@ -95,6 +95,13 @@ python3 <skill>/scripts/score_snapshot.py append --root . --label "<checkpoint>"
 python3 <skill>/scripts/score_snapshot.py report --root .
 ```
 
+- **Two forms, both supported.** The verbless line above (`--snapshot …`) is read as `score`;
+  `score --snapshot …` is the same run. `--help` says so in its epilog, so the form the skill
+  documents is discoverable from the tool itself rather than only from this file.
+- **Misuse refuses, it does not crash.** A missing or unreadable `--output-file`, an empty
+  `--snapshot`, an unknown subcommand: one line on stderr, **exit 2**, never a traceback —
+  the posture `plan_lint`/`runbook_lint`/`verdict_lint` already keep. `report`'s exit 3 below
+  N=10 is a different thing: a refusal to claim a trend, not a misuse.
 - `append` needs `--output-file`: a ledger entry must point at the thing that was scored, and
   it records that file's **sha256** so a later reader can tell whether the scored output is
   still the output on disk.
@@ -102,7 +109,7 @@ python3 <skill>/scripts/score_snapshot.py report --root .
   only ever appends, never rewrites. A correction is a NEW run whose interpretation says so.
 - An absent control is written down as absent *with its reason*, never as a zero; a missing
   interpretation is labelled `[unverified] not recorded`, never invented.
-- Fixture: `scripts/fixture.sh` — 50 assertions covering the arithmetic, the append-only
+- Fixture: `scripts/fixture.sh` — 65 assertions covering the arithmetic, the refusals, the append-only
   guarantee and the N=10 refusal (it never touches a real `introspection/` ledger).
 
 ## The four metrics (computed by `scripts/score_snapshot.py`)

@@ -35,7 +35,7 @@ tests as a substitute.
 - Codex manifests never claim Claude hooks.
 - Update `CHANGELOG.md` and the golden release surface deliberately.
 
-<!-- notrest:protocol v2 (do not edit inside markers; managed by /notrest) -->
+<!-- notrest:protocol v3 (do not edit inside markers; managed by /notrest) -->
 ## notrest protocol
 
 - **Fable discipline** — ORIENT -> PROBE -> ACT -> PROVE -> BANK. Probe the live
@@ -43,12 +43,14 @@ tests as a substitute.
   (exit code, diff, status) or it is labeled `[unverified]`; bank state before stopping.
   Full contract: `/notrest:fable-mode`.
 - **Runtime-explicit offload rule** — delegate only when the user asks or the host policy
-  permits it. Claude lanes set model `"opus"` explicitly and never use
-  `subagent_type: "fork"`. Codex lanes set model `"gpt-5.6-sol"` explicitly and,
-  because a model override cannot use a full-history inherited fork, use
-  `fork_turns: "none"` or a bounded recent-turn fork. Never silently substitute one
-  runtime's model for the other. A build keeps one persistent builder lane per domain and
-  resumes it for feedback.
+  permits it. Claude lanes set the model EXPLICITLY, chosen by the seat on the difficulty
+  of the task and declared in the dispatching brief: `"opus"` for judgment-bearing work,
+  `"sonnet"` for bounded well-specified work whose done-when is a runnable check the seat
+  wrote before dispatch. When unsure, opus. Never haiku, never `subagent_type: "fork"`;
+  omitting the model is a violation, not a default. Codex lanes set `"gpt-5.6-sol"`
+  explicitly and, because a model override cannot use a full-history inherited fork, use
+  `fork_turns: "none"` or a bounded recent-turn fork. Never substitute one runtime's model
+  for the other. A build keeps one persistent builder lane per domain, resumed for feedback.
 - **Enforcement honesty** — Claude lifecycle hooks may enforce and receipt laws. Codex
   v4.3 has no equivalent plugin hook surface: `AGENTS.md`, the selected skill, Doctor,
   Eval, and consumer-side evidence carry the law. Never claim a hook ran on Codex.

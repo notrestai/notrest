@@ -36,10 +36,15 @@ Apply in order. The first rule that fires decides; do not skip to the shape.
    `[model-opinion]`-grade material, never evidence (the gpt lane's law, same reason);
    and local calls are invisible to the spawn-gate and the spend ledger — the lane's
    own return must say which local model did the reading, or the tiering is unauditable.
-4. **Sonnet workers only under a declared mechanical/DRAFT tier.** The dispatching text
-   must carry that declaration verbatim, per the owner's 2026-08-30 amendment. Round B is
-   why: sonnet workers on judgment material were dominated on **both** axes — more tokens
-   *and* flatter output. Absent the declaration, workers are opus.
+4. **Sonnet workers only where the seat has judged the work BOUNDED and declared it.**
+   Under the owner's 2026-09-01 ruling
+   (`briefs/amendment-2026-09-01-offload-policy.md`) the seat chooses each lane's model by
+   the difficulty of the task and states the choice in the dispatching text — `tier:
+   bounded` for mechanical edits with an exact target, sweeps, conversions and any job
+   whose done-when is a runnable check written before dispatch; `tier: judgment` for
+   everything else. Round B is why this matters here: sonnet workers on judgment material
+   were dominated on **both** axes — more tokens *and* flatter output. When unsure, opus;
+   absent a declaration, workers are opus.
 5. **Merging is judgment, so the merger stays opus.** The lane merges its own workers; the
    seat merges the lanes. A cheap merger is how a tiered run loses the quality it paid for.
 6. **Depth stops at three.** A worker does not spawn. If a worker needs a worker, the
@@ -101,8 +106,9 @@ Three layers, each absorbing the flood for the layer above.
    (law 5). Claude lanes run `opus`; Codex lanes run `gpt-5.6-sol`, and
    never `subagent_type: "fork"` — forks inherit the seat's model and launder the policy.
 3. **The workers** — bounded and mechanical, returning raw material and never conclusions.
-   They are opus unless the dispatching text declares the mechanical/DRAFT tier, in which
-   case `model: "sonnet"` is lawful (owner amendment 2026-08-30). `haiku` is never lawful
+   They are opus unless the dispatching text declares the work bounded, in which case
+   sonnet is lawful (owner ruling 2026-09-01: the seat picks by difficulty and declares
+   it; when unsure, opus). `haiku` is never lawful
    at any depth, and no negation makes a fork lawful.
 
 **The gate holds at depth 2.** Spawn-gate is a PreToolUse hook on `Agent|Task`, so a lane's
@@ -123,8 +129,8 @@ worker ran, returned, and auto-receipted with its model recorded.
 
 - [ ] Did I apply the gate **in order**, and name the rule that fired?
 - [ ] If I tiered: is the reason law 3, and did I label it `[unmeasured]`?
-- [ ] If any worker is sonnet: does the dispatching text carry the mechanical/DRAFT tier
-      declaration verbatim, and is the material genuinely mechanical?
+- [ ] If any worker is sonnet: does the dispatching text declare `tier: bounded` with one
+      line of why, and is the material genuinely bounded rather than judgment?
 - [ ] Is every merge point a digest, with the verdict left to the layer above?
 - [ ] Depth ≤ 3, no worker spawning a worker?
 - [ ] If I quoted a tiered run's cost: did I disclose the depth-2 estimate-grade limit?

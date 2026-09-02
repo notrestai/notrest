@@ -47,7 +47,8 @@ Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
   (wikilinks, links, imports, sourced scripts, estate pointers) at zero model tokens;
   `register` + `all` merge every registered project into one cross-project PM map.
 - **spend** — append-only model-spend ledger + report with a date-guarded runtime routing
-  verdict (Claude=opus, Codex=gpt-5.6-sol).
+  verdict (Claude: opus for judgment, sonnet for bounded work — the seat's call by difficulty,
+  declared in the brief; Codex=gpt-5.6-sol).
 - **eval** — the harness's law-conformance suite: `eval.py check --root .` runs static
   checks over the shipped files — the dual runtime model map, inherited-fork ban,
   honesty labels, scanners that exist and compile, append-only ledgers, the
@@ -55,10 +56,12 @@ Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
   laws, silent-on-failure hooks. A law that is well-encoded leaves a static fingerprint;
   check the fingerprint, not the behavior. ~0.1s, zero model tokens, file:line on every
   FAIL. Model-graded `behavior` cases are bounded, code-graded and opt-in.
-- **doctor** — the harness's self-check: `doctor.py check --root .` runs eight named
-  PASS/WARN/FAIL checks — front-matter that a real YAML load would reject (the unquoted
+- **doctor** — the harness's self-check: `doctor.py check --root .` runs a roster of named
+  PASS/WARN/FAIL checks (the roster grows with each scar — run it for the current list) —
+  front-matter that a real YAML load would reject (the unquoted
   colon-space that makes a skill invisible), manifest + tombstone pins, skill-count drift,
-  hook files that exist and parse, estate integrity, install-vs-repo drift, unanchored
+  hook files that exist and parse, hook liveness, estate integrity, install-vs-repo drift,
+  app-side packs that shadow this tree, the always-on token budget, unanchored
   gitignore rules, stale render stamps — each with the command that fixes it. Every check
   descends from a defect that actually shipped. Reads only; never repairs.
 - **compile** — the estate's fourth verb: a python3-stdlib scanner mines COORD, the agent
@@ -85,6 +88,12 @@ Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
 - **fable-director** — seats and runs the "3 DEVS AND A RELAY" multi-session dev arrangement
   (metered director + flat lanes over per-lane blackboard files with token-watch wakes;
   V4 protocol + repo scaffolder bundled).
+- **mentor** — seats the mentor-dev ritual: two PEER sessions on one chartered room, neither the
+  other's subagent — the mentor holds the laws, the gates and the estate's memory and answers in
+  numbered rulings that each cite the authority that decided them (gates carry binding riders, and it
+  never touches the builder's tree); the builder holds the code and owns the numbering. The wire is a
+  room the owner reads, so correction is taken in public. Shells chatroom's `room.py`, so the
+  no-secrets screen is inherited, not copied.
 - **agentswarm** — the fast delegation arrangement: the seat keeps decompose, judge, apply,
   gate; authorized work offloads to explicit runtime workers (Codex `gpt-5.6-sol`, Claude
   `opus`); the harness is the wire (no blackboards, no watches,
@@ -93,11 +102,14 @@ Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
 - **tieredswarm** — the three-layer topology (seat → opus lanes → workers) and the
   MEASURED routing gate from four benchmarked rounds: script it if compilable, flat solo
   opus by default, tier only for context overflow or wide parallel reads (`[unmeasured]`),
-  sonnet workers only under a declared mechanical/DRAFT tier.
+  sonnet workers only where the seat has judged the work bounded and declared it.
 - **sessionend** — writes START-HERE / HANDOFF / STATE / the runtime foundation.
 - **fable-mode** — the Fable behavioral contract: the discipline loop + hard rules (incl.
-  the offload model policy — Fable never rides in a subagent; every offloaded job runs on
-  explicit Opus, never sonnet/haiku, never forks), consumer-side verification, the outage playbook
+  the offload model policy — Fable never rides in a subagent; every offloaded job carries an
+  explicit model that the seat CHOOSES BY THE TASK'S DIFFICULTY and declares in the brief —
+  opus for judgment, sonnet for bounded work, opus when unsure (owner ruling 2026-09-01) —
+  never haiku, never a fork, never an inherited Fable, and an omitted model is a violation;
+  enforced at the door by the PreToolUse spawn gate), consumer-side verification, the outage playbook
   (reroute, stage, never stall), tool-graph craft, and situational profiles — auto-anchored
   into every session by the SessionStart hook.
 

@@ -153,6 +153,92 @@ rc=$?
 if [ "$rc" -eq 0 ]; then ok "sonnet WITH declared tier stays lawful, exit 0"; else
   bad "sonnet WITH tier flipped the suite (exit $rc)"; grep -E '^FAIL ' "$TMP/out"; fi
 
+# ── owner amendment 2026-09-01: the SEAT chooses by DIFFICULTY and declares it ────────
+# The gate must accept the NEW law without becoming a rubber stamp for anything that
+# QUOTES it. F2 (refuter, 4.6.2) is the scar: the first cut exempted sonnet whenever the
+# window carried the law's recital words (bounded / difficulty / well-specified), so the
+# quotation became the licence and a blanket "sonnet for everything" sailed through while
+# reciting the very rubric it violated. The exemption now keys on the SHAPE of a
+# declaration — an absolute always fails; otherwise the window must name opus too, or
+# carry an explicit tier declaration.
+lawful(){  # $1 label · $2 the sentence(s) appended to a spawn-documenting SKILL.md
+  W="$TMP/w"; rm -rf "$W"; cp -R "$BASE" "$W"; P="$W/plugins/notrest"
+  printf '\n%b\n' "$2" >> "$P/skills/agentswarm/SKILL.md"
+  python3 "$EVAL" check --root "$W" > "$TMP/out" 2>&1
+  rc=$?
+  if [ "$rc" -eq 0 ]; then ok "$1 stays lawful, exit 0"; else
+    bad "$1 flipped the suite (exit $rc)"; grep -E '^FAIL ' "$TMP/out"; fi
+}
+unlawful(){  # $1 label · $2 the sentence(s) that MUST red OFFLOAD-POLICY
+  W="$TMP/w"; rm -rf "$W"; cp -R "$BASE" "$W"; P="$W/plugins/notrest"
+  printf '\n%b\n' "$2" >> "$P/skills/agentswarm/SKILL.md"
+  python3 "$EVAL" check --root "$W" > "$TMP/out" 2>&1
+  rc=$?
+  got="$(grep -E '^FAIL ' "$TMP/out" | awk '{print $2}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  if [ "$rc" -eq 6 ] && [ "$got" = "OFFLOAD-POLICY" ]; then
+    ok "$1 -> OFFLOAD-POLICY only, exit 6"
+  else
+    bad "$1 -> got [$got] exit $rc (want [OFFLOAD-POLICY] exit 6)"
+    grep -E '^FAIL ' "$TMP/out"
+  fi
+}
+
+# ⛔ THE REFUTER'S OWN REPRO AND EVERY LEAK THE REVIEW ROUND FOUND, VERBATIM. Two designs
+# died here. Cut 1 exempted on the law's recital words, so quoting the law licensed
+# breaking it. Cut 2 exempted on a window that mentioned opus, so a sentence RETIRING opus
+# licensed itself — and condemned correct declarations whose neighbours said "by default".
+# The rule is now one line wide: a declaration token on the directive's OWN line, and no
+# absolute on that same line. These arms are the shape of both failures; if any of them
+# flips, the check has gone back to reading the neighbourhood.
+unlawful "F2: the refuter's blanket-sonnet sentence (recites the law, breaks it)" \
+  'Delegation: choose by difficulty.\nEvery lane: model: "sonnet" — always, for all work including kernel design and refuters.'
+unlawful "F2: recital words ALONE never launder a bare sonnet directive" \
+  'Use model: "sonnet" for bounded, well-specified work the seat has scoped.'
+# — review round (a): a bare mention of opus is NOT a licence. Each of these named opus and
+#   passed the previous cut; three of them name it only to say it is not being used.
+unlawful "F2a: 'in all cases' beside a retired opus" \
+  'model: "sonnet" in all cases; opus is retired.'
+unlawful "F2a: 'regardless of difficulty' with opus unused" \
+  'Regardless of difficulty, model: "sonnet". opus unused.'
+unlawful "F2a: 'for each lane' with opus reserved for nothing" \
+  'model: "sonnet" for each lane. opus is reserved for nothing.'
+unlawful "F2a: sonnet ON THE KERNEL, opus named only as the thing it is cheaper than" \
+  'Kernel surfaces and refuters: model: "sonnet" (cheaper than opus).'
+unlawful "F2a: naming both sides is not a declaration — the LINE must declare its tier" \
+  'The seat picks model: "opus" for judgment and model: "sonnet" for a bounded lane.'
+unlawful "F2: an absolute on the same line beats a real tier declaration" \
+  'model: "sonnet" — tier: bounded — is used for all work, always.'
+
+# — review round (b): a neighbouring line can no longer VETO a correct declaration.
+lawful "F2b: 'by default' on the line ABOVE does not condemn a declared directive" \
+  'Opus by default for judgment.\nmodel: "sonnet" — tier: bounded for a runnable done-when.'
+lawful "F2b: 'always' in unrelated prose above does not condemn it either" \
+  'The gate always runs before a ship.\nmodel: "sonnet" — tier: bounded for a runnable done-when.'
+# …and the lawful shapes still pass, or the gate blocks the law it enforces.
+lawful "the amendment's OWN bullet declares the tier on the directive's line" \
+  '- **Declared, not implied:** the dispatching brief\n  states `model: opus — tier: judgment` or `model: sonnet — tier: bounded` with one line of\n  why, so the receipt is checkable against the choice.'
+lawful "a tier declaration with no opus anywhere near it" \
+  'model: "sonnet" — tier: bounded — done-when is the runnable check written before dispatch.'
+lawful "the unspaced form tier:bounded is the same declaration" \
+  'model: "sonnet" tier:bounded — done-when is a runnable check.'
+lawful "the OLD mechanical/DRAFT wording still passes (no flag day)" \
+  'Use model: "sonnet" only where the brief names the work mechanical (DRAFT-tier).'
+
+# what did NOT move: haiku and forks are banned however the line is worded.
+unlawful "haiku beside the NEW bounded wording is still banned" \
+  'For bounded, well-specified work spawn with model: "haiku".'
+unlawful "haiku beside a REAL tier declaration is still banned (no token launders it)" \
+  'model: "haiku" — tier: bounded — for a mechanical DRAFT-tier sweep.'
+unlawful "a fork beside the NEW bounded wording is still banned" \
+  'For bounded, well-specified work use subagent_type: "fork" to save tokens.'
+
+# the law string must not let a reader mistake a grammar PASS for a judgment about routing
+python3 "$EVAL" check --root "$BASE" > "$TMP/law" 2>&1 || true
+grep -q 'GRAMMAR CHECK' "$TMP/law" && ok "the law string calls itself a grammar check" \
+  || bad "the law string does not disclose that it is a grammar check"
+grep -q "seat's judgment" "$TMP/law" && ok "…and says where the semantics actually live" \
+  || bad "the law string does not name the seat/receipts as the semantic authority"
+
 inject "label-less research skill" HONESTY-LABELS \
   'sed -i.bak "s/^Every claim carries.*$/Every claim is stated plainly./" "$P/skills/researcher/SKILL.md" && rm -f "$P/skills/researcher/SKILL.md.bak"'
 
