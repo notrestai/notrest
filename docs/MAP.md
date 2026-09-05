@@ -1,6 +1,6 @@
 # MAP.md — the complete notrest plugin map
 
-**Version mapped:** v4.6.2 (`plugins/notrest/.claude-plugin/plugin.json`), commit: the v4.6.2 release commit (`git log -1 --grep "v4.6.2"`).
+**Version mapped:** v4.7.0 (`plugins/notrest/.claude-plugin/plugin.json`), commit: the v4.7.0 release commit (`git log -1 --grep "v4.7.0"`).
 **Mapped:** 2026-09-01, by probing the live tree — every claim below comes from a file read
 or a command run during the mapping session. Nothing here is recalled.
 
@@ -40,7 +40,18 @@ what the standing rules are, and what the project already knows.
   the offload model rule; a resume nudge if `START-HERE.md` or `HANDOFF.md` exists; the pulse
   reading (`doctor=… eval=… swarm=… compile=…` plus how long ago it refreshed); the top ripe
   compile candidate; a cockpit line if the project opted always-on; a fable-director line if
-  lane blackboards exist.
+  lane blackboards exist. Where the owner has opted in, that compile line is a **directive**
+  rather than a nudge — *dispatch ONE opus builder lane this session for ripe candidate
+  `<slug>`* — and it says in the same breath that the runtime is isolated, benchmarked,
+  receipted and **never installed**. Two authorization guards ride with it: an opt-in store
+  that resolves *inside* the estate is **IGNORED** with the reason (an in-estate marker is
+  writable by any lane and travels with a clone, so it is not the owner's private
+  authorization), and a legacy `compile/.auto-build` with no marker beside it gets a one-line
+  **IGNORED-since-v4.5** notice naming the re-authorization command. It also **sweeps
+  `gates/ACTIVE.md` sections older than 24 h** — a lane that died without stopping cleanly
+  leaves its gates armed forever — recording each removal as a `COORD-AGENTS.md` row
+  `gates SWEPT lane=<key>`, and deleting a file that is nothing but an empty husk — the silent lapse that
+  sent this estate back to nudging for weeks after it had already opted in.
 - **Safety property:** *never does work.* It reads the last background readings rather than
   refreshing them, because a SessionStart hook that shells out is a hook that can hang a
   session start. It also refuses to scaffold in a non-git directory — establishing an estate
@@ -68,7 +79,12 @@ work lands; act as the pulse's heartbeat; surface swarm alerts.
 **4. `router.sh` — UserPromptSubmit**
 The routing law's enforcer. It reads the prompt, matches its shape against an ordered table,
 and suggests the suite verb that owns that shape — one line, under 160 characters.
-- **Writes:** echo only, at most one nudge.
+- **Writes:** echo only, **at most one line, ever**. Since 4.7.0 that line may instead be a
+  banked lesson — `[notrest] a banked lesson applies: L-n … (all of them: /notrest:archivist
+  learnings --scope <token>)`, an **accepted** one only, never a lane's proposal — and only on the paths where a route nudge would not have
+  spoken anyway: no route matched, or the prompt already names its verb. The miss path stays
+  fork-free: it reaches for the store only when the prompt carries a path-like token or a
+  skill name *and* `archive/findings.jsonl` exists, because this fires on every prompt.
 - **Safety property:** it stays silent when the prompt is a slash command, already names a
   suite verb, or is under four words (greetings are not task shapes). The table is a plain
   greppable `case` chain on purpose, so `eval.py` can check it against `oracle`'s routing
@@ -80,6 +96,19 @@ agent-spawn call before it runs and refuses an unlawful one.
 - **Writes:** echo only (stderr on a block; a loud stderr receipt on an override).
 - **Blocks:** `subagent_type="fork"` (a fork inherits the seat and bills its credit, so it is
   not an offload); an omitted `model`; any model other than explicit `opus` or `sonnet`.
+- **Also rewrites (4.7.0):** on a call it *allows*, it appends the **scoped LEARNINGS digest**
+  to the lane's prompt via `hookSpecificOutput.updatedInput` — scope tokens read out of the
+  brief (path-like substrings, known skill names), the digest read from `index.py learnings`.
+  It is the **only** hook permitted to touch the `Agent` prompt, because when several
+  PreToolUse hooks rewrite one input the last writer wins. A denied call is never rewritten.
+- **Also arms (4.7.0):** an explicitly marked block in the Agent prompt (`NOTREST-GATES:` … `END-GATES` at column 0, never inside a code fence at any indent) — starting at
+  column 0, ending at the first blank line, because a fenced block is documentation — is
+  written to `gates/ACTIVE.md` as `## lane <8-hex key> · opened <UTC>`, each line under
+  `# lane <key> · from the commission's DONE-WHEN block`. The file is created if absent and no
+  other section is ever rewritten. The key is random, and the gate appends it to the prompt
+  tail as `[notrest lane-key: <key>]` so the lane can see the contract it is under.
+  `agent-ledger.sh` retires the section **by key** when the lane stops; a red reads
+  `RED: lane <key> gate N — exit=…`.
 - **Safety property:** `NOTREST_GATE_OVERRIDE=1` permits, but *loudly* — a bypassed gate that
   says nothing is worse than no gate. Any malformed payload passes through silently.
 
@@ -111,14 +140,42 @@ tokens.
 - **Safety property:** silent on success and on every failure; all shared-file writes go
   through `fcntl.flock` (shell `flock` one-liners aren't reliable on macOS); the append is
   idempotent, so a re-fired hook does not double-count.
+- **Also banks (4.7.0):** the lane's **return card**. A return ending in the fixed
+  `TESTS / OPEN / FINDINGS / LEARNINGS` block is parsed and each checkbox line is written to
+  the findings store through `index.py add`, with `lane:<id>` as `source` and the banked brief
+  as evidence — so a lane that wrote its card has banked its work by construction. The judgment
+  kinds land **`status=proposed`** (the door refuses a lane-sourced learning/open/alternative
+  claiming otherwise) and travel nowhere until the seat runs `index.py accept` or `reject
+  --why`; tests and findings are ungated data. A malformed card **banks nothing** and says so in
+  the `COORD-AGENTS.md` row — though a header whose count disagrees with its items is *reported,
+  not refused*, a miscount being no corruption. It also retires the lane's `gates/ACTIVE.md`
+  section by key.
 
 **9. `completion-gate.sh` — Stop (timeout 60s)**
 The newest gate (v4.5). The estate already gates the *ship* and the *spawn*; this closes the
 hole between them — **the claim**. It stops a session from declaring work done while the very
 checks the commission named are red.
 - **Contract:** the estate declares its gates in one file, `gates/ACTIVE.md`, in the
-  `CHECK:` / `EXPECT:` format `gate-check.py` runs. **No `gates/ACTIVE.md` → the hook does
-  nothing at all, in every repo on the machine** — a gate that arms itself is a gate nobody chose.
+  `CHECK:` / `EXPECT:` format `gate-check.py` runs. **No `gates/ACTIVE.md` → that half of the
+  hook does nothing at all, in every repo on the machine** — a gate that arms itself is a gate
+  nobody chose.
+- **Second rule (4.7.0) — the lesson.** After the gates check, it looks for **trigger** lines
+  in the active COORD volume — a correction, a refuter defect, a `RED:`, a `HALTED` — newer
+  than the newest banked learning, and blocks a "done" that leaves one uncited. The block
+  names the trigger's timestamp and hands back the exact `index.py add --kind learning …`
+  command. It reads its trigger regex from `index.py learnings --trigger-regex`, the same
+  source `eval`'s LEARNING-LOOP check reads, so the gate and its audit cannot drift apart.
+  With no learning banked yet the loop is **UNARMED** and owes nothing; once armed it is
+  bounded by a **floor** — the earliest evidence stamp any learning cites — so banking the
+  first lesson does not retroactively indict the project's whole history. With no store at all
+  it is inert, like the gates half.
+- **Third rule (4.7.0) — the unverified claim.** A return or ledger line **admitting** a gap —
+  *not tested*, *could not be verified*, *has not been verified*, *never ran/tested/checked*,
+  *not yet fully verified* — with no `open` record behind it blocks the same way. The grammar
+  covers the perfect tense and the *never* forms deliberately: "it was never tested" and "it is
+  not tested" are the same admission, and a checker that only caught one would teach the
+  vocabulary that evades it. Not-tested is a legitimate outcome; **not-tested and unrecorded** is how
+  it stops being one.
 - **Writes:** echo only (stderr, plus `{"decision":"block","reason":…}` on stdout).
 - **Safety property:** two of them. A **loop guard** (`stop_hook_active`) so the gate speaks
   once and then gets out of the way, because a hook that blocks unconditionally wedges a
@@ -144,8 +201,28 @@ The background refresher. It runs the four read-only instruments and banks their
 machine-written readings, so a session can see the estate's state without spending a token
 asking.
 - **Writes:** `pulse/pulse.json` (with `generated` and `trigger` — when, and what fired it)
-  plus `pulse/{doctor,eval,swarm,compile}.txt`. **Never writes COORD** — a pulse per lane-stop
-  would spam the ledger into uselessness.
+  plus `pulse/{doctor,eval,swarm,compile}.txt`. Since 4.7.0 it also runs `compile.py draft
+  --all-ripe` after a fresh scan when the estate is opted in — every ripe NEW candidate
+  scaffolded into its own isolated dir, idempotently, at zero model tokens — and then, where
+  the authorization also says *unattended*, `compile.py auto-run --next`, which **does** spend
+  model tokens: a headless opus CLI run builds the oldest drafted candidate, a free fixture
+  gates it, a second headless run attacks it, a script benchmarks it, and only then do green
+  gates adopt it. **Never writes COORD** — a pulse per lane-stop would spam the ledger into
+  uselessness.
+- **It never parses the marker.** `compile.py auto` is the single reader of that file; the hook
+  branches on its **exit code and its printed line** and nothing else, because a hook that read
+  the JSON itself would become a second authority on what *authorized* means. Both calls are
+  detached like the scan, `auto-run` is self-locking (a second caller exits 0 `BUSY` at once)
+  and logs to `pulse/auto-run.log`, so a long unattended build can never slow a prompt.
+- **The unattended rails** (each armed, because unwatched spending is only defensible when
+  every failure is bounded first): one estate-wide lock, so never two runs and never during a
+  live session's own compile; an owner-set `daily_cap_tokens` in the marker that the runner
+  **refuses to breach**, saying so in a pulse line; a `spend.py log` receipt per headless run
+  carrying the CLI's own observed token count (`lane=daemon`, model explicit); a **quiet stop
+  with no retry storm** when auth fails; an injectable `--runner` so fixtures never spend a
+  token; and `NOTREST_UNATTENDED=1` on every headless run, which the hooks honor by suppressing
+  the AUTO-BUILD echo and refusing lane spawns from inside a run — one level deep, never a
+  tree.
 - **Safety property:** double-fork + `setsid`, so the worker is reparented to init and is
   nobody's child. This is load-bearing: the harness only notifies a finished agent when it has
   no live background children, so a daemon still parented to its spawner could cost you the
@@ -187,9 +264,17 @@ against it, and touch no real project. Every fixture is `exit 0 = all assertions
   phrase is a claim the reader believes, so it is checked against the tree, not just the
   version stamp). Never repairs; every FAIL carries its fix command.
   **Exits:** `0` all pass · `5` warnings only · `6` any fail · `3` target unusable · `2` usage.
-  *Live now (v4.6.2 as shipped):* 12 checks, 9 pass, 2 warn, 0 fail, exit 5 — the warns are the
-  pre-existing unparseable COORD line (2026-08-27, append-only so it stays) and the app-side
-  shadow packs that only the owner panel can remove.
+  Since 4.7.0 the **ESTATE** check also prints one detail line for the learnings store
+  (`learnings: N records, newest <age>`) — a detail, not a status: the PASS/WARN never turns on
+  it — and **LOOP HEALTH**, the thirteenth check, reads the loop itself: uncited triggers,
+  untested admissions with no `open` record, open questions by age, learnings per week, and
+  candidates drafted or proposed but never decided. It PASSes while the loop turns and WARNs
+  when it stops; it never FAILs, because a quiet week is not a broken install.
+  *Live now (mid-4.7.0, working tree — `doctor.py check` prints the current line):* 13 checks,
+  10 pass, 3 warn, 0 fail, exit 5 — the warns are the pre-existing unparseable COORD line
+  (2026-08-27, append-only so it stays), the app-side shadow packs that only the owner panel
+  can remove, and LOOP HEALTH reporting six untested admissions with no `open` record behind
+  them — the newest check doing exactly its job on its first live estate.
 - **`pulse.sh`** — the estate heartbeat in one unattended command: runs every read-only
   instrument, banks one line to COORD, exits `0` green or `1` something wants a human. Built
   for a scheduler.
@@ -206,9 +291,13 @@ against it, and touch no real project. Every fixture is `exit 0 = all assertions
 - **`eval.py check`** — a static pass asking whether every law left a mark in the shipped
   files: offload policy, honesty labels, scripts that compile, cited files that exist,
   append-only ledgers, worker contracts, safe front-matter, safety laws, silent hooks, the
-  routing enforcer, router/oracle route-table parity. Pure stdlib, pure read, zero model tokens.
+  routing enforcer, router/oracle route-table parity, network egress, the kernel-surface law,
+  the agreed release surface, and (4.7.0) **LEARNING-LOOP** — every correction, refuter defect
+  or red gate the ledger records is cited by a banked `kind=learning` record, SKIPping as
+  `loop not armed` on a store with none. Pure stdlib, pure read, zero model tokens.
   **Exits:** `0` all pass · `5` warnings only · `6` any FAIL · `2` usage.
-  *Live now (mid-4.6.2, working tree):* 32 skills, 15 checks, 0 fail, 0 warn, 0.22s.
+  *Live now (mid-4.7.0, working tree, measured — the `SUMMARY` line is always the current
+  count):* 32 skills, 16 checks, 0 fail, 0 warn, 0.39s.
 - **`eval.py behavior`** — prints an opt-in bounded model case; does **not** run it.
 - **Fixtures:** `fixture.sh` (builds a passing mini-harness, then injects one violation per
   check and asserts each flips *exactly* its own check), `pretool-fixture.sh` (pipes real
@@ -226,7 +315,11 @@ against it, and touch no real project. Every fixture is `exit 0 = all assertions
 - **`establish.py establish`** — writes the establishment surfaces, idempotent. *(Writes —
   not run this session.)* This is a kernel surface: it writes into other people's projects.
 - **`establish.py continuation`** — read-only: the packet a successor seat needs to continue
-  a build already running.
+  a build already running. Since 4.7.0 it carries a **LEARNINGS** block after the ledger tail
+  — the total banked plus the newest three digest lines, under the packet's own byte law, and
+  **absent rather than empty** when the store holds none — plus the card counts line, and
+  **LIBRARY LEARNINGS** (the newest two from the shelf) where a shelf exists, so a lesson
+  another project paid for arrives before this one repeats it.
 
 **The protocol block moved v2 → v3 in 4.6.2** (`PROTOCOL_VERSION = 3`, `establish.py:62`),
 carrying the owner's 2026-09-01 offload ruling as its own bullet — the seat picks each lane's
@@ -292,6 +385,9 @@ the STALE-at-5 path was gated by the seat on this repo before the upgrade landed
 
 ### compile — "what work have we done three times?"
 - **`compile.py scan`** — clusters the estate and writes `compile/candidates.md`. *(Writes.)*
+  Since 4.7.0 it also reads the findings store's **learning** and **open** records: a statement
+  recurring three or more times becomes a candidate of kind **`rule`**, citing the record ids —
+  the compiled form of a repeated lesson being a hook arm or an eval check, not a paragraph.
   Since 4.6.2 it **narrates itself on stderr** (`compile.py:708`; stdout stays the machine
   surface) — per ledger family, then no less often than every ~10 s inside the merge — because
   the 4.6.1 audit lane killed a silent 120 s run and filed it as a hang. A tool that prints
@@ -305,6 +401,13 @@ the STALE-at-5 path was gated by the seat on this repo before the upgrade landed
   estate at `~/.notrest/auto-build/<sha256>.json`, because an in-repo marker is writable by any
   lane — a lane could grant itself the authority to be dispatched.
 - **`compile.py scaffold`** — creates a `compile/<slug>/` skeleton; never overwrites (exit 2).
+- **`compile.py draft --all-ripe`** — the unattended half of 4.7.0's auto-build: every ripe NEW
+  candidate scaffolded (contract + skeleton + benchmark harness), recorded `DRAFTED`, existing
+  slugs untouched. Idempotent, zero model tokens — which is what makes it safe to run from a
+  daemon.
+- **`compile.py decide --status ADOPTED`** — now refuses without `--evidence` for the fixture,
+  the FAIR benchmark and the refuter verdict, and prints the ledger-ready receipt line. An
+  adoption that cannot show three receipts cannot be written down.
 - **`fixture.sh`** — asserts compile.py against a synthetic estate, and since 4.6.2 carries a
   **permanent runtime arm** (§M): a seeded 260-entry corpus over a ~48-token vocabulary — the
   shape of a real estate's largest family — must finish inside a **10 s** bound. The number is
@@ -331,11 +434,27 @@ the STALE-at-5 path was gated by the seat on this repo before the upgrade landed
 - **`index.py supersede` / `refute`** — append a tombstone; an append-only status flip that
   edits no existing byte.
 - **`index.py scan`** — rebuilds `oracle-index.md` for the legacy dossier estate.
+- **`index.py learnings`** — the estate's banked lessons (`kind=learning`, tagged
+  `INHERITED` / `RULED` / `LEARNED`, each carrying required `evidence` and `scope`).
+  `--digest` prints the one framed line format every consumer reads — the continuation packet,
+  the spawn gate, the router — `--scope` narrows to a lane's own paths and skills (plus
+  `estate`), `--since` to what is newer than a ledger timestamp, and `--trigger-regex` prints
+  the pattern the Stop gate and eval's LEARNING-LOOP both match trigger lines with.
+- **`index.py card`** — the estate's state of play in four boxes: TESTS / OPEN / FINDINGS /
+  LEARNINGS, with counts. The same shape a lane's return card is written in, which is why the
+  hook can bank a return by parsing it rather than translating it.
+- **`index.py promote L-<n>`** — copies a learning scoped `library` to the shelf, where every
+  project's packet reads it back. The one thing that crosses the federation line, and only on
+  an explicit scope token.
 - **`index.py library`** — the cross-project shelf: register, list, find, track.
 - **`fixture.sh`** — proves every validation rule turns its record away and names itself.
 
 ### watch — "are these facts still true?"
-- **`watch.py due`** — which watched claims are past their re-check date.
+- **`watch.py due`** — which watched claims are past their re-check date — and, since 4.7.0,
+  which **open records** are: a question the project left open carries a `recheck` date and
+  ages on the same calendar as a fact.
+- **`watch.py close <open-id>`** — closes an open question by appending the closing record
+  through `index.py`, citing the open id, so the answer stays linked to the question.
   *Live now:* 2 due of 2 rows.
 - **`watch.py add` / `probe` / `append`** — add a claim to the watchlist, fetch a source, and
   make the atomic drift-log write. *(Writes.)*
@@ -466,6 +585,13 @@ Descriptions below are derived from each `SKILL.md`'s own frontmatter, read this
 
 These live at the project root, not in the plugin. They are the durable record.
 
+**The compile queue does not ship (4.7.0).** `/compile/*/` is now ignored — the daemon's
+`DRAFTED` scaffolds are a work queue, not release content, and an unattended drafter that
+committed every scaffold would fill the repo with runtimes nobody ruled on. `release-ritual/`
+is negated back in, and a runtime enters git only when it is **ADOPTED**: the adoption step
+prints the `git add -f compile/<slug>` that puts it there, so the one thing that makes a
+runtime part of the estate stays a deliberate act with a receipt.
+
 **Derived output does not ship (4.6.2).** `plugins/notrest/graph/` held four tracked
 scan artefacts — `graph.{html,json}` and `river.{html,json}`, 125 KB generated 2026-07-27
 and referenced by nothing — which escaped `.gitignore` because the `/graph/` rule is
@@ -480,8 +606,8 @@ since moved.
 | **`COORD-AGENTS.md`** | The **`agent-ledger.sh` hook**, automatically, one line per finished lane. | `recap`, `swarm.py report`, and any session wanting the delegation history. |
 | **`spend/ledger.md`** | The **`agent-ledger.sh` hook**, auto-receipting each lane (idempotent). Hand-logging double-counts. | `spend.py report`, `doctor`, `recap`. Append-only. |
 | **`briefs/`** | The **`agent-ledger.sh` hook**, banking each lane's verbatim commission as `agent-<id>.md`. | The owner and any reviewer — this is what makes commission transparency structural. |
-| **`archive/findings.jsonl`** | The **knowledge verbs**, via `index.py add`, validated at the door. | `archivist find/track`, `graph river`, `recap`. Append-only; status flips are tombstones. |
-| **`gates/ACTIVE.md`** | The **owner or director**, declaring the commission's gates as runnable `CHECK:`/`EXPECT:` lines. | `completion-gate.sh` via `gate-check.py`, at every Stop. Absent → the gate is inert. |
+| **`archive/findings.jsonl`** | The **knowledge verbs**, via `index.py add`, validated at the door — findings about the world; `kind=learning`, what the estate learned about working here; `open`, what was *not* tested or could not be verified, with a recheck date; `alternative`, a road not taken; and `result`, which must name what ran, the command and the exit code. Since 4.7.0 the **`agent-ledger.sh` hook** writes here too, banking every lane's return card — its judgment kinds as `proposed`, awaiting the seat's `accept` / `reject --why`. | `archivist find/track/learnings`, `graph river`, `recap` — plus, for learnings, the continuation packet, `spawn-gate.sh`, `router.sh`, `completion-gate.sh` and eval's LEARNING-LOOP. Append-only; status flips are tombstones. |
+| **`gates/ACTIVE.md`** | The **owner or director**, declaring the commission's gates as runnable `CHECK:`/`EXPECT:` lines — and, since 4.7.0, `spawn-gate.sh`, appending a lane's own unfenced `DONE-WHEN:` block under `## lane <8-hex key> · opened <UTC>` with a provenance comment per line (retired by key when the lane stops, swept by `session-start.sh` after 24 h). | `completion-gate.sh` via `gate-check.py`, at every Stop. Absent → the gate is inert. |
 | **`pulse/`** | The **`estate-pulse.sh` daemon**, in the background. `pulse.json` plus one `.txt` per instrument. | `session-start.sh` (echoes the reading), `coord-nudge.sh` (surfaces swarm alerts), the cockpit. Derived and disposable — the ledgers remain the record. |
 | **`~/.notrest/auto-build/`** | The **owner**, via `compile.py auto --on`. Deliberately outside the estate. | `session-start.sh`, to decide whether to echo a nudge or a directive. Authorizes *dispatching* a lane and nothing else — installing is still the owner's act. |
 
@@ -498,7 +624,20 @@ was delegated and what it cost, findings.jsonl for what was learned. All four ar
 machines at zero model cost, and all four are append-only, so the record cannot be quietly
 revised. Three gates make the rules binding rather than merely stated: the spawn gate refuses
 an unlawful lane at the door, the Bash gate refuses a push while the instruments are red, and
-the Stop gate refuses a "done" while the commission's own checks are red. Delegation runs
+the Stop gate refuses a "done" while the commission's own checks are red — or while a
+correction the session took has not been banked as a lesson. That last one closes the estate's
+oldest leak: a lesson learned in one session used to live as prose in COORD and reach the next
+session only if it scrolled that far. Now it is a record with evidence and a scope, and the
+harness carries it forward on its own — into the continuation packet, into every lane's prompt
+at the spawn gate, into a router line when a prompt touches what it covers — with eval's
+LEARNING-LOOP auditing the whole loop from the other end and doctor's LOOP HEALTH reading
+whether it is still turning. 4.7.0 closes the same circle around a *lane*: its commission's
+`DONE-WHEN` block becomes its Stop gates at dispatch, and its return card is parsed straight
+into records at receipt — what it tested, what it left open, what it found, what it learned —
+so delegated work banks itself instead of being summarized. And the compiler now runs the same
+way: repeated work (and a lesson repeated three times) is drafted unattended by scripts, built
+and attacked by lanes a session can see, and adopted only when the fixture, the fair benchmark
+and the refuter are all green — automation bounded by gates rather than by asking. Delegation runs
 through `agentswarm` — one persistent lane per domain, resumed rather than respawned — and
 every lane's work comes back to a reviewer who is not its author, because nothing here grades
 itself. Continuity is the through-line: every hook fails open and silent, every instrument

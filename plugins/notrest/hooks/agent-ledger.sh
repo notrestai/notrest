@@ -72,7 +72,7 @@ NR_HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 export PYTHONDONTWRITEBYTECODE=1
 export GIT_ROOT PAYLOAD NR_HOOK_DIR
 python3 <<'PY' 2>/dev/null || true
-import os, sys, re, json, fcntl
+import os, sys, re, json, fcntl, subprocess
 from datetime import datetime, timezone
 
 
@@ -456,10 +456,179 @@ try:
             except Exception:
                 brief_rel = ""
 
+        # ── RETIRE THIS LANE'S GATES (4.7.0; rebuilt after the refuter round).
+        # spawn-gate.sh copied the commission's DONE-WHEN block into gates/ACTIVE.md under
+        # `## lane <key>` so the seat could not call the work done while the lane's own
+        # checks were red. The lane has stopped, so its section comes out.
+        #
+        # B3 — THE KEY IS READ, NEVER DERIVED. The pairing used to be sha1 of the first
+        # 400 chars of the prompt, recomputed here from the transcript. It broke two ways,
+        # both fatal: a prompt that ALREADY contained the LEARNINGS marker moved the cut,
+        # and two lanes sharing a 400-char preamble collided. A section that cannot be
+        # matched cannot be retired, and an unretireable gate holds the seat's Stop red
+        # forever. spawn-gate now mints the key and writes it as the LAST line of the
+        # prompt; this reads that line off the banked brief and matches on it verbatim.
+        # No key line (an older lane, a hand-written prompt): nothing is retired here —
+        # session-start.sh's 24h sweeper is the backstop, and it is also what covers a
+        # lane that dies without ever reaching SubagentStop.
+        try:
+            _lk = ""
+            for _ln in reversed((brief_text or "").splitlines()):
+                if not _ln.strip():
+                    continue
+                # F2 (refuter, BLOCKER): EXACTLY eight hex. A short key like `01af` used
+                # to be accepted and then matched with startswith, so one crafted tail
+                # retired every section whose key began with those digits. Equality on a
+                # fixed width closes it. A lane that copies ANOTHER lane's full 8-hex key
+                # out of the repo can still retire that lane's gates — that is outside the
+                # threat model: it needs the exact secret, and every lane can already read
+                # gates/ACTIVE.md.
+                _m = re.match(r"^\[notrest lane-key: ([0-9a-f]{8})\]$", _ln.strip())
+                if _m:
+                    _lk = _m.group(1)
+                break                      # the key is the LAST line or it is not there
+            if _lk:
+                _gp = safe(os.path.join(git_root, "gates", "ACTIVE.md"))
+                if _gp and os.path.isfile(_gp):
+                    with open(_gp, "r", encoding="utf-8", errors="replace") as _f:
+                        _old = _f.read().splitlines()
+                    _out, _skip, _hit = [], False, False
+                    for _ln in _old:
+                        # equality on the parsed key — never a prefix test
+                        _hm = re.match(r"^## lane ([0-9a-f]{8})\b", _ln)
+                        if _hm and _hm.group(1) == _lk:
+                            _skip, _hit = True, True
+                            continue
+                        if _skip and _ln.startswith("## "):
+                            _skip = False
+                        if not _skip:
+                            _out.append(_ln)
+                    if _hit:
+                        while _out and not _out[-1].strip():
+                            _out.pop()
+                        # A GATE-LESS HUSK WEDGES THE STOP (found retiring the B3 repro):
+                        # gate-check rules a file with no CHECK: "CONTRACT DECLARES NO
+                        # GATE", which is exit 3 — unreadable — and completion-gate blocks
+                        # on it forever. Its own remedy is "arm a CHECK: or delete the
+                        # file", so when the last armed gate leaves and only comments
+                        # remain, the husk goes with it. Conservative on purpose: anything
+                        # that is not a comment or a heading counts as content and stays.
+                        _live = [l for l in _out if l.strip()
+                                 and not l.lstrip().startswith(("#", "<!--", "-->"))]
+                        _armed = [l for l in _out
+                                  if re.match(r"^\s{0,3}(?:[-*]\s+)?CHECK:", l)]
+                        if not _armed and not _live:
+                            os.remove(_gp)
+                        else:
+                            _tmp = _gp + ".tmp"
+                            with open(_tmp, "w", encoding="utf-8") as _f:
+                                _f.write("\n".join(_out) + "\n")
+                            os.replace(_tmp, _gp)
+        except Exception:
+            pass
+
+        # ── THE FOUR-BOX CARD (4.7.0). A lane's last message may end with the card —
+        # TESTS / OPEN / FINDINGS / LEARNINGS — and everything in it is estate memory
+        # that used to die with the transcript. THE PARSER IS NOT COPIED HERE: index.py's
+        # parse_card is imported by path and called, so the grammar has exactly one
+        # implementation and a lane return cannot drift from what the estate reads. The
+        # KIND COMES FROM THE BOX, never the checkbox — an unchecked TESTS item is still
+        # a result, and index.py is where that rule lives.
+        #
+        # ALL OR NOTHING: a card that cannot be banked whole banks NOTHING and says so in
+        # this row. The store is append-only, so half a card is a mess nobody can undo,
+        # and a WARN the operator can see beats a silent partial write.
+        card_note = ""
+        try:
+            _cards = []
+            _idx = os.path.normpath(os.path.join(
+                os.environ.get("NR_HOOK_DIR", ""), "..", "skills", "archivist",
+                "scripts", "index.py"))
+            if last_full and os.path.isfile(_idx):
+                import importlib.util as _ilu
+                _spec = _ilu.spec_from_file_location("nr_index", _idx)
+                _mod = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_mod)          # PYTHONDONTWRITEBYTECODE=1 is set
+                _cards = _mod.parse_card(last_full) or []
+            if _cards:
+                _why = ""
+                if not brief_rel:
+                    _why = "no banked brief to cite as evidence"
+                _recs = []
+                for _it in _cards:
+                    _kind = _it.get("kind") or ""
+                    _stmt = (_it.get("statement") or "").strip()
+                    if not _kind or not _stmt:
+                        _why = _why or "an item has no kind or no statement"
+                        break
+                    # WHICH FIELDS A KIND MAY CARRY IS index.py's ANSWER, imported with
+                    # the parser rather than copied: a `source` on a result, or a `ran` on
+                    # a learning, is refused by the store, and a hook that guessed the map
+                    # would fail the whole card the day the map changed.
+                    _allowed = set(getattr(_mod, "KIND_ONLY_FIELDS", {}).get(_kind, ()))
+                    _rec = {"kind": _kind, "statement": _stmt,
+                            # type "path" + label "cited": the brief is a file on disk in
+                            # this repo, quotable by anyone — not a recollection.
+                            "evidence": [{"type": "path", "ref": brief_rel,
+                                          "label": "cited"}]}
+                    # F1 (refuter, BLOCKER): a lane's card is the lane's WORD, not the
+                    # estate's. Banked bare, a LEARNINGS box became indistinguishable from
+                    # a seat-ruled lesson and rode the next spawn-gate digest into every
+                    # other lane — a lane could write estate policy for lanes that follow.
+                    # Two marks: the source says WHICH lane said it, and status=proposed
+                    # keeps it out of every digest until a human promotes it. Results and
+                    # findings are untouched: they are observations, not policy.
+                    if "source" in _allowed:
+                        _rec["source"] = "lane:" + agent_id
+                    if _kind in ("learning", "open", "alternative"):
+                        _rec["status"] = "proposed"
+                    _sc = _it.get("scope")
+                    if isinstance(_sc, str):
+                        _sc = [t.strip() for t in _sc.split(",") if t.strip()]
+                    if _sc and "scope" in _allowed:
+                        _rec["scope"] = _sc
+                    for _k in ("tag", "closes_when", "owner", "recheck", "ran",
+                               "command", "exit", "method", "when_to_try", "cost"):
+                        # NOT `if _it.get(_k)` — EXIT 0 IS FALSY (caught by an arm, and
+                        # only visible once index.py started typing exit as an int, which
+                        # it now does: the coercion this hook used to do at the boundary
+                        # is gone). A passing test carries exit 0, so a truthiness test
+                        # here dropped the one field the store then refused the card for.
+                        _v = _it.get(_k)
+                        if _k in _allowed and _v is not None and _v != "":
+                            _rec[_k] = _v
+                    if "scope" in _allowed and _kind in ("learning", "open") \
+                       and not _rec.get("scope"):
+                        _why = _why or ("a %s item carries no scope" % _kind)
+                        break
+                    _recs.append(_rec)
+                if _why:
+                    card_note = " | card: WARN not banked (%s)" % _why
+                else:
+                    _ids, _bad = [], ""
+                    for _rec in _recs:
+                        _pr = subprocess.run(
+                            [sys.executable, _idx, "add", "--root", git_root,
+                             "--json", json.dumps(_rec)],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+                        if _pr.returncode != 0:
+                            _bad = (_pr.stderr or b"").decode("utf-8", "replace").strip()
+                            _bad = re.sub(r"\s+", " ", _bad)[:80]
+                            break
+                        _ids.append((_pr.stdout or b"").decode("utf-8", "replace").strip())
+                    if _bad:
+                        card_note = " | card: WARN %d/%d banked then refused (%s)" % (
+                            len(_ids), len(_recs), _bad) if _ids else \
+                            " | card: WARN not banked (%s)" % _bad
+                    else:
+                        card_note = " | card: %d banked (%s)" % (len(_ids), ",".join(_ids))
+        except Exception:
+            card_note = ""     # the hook's silence law outranks the card
+
         entry = (f"- [{ts}] agent={agent_id} model={model} bytes={size} "
                  f"calls={calls_s} secs={secs} "
                  f"| last: {snippet} | transcript: {tdisp}"
-                 + (f" | brief: {brief_rel}" if brief_rel else "") + "\n")
+                 + (f" | brief: {brief_rel}" if brief_rel else "") + card_note + "\n")
 
         header = (
             "# COORD-AGENTS.md — agent activity ledger (auto-written by the notrest SubagentStop hook)\n"

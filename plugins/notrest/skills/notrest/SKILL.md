@@ -122,9 +122,39 @@ python3 <notrest-skill>/scripts/establish.py continuation --root .
 
 Root and established state · the COORD tail (last 25) · the agent tail (last 10) · how many
 volumes are already sealed behind them · the newest **ship / gate / correction** lines ·
-briefs banked · the spend ledger's own last line · git HEAD, dirty count, last subject.
+briefs banked · the spend ledger's own last line · git HEAD, dirty count, last subject · the
+**LEARNINGS** block.
 Read-only, no clock, byte-identical twice on an unchanged estate. **This is where you stand
 before anyone tells you anything.**
+
+**The LEARNINGS block** sits after the ledger tail: how many lessons the estate has banked,
+then the newest three as digest lines, under the same byte law as everything else in the
+packet.
+
+```
+| LEDGER TAIL (last 1; each line clipped to 200 bytes):
+| - [2026-09-05 05:00Z] [seat] x -> y | evidence: z
+| CARD: TESTS 0 · OPEN 0 · FINDINGS 0 · LEARNINGS 3 · PROPOSED 2 awaiting review (`index.py card`)
+| LEARNINGS (3 banked; newest 3 — full list: `index.py learnings`):
+| L-3 [RULED] A fork ignores the model parameter and inherits the seat. — evidence: briefs/amendment-2026-09-01-offload-policy.md
+| LIBRARY LEARNINGS (1 on the shelf; newest 1 — `index.py learnings --library`):
+| L-3 [RULED] A fork ignores the model parameter and inherits the seat. — evidence: briefs/… [lt]
+```
+
+Beside it the packet carries the **CARD** counts line (TESTS / OPEN / FINDINGS / LEARNINGS —
+what this estate has tested, what it left open, what it knows, what it learned — plus
+**`PROPOSED n awaiting review`**, lessons lanes proposed that no seat has ruled on yet; only
+accepted ones are in the block above) and, where a
+library shelf exists, **LIBRARY LEARNINGS**: the newest lessons other projects on this machine
+banked with scope `library`, each tagged with the project it came from, so a lesson another
+estate already paid for arrives before this one repeats it.
+
+The LEARNINGS block is **absent, not empty**, when the store holds no learning — a header over nothing teaches
+a successor that the estate has no lessons, which is a different claim from *nobody has banked
+any yet*. These are the corrections, rulings and paid-for defects this project has already
+recorded: they are inherited, not re-derived, and re-litigating one is exactly the expensive
+verification the continuation ritual exists to avoid. Bank the new ones the same way (fable-mode
+rule 13); the Stop gate will ask for them if you do not.
 
 **2 · FIND THE MENTOR — ask once, batched.** Where task/session-management tools exist
 (Codex: `list_threads` / `send_message_to_thread`; Claude desktop: `list_sessions` /

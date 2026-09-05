@@ -943,6 +943,170 @@ def git_facts(root):
     return True, (head if rc == 0 and head else None), dirty, (subj if rc3 == 0 and subj else None)
 
 
+LEARN_STORE = os.path.join("archive", "findings.jsonl")
+BRIEF_LEARNINGS = 3             # newest N rendered in the packet
+BRIEF_LIB_LEARNINGS = 2         # newest N from the machine-wide shelf (4.7 E)
+LIB_ENV = "NOTREST_LIBRARY_ROOT"
+LIB_LEARNINGS = "learnings.jsonl"
+LEARN_DIGEST_CAP = 300          # a learning statement's own bound, from the record schema
+
+
+def learnings_state(root):
+    """(total, [newest-first digest bodies]) from the findings store.
+
+    ⛔ READ DIRECTLY, AND FAIL OPEN. This runs inside a SessionStart hook under a 5s
+    deadline, so it does not shell out to archivist's index.py — a cross-skill subprocess
+    is slower than reading the file and is a path-resolution failure the hook could not
+    survive. A corrupt or unreadable store yields (0, []) and the packet ships without a
+    LEARNINGS block: a lesson nobody can read is not worth a session nobody can start.
+
+    The body is the SHARED DIGEST FORMAT minus its frame — `dline` supplies the packet's
+    own "| " prefix and its 200-byte whole-line clip, so these lines obey exactly the same
+    law as every other field rather than a second one of their own.
+    """
+    path = in_root(root, LEARN_STORE)
+    if path is None or not os.path.isfile(path):
+        return 0, []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            raw = fh.read(LEDGER_READ_CAP * 4)
+    except OSError:
+        return 0, []
+    # ⛔ ONLY ACCEPTED RECORDS ARE QUOTED (B2). A lane's unreviewed proposal is a claim,
+    # not inherited law, and a successor reads this block as law.
+    all_recs, retired, proposed = _resolve_store(raw)
+    recs = [r for r in all_recs if r.get("kind") == "learning"
+            and r.get("id") not in retired and r.get("id") not in proposed]
+
+    def key(r):
+        m = re.match(r"^L-(\d+)$", str(r.get("id", "")))
+        return (str(r.get("ts", "")), int(m.group(1)) if m else 0)
+
+    recs.sort(key=key, reverse=True)
+    bodies = []
+    for r in recs[:BRIEF_LEARNINGS]:
+        ev = "-"
+        evidence = r.get("evidence")
+        if isinstance(evidence, list) and evidence and isinstance(evidence[0], dict):
+            ev = str(evidence[0].get("ref", "-"))
+        stmt = str(r.get("statement", ""))[:LEARN_DIGEST_CAP]
+        bodies.append("%s [%s] %s — evidence: %s"
+                      % (r.get("id", "L-?"), r.get("tag", "?"), stmt, ev))
+    return len(recs), bodies
+
+
+RULING_RE = re.compile(r"^(supersedes|refutes|accepts|rejects)\s+([FLOA]-\d+)\b", re.I)
+
+def _resolve_store(raw):
+    """(records, retired, proposed) — the append-only store read the way it is written.
+
+    ⛔ THE STATUS ON A RECORD IS ITS BIRTH STATUS, NOT ITS CURRENT ONE. A lane's proposal
+    stays `proposed` on disk forever; the seat's acceptance is a LATER record naming it.
+    Reading the stored field alone meant an accepted lesson never reached the packet and a
+    rejected one still could — the packet must resolve, exactly as the store does.
+    """
+    recs, retired, proposed, ruled = [], set(), set(), {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(r, dict):
+            continue
+        recs.append(r)
+        st = str(r.get("status", ""))
+        if st in ("superseded", "refuted", "rejected"):
+            retired.add(r.get("id"))
+        elif st == "proposed":
+            proposed.add(r.get("id"))
+        m = RULING_RE.match(str(r.get("statement", "")))
+        if m and m.group(2).upper() in (r.get("links") or []):
+            ruled[m.group(2).upper()] = m.group(1).lower()
+    for rid, verb in ruled.items():
+        if verb in ("supersedes", "refutes", "rejects"):
+            retired.add(rid)
+            proposed.discard(rid)
+        elif verb == "accepts":
+            proposed.discard(rid)
+    return recs, retired, proposed
+
+
+def _read_learning_lines(path, limit, tag_origin=False):
+    """Newest `limit` learning digest bodies from a JSONL file. Shared by the estate store
+    and the shelf, and tolerant in exactly the same way: one bad line never costs a
+    session its packet."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            raw = fh.read(LEDGER_READ_CAP * 4)
+    except OSError:
+        return 0, []
+    # ⛔ ONLY ACCEPTED RECORDS ARE QUOTED. A successor reads this block as inherited law;
+    # a sentence a lane wrote about itself and nobody reviewed is not that.
+    all_recs, retired, proposed = _resolve_store(raw)
+    recs = [r for r in all_recs if r.get("kind") == "learning"
+            and r.get("id") not in retired and r.get("id") not in proposed]
+
+    def key(r):
+        m = re.match(r"^L-(\d+)$", str(r.get("id", "")))
+        return (str(r.get("ts", "")), int(m.group(1)) if m else 0)
+
+    recs.sort(key=key, reverse=True)
+    bodies = []
+    for r in recs[:limit]:
+        ev = "-"
+        evidence = r.get("evidence")
+        if isinstance(evidence, list) and evidence and isinstance(evidence[0], dict):
+            ev = str(evidence[0].get("ref", "-"))
+        stmt = str(r.get("statement", ""))[:LEARN_DIGEST_CAP]
+        body = "%s [%s] %s — evidence: %s" % (r.get("id", "L-?"), r.get("tag", "?"),
+                                              stmt, ev)
+        if tag_origin and r.get("origin_project"):
+            body += " [%s]" % r["origin_project"]
+        bodies.append(body)
+    return len(recs), bodies
+
+
+def library_learnings_state():
+    """(total, newest N bodies) from the MACHINE-WIDE shelf — what other estates paid for.
+
+    Absent shelf, absent file, unreadable file: (0, []) and the packet simply carries no
+    LIBRARY block. A session must never fail to start because a shared file on this
+    machine is missing or half-written by another estate.
+    """
+    v = os.environ.get(LIB_ENV) or ""
+    lib = (os.path.expanduser(v) if v.strip()
+           else os.path.join(os.path.expanduser("~"), ".claude", "notrest-library"))
+    path = os.path.join(lib, LIB_LEARNINGS)
+    if not os.path.isfile(path):
+        return 0, []
+    return _read_learning_lines(path, BRIEF_LIB_LEARNINGS, tag_origin=True)
+
+
+def card_counts(root):
+    """(tests, open, findings, learnings) — the card's four counts, for the packet's
+    one-line summary. Counts LIVE records only, so a superseded open question does not
+    keep asking."""
+    path = in_root(root, LEARN_STORE)
+    counts = {"result": 0, "open": 0, "finding": 0, "learning": 0, "proposed": 0}
+    if path is None or not os.path.isfile(path):
+        return counts
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            raw = fh.read(LEDGER_READ_CAP * 4)
+    except OSError:
+        return counts
+    recs, retired, proposed = _resolve_store(raw)
+    counts["proposed"] = len(proposed)
+    for r in recs:
+        k = r.get("kind")
+        if k in counts and r.get("id") not in retired and r.get("id") not in proposed:
+            counts[k] += 1
+    return counts
+
+
 def packet(root, surface="claude"):
     """Everything a fresh seat needs to continue, in one gulp. NO CLOCK: every timestamp
     here comes off a file, so the same estate yields the same packet twice."""
@@ -999,6 +1163,9 @@ def packet(root, surface="claude"):
     established = cs == PASS and all(_usable(v) for v in states.values())
     versions = sorted(set(v["version"] for v in states.values() if v["version"] is not None))
     stale = [SURFACE_FILES[r] for r, v in states.items() if _stale_version(v)]
+    _learn_total, _learn_digest = learnings_state(root)
+    _lib_total, _lib_digest = library_learnings_state()
+    _cards = card_counts(root)
     return {
         "root": root,
         "surface": surface,
@@ -1022,6 +1189,11 @@ def packet(root, surface="claude"):
         "newest_gates": flags["gate"][-FLAG_TAIL:],
         "newest_corrections": flags["correction"][-FLAG_TAIL:],
         "briefs": briefs,
+        "learnings_total": _learn_total,
+        "learnings_digest": _learn_digest,
+        "library_learnings_total": _lib_total,
+        "library_learnings_digest": _lib_digest,
+        "card_counts": _cards,
         "spend_last_line": spend_verdict(root),
         "git_repo": is_repo,
         "git_head": head,
@@ -1171,6 +1343,32 @@ def print_brief(root, surface, p):
                % (len(tail), BRIEF_LINE_BYTES))
     for ln in tail:
         dline(out, ln)
+    # ── LEARNINGS, after the ledger tail: what this estate already PAID to find out.
+    # ABSENT, NOT EMPTY, when the store has none — a header over nothing teaches a reader
+    # that the block is noise, and the next one they skip is the one that mattered.
+    # The CARD counts: the four boxes a lane return ends with, so a successor sees at a
+    # glance what is proven, what is still owed, and what has been learned. OPEN is the
+    # number that matters — it is the estate's own list of what it has not checked.
+    _cc = p.get("card_counts") or {}
+    if any(_cc.values()):
+        dline(out, "CARD: TESTS %d · OPEN %d · FINDINGS %d · LEARNINGS %d%s "
+                   "(`index.py card`)"
+                   % (_cc.get("result", 0), _cc.get("open", 0),
+                      _cc.get("finding", 0), _cc.get("learning", 0),
+                      (" · PROPOSED %d awaiting review" % _cc["proposed"])
+                      if _cc.get("proposed") else ""))
+    if p.get("learnings_total"):
+        dline(out, "LEARNINGS (%d banked; newest %d — full list: `index.py learnings`):"
+                   % (p["learnings_total"], len(p["learnings_digest"])))
+        for body in p["learnings_digest"]:
+            dline(out, body)
+    # What OTHER estates paid for. Absent, not empty, when the shelf holds nothing.
+    if p.get("library_learnings_total"):
+        dline(out, "LIBRARY LEARNINGS (%d on the shelf; newest %d — "
+                   "`index.py learnings --library`):"
+                   % (p["library_learnings_total"], len(p["library_learnings_digest"])))
+        for body in p["library_learnings_digest"]:
+            dline(out, body)
     dline(out, "CONTINUABLE — full packet: `establish.py continuation` from this root "
                "(or /notrest)")
     print(BRIEF_HEADER)

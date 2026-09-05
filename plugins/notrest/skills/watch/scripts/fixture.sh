@@ -4,7 +4,9 @@
 # inside its own mktemp dir, never touches a real watch/ directory and never reaches
 # the network. Usage: bash <watch-skill>/scripts/fixture.sh   (exit 0 = all pass)
 set -u
-WP="$(cd "$(dirname "$0")" && pwd)/watch.py"
+# WATCH_PY overrides the script under test — see the note in compile's fixture:
+# a new arm must be shown to FAIL against the previous revision.
+WP="${WATCH_PY:-$(cd "$(dirname "$0")" && pwd)/watch.py}"
 W="$(mktemp -d)"
 # The trap must not decide the exit status: a `kill` of an already-dead server returns
 # 1, and that would surface as a fixture failure nobody could reproduce. Kill first,
@@ -210,9 +212,14 @@ EOF
  "statement":"The pricing page lists the on-demand rate.",
  "evidence":[{"type":"url","ref":"$U/pricing.html","label":"cited"}],"relation":"toward"}
 EOF
+  # 4.7: kind=result now REQUIRES ran/command/exit (archivist docket C) — TESTS is a
+  # count of records each naming a command and an exit code, not a number someone typed.
+  # This seed predates that rule and was rejected by the live store, which took six
+  # arms down with it; it is the seed that is stale, not the rule.
   seed <<EOF
 {"ts":"2026-06-01T00:00:00Z","session":"fixture","skill":"factcheck","kind":"result",
  "statement":"Two independent registries agree on the state count.",
+ "ran":"cross-read both registry pages","command":"bash scripts/cross-read-registries.sh","exit":0,
  "evidence":[{"type":"url","ref":"$U/registry.html","label":"cited"},
              {"type":"url","ref":"$U/pricing.html","label":"cited"}],"relation":"toward"}
 EOF
@@ -258,7 +265,12 @@ EOF
     || ok "a status-flip tombstone is left off"
   has "$W/add1.txt" "url evidence — nothing re-readable" "says why F-4 was left off"
   has "$W/add1.txt" "not effectively live (refuted)" "says why F-6 was left off"
-  has "$W/add1.txt" "status-flip tombstone" "says why F-7 was left off"
+  # F-7 is the refute tombstone. It is `kind=decision` since the archivist's 4.7 change,
+  # so it is left off one reason EARLIER than it used to be — by its kind, before its
+  # shape is ever examined. The tombstone filter itself is still armed, on a tombstone
+  # that WOULD have got past the kind gate: section F below.
+  has "$W/add1.txt" "kind=decision (rows come from finding|result)" \
+      "says why F-7 was left off"
   has "$W/add1.txt" "already watched" "F-1 was already on the list — skipped, not duplicated"
 
   BEFORE_ADD="$(cat "$W/root/watch/watchlist.md")"
@@ -272,6 +284,113 @@ EOF
   t "the appended rows parse and fall due like any other" "$?" "3"
   has "$W/due3.txt" "DUE  W7" "W7 is due (weekly, first verified 2026-06-01)"
   has "$W/due3.txt" "via F-2" "due resolved the new row through the store"
+
+  # ── F · open questions are on the same calendar (docket G) ────────────────────────
+  echo "── F · open questions on the clock"
+  # The archivist's `open` kind records what was NOT tested and carries a recheck date.
+  # That date only means something if something READS it — otherwise an open question
+  # ages quietly into folklore, which is the failure the kind exists to prevent.
+  oseed(){ python3 "$IDX" add --root "$R" --json "$(cat)" >/dev/null 2>&1; }
+  oseed <<'EOF'
+{"ts":"2026-05-01T00:00:00Z","session":"fixture","skill":"agentswarm","kind":"open",
+ "statement":"The unattended pipeline was never run against a real estate overnight.",
+ "closes_when":"bash scripts/fixture.sh exits 0 after a real overnight run",
+ "owner":"seat","recheck":"2026-06-01","scope":["compile"],
+ "evidence":[{"type":"path","ref":"briefs/commission.md","label":"cited"}],"relation":"toward"}
+EOF
+  oseed <<'EOF'
+{"ts":"2026-05-02T00:00:00Z","session":"fixture","skill":"agentswarm","kind":"open",
+ "statement":"Whether the daily cap holds across a DST boundary is untested.",
+ "closes_when":"run the cap arm with TZ set either side of the change",
+ "owner":"lane-c","recheck":"2099-01-01","scope":["compile"],
+ "evidence":[{"type":"path","ref":"briefs/commission.md","label":"cited"}],"relation":"toward"}
+EOF
+  python3 "$WP" due --root "$R" --today 2026-07-25 > "$W/odue.txt" 2>&1
+  t "due exits 3 with an open question past its recheck date" "$?" "3"
+  has "$W/odue.txt" "OPEN O-1" "the overdue open question is listed by id"
+  has "$W/odue.txt" "recheck=2026-06-01" "…with the date that brought it round"
+  has "$W/odue.txt" "owner=seat" "…and the owner who can close it"
+  has "$W/odue.txt" "closes when: bash scripts/fixture.sh exits 0" "…and its closing check"
+  has "$W/odue.txt" "watch.py close O-1" "…and the exact command that closes it"
+  grep -q "OPEN O-2" "$W/odue.txt" && no "a 2099 recheck must NOT be due" \
+    || ok "an open question whose date has not come is not due"
+  has "$W/odue.txt" "1 open question(s) due of 2 live open (0 already closed)" \
+      "counts the open records it read"
+  has "$W/odue.txt" "due of 8 rows" "…without disturbing the watchlist half of the count"
+
+  # closing: through the store's own door, citing the open id
+  python3 "$WP" close O-1 --root "$R" --exit 0 --ran "the compile fixture on a scratch copy" \
+    > "$W/oclose.txt" 2>&1
+  t "close exits 0" "$?" "0"
+  has "$W/oclose.txt" "CLOSED O-1" "names what it closed"
+  has "$W/oclose.txt" "COORD line:" "prints the COORD line for the session to bank"
+  t "the closing record went in as a kind=result with a real exit code" "$(python3 -c "
+import json
+recs=[json.loads(l) for l in open('$R/archive/findings.jsonl') if l.strip()]
+r=[x for x in recs if str(x.get('statement','')).startswith('closes O-1')][-1]
+print(r['kind']=='result' and r['exit']==0 and bool(r['command']) and bool(r['ran']))")" "True"
+  t "…citing the open id in links, where the store validates it" "$(python3 -c "
+import json
+recs=[json.loads(l) for l in open('$R/archive/findings.jsonl') if l.strip()]
+r=[x for x in recs if str(x.get('statement','')).startswith('closes O-1')][-1]
+print(r['links'])")" "['O-1']"
+  t "…defaulting the command to the record's own closes_when" "$(python3 -c "
+import json
+recs=[json.loads(l) for l in open('$R/archive/findings.jsonl') if l.strip()]
+r=[x for x in recs if str(x.get('statement','')).startswith('closes O-1')][-1]
+print(r['command'].startswith('bash scripts/fixture.sh'))")" "True"
+  python3 "$WP" due --root "$R" --today 2026-07-25 > "$W/odue2.txt" 2>&1
+  grep -q "OPEN O-1" "$W/odue2.txt" && no "a closed question must leave the calendar" \
+    || ok "a closed question is off the calendar"
+  has "$W/odue2.txt" "(1 already closed)" "…and is counted as closed, not vanished"
+  python3 "$WP" close O-1 --root "$R" --exit 0 > "$W/oclose2.txt" 2>&1
+  t "closing the same question twice is refused (5)" "$?" "5"
+  has "$W/oclose2.txt" "already closed by" "…naming the record that closed it"
+  python3 "$WP" close O-2 --root "$R" --exit 3 > "$W/oclose3.txt" 2>&1
+  t "a non-zero closing check with no note is refused (2)" "$?" "2"
+  has "$W/oclose3.txt" "is a finding, not a formality" "…saying why a note is required"
+  python3 "$WP" close O-2 --root "$R" --exit 3 \
+    --note "the vendor withdrew the API; its absence settles the question" > "$W/oclose4.txt" 2>&1
+  t "…and IS allowed once the failure is explained (0)" "$?" "0"
+  has "$W/oclose4.txt" "The question is closed because the failure settled it" \
+      "…saying out loud that the check did not pass"
+  python3 "$WP" close O-99 --root "$R" --exit 0 >/dev/null 2>&1
+  t "closing a record that does not exist exits 2" "$?" "2"
+  python3 "$WP" close F-1 --root "$R" --exit 0 > "$W/oclose5.txt" 2>&1
+  t "closing a non-open id exits 2" "$?" "2"
+  has "$W/oclose5.txt" "not an open-record id" "…saying which id space close reads"
+  python3 "$WP" close O-1 --root "$R" >/dev/null 2>&1
+  t "close without --exit is a usage error (2)" "$?" "2"
+
+  # an unparsable recheck is DUE NOW and says so — a clock nobody can read is not a
+  # reason to stop watching (the ruling next_due already makes for Last checked).
+  printf '{"id":"O-3","ts":"2026-05-03T00:00:00Z","session":"fixture","skill":"x","kind":"open","statement":"A question whose clock was typed wrong.","closes_when":"read it","owner":"seat","recheck":"soon","scope":["x"],"source":"seat","evidence":[{"type":"path","ref":"briefs/commission.md","label":"cited"}],"relation":"toward","status":"live","links":[]}\n' \
+    >> "$R/archive/findings.jsonl"
+  python3 "$WP" due --root "$R" --today 2026-07-25 > "$W/odue3.txt" 2>&1
+  has "$W/odue3.txt" "OPEN O-3" "an unparsable recheck date is due now"
+  has "$W/odue3.txt" "treated as due now" "…and says why, rather than dropping the row"
+
+  # an estate that keeps open questions but no watchlist still has a calendar
+  RO="$W/opensonly"; mkdir -p "$RO"
+  python3 "$IDX" add --root "$RO" --json '{"ts":"2026-05-01T00:00:00Z","session":"f","skill":"x","kind":"open","statement":"An estate with no watchlist can still owe an answer.","closes_when":"answer it","owner":"seat","recheck":"2026-06-01","scope":["x"],"evidence":[{"type":"path","ref":"a.md","label":"cited"}],"relation":"toward"}' \
+    >/dev/null 2>&1
+  WATCH_INDEX_PY="$IDX" python3 "$WP" due --root "$RO" --today 2026-07-25 > "$W/odue4.txt" 2>&1
+  t "due works with open records and no watchlist at all (3)" "$?" "3"
+  has "$W/odue4.txt" "OPEN O-1" "…listing the open question"
+  RN="$W/nothing"; mkdir -p "$RN"
+  WATCH_INDEX_PY="$IDX" python3 "$WP" due --root "$RN" >/dev/null 2>&1
+  t "…and an estate with neither still exits 2, as before" "$?" "2"
+
+  # the tombstone filter, armed on a tombstone that gets PAST the kind gate
+  oseed <<EOF
+{"ts":"2026-06-20T00:00:00Z","session":"fixture","skill":"factcheck","kind":"finding",
+ "statement":"supersedes F-3 — the registry moved to a new host.",
+ "evidence":[{"type":"url","ref":"$U/registry.html","label":"cited"}],"relation":"toward"}
+EOF
+  python3 "$WP" add --from-findings --root "$R" --today 2026-07-26 > "$W/add3.txt" 2>&1
+  t "add --from-findings still exits 0 with a tombstone-shaped finding present" "$?" "0"
+  has "$W/add3.txt" "a status-flip tombstone, not a claim about the world" \
+      "a tombstone that clears the kind gate is still left off, by its shape"
 fi
 
 echo

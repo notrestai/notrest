@@ -1,6 +1,15 @@
 #!/bin/bash
 # notrest SessionStart hook — continuity nudge + self-update.
 
+# ── UNATTENDED RUNS GET NOTHING (4.7.0). NOTREST_UNATTENDED=1 marks a session with no
+# human at the keyboard — a scheduled runner, an auto-build lane. Every line this hook
+# prints is stdout injected as session context: nudges, the packet, the discipline anchor.
+# All of it is addressed to a person who is not there, and all of it is tokens the runner
+# pays for. THE SELF-UPDATE GOES TOO, and that is the load-bearing half: a `git pull`
+# under an unattended run would move the tree beneath work already in flight, with nobody
+# watching. First statement in the file, before any side effect.
+[ "${NOTREST_UNATTENDED:-}" = "1" ] && exit 0
+
 # ── self-update: if this plugin lives in a git clone, quietly pull latest.
 # Fire-and-forget: never blocks session start; --ff-only never clobbers local
 # edits (dirty/diverged clones are silently left alone). Updates apply from
@@ -245,8 +254,14 @@ try: c = json.load(open(sys.argv[1]))["candidates"]
 except Exception: sys.exit(0)
 r = [x for x in c if x.get("ripe") and x.get("status") == "NEW"]
 if r: print(r[0]["slug"], r[0]["occurrences"])' "$REPO_ROOT/compile/candidates.json" 2>/dev/null)"
-  if [ -n "$COMPILE_TOP" ]; then
-    read -r CSLUG CSEEN <<< "$COMPILE_TOP"
+  COMPILE_DRAFTED="$(python3 -c 'import json,sys
+try: c = json.load(open(sys.argv[1]))["candidates"]
+except Exception: sys.exit(0)
+d = [x for x in c if x.get("status") == "DRAFTED"]
+if d: print(d[0]["slug"])' "$REPO_ROOT/compile/candidates.json" 2>/dev/null)"
+  if [ -n "$COMPILE_TOP" ] || [ -n "$COMPILE_DRAFTED" ]; then
+    CSLUG=""; CSEEN=""
+    [ -n "$COMPILE_TOP" ] && read -r CSLUG CSEEN <<< "$COMPILE_TOP"
     # THE OWNER'S STANDING AUTHORIZATION, written by `compile.py auto --on`. It upgrades
     # this line from a nudge a human must answer into a directive the seat may act on —
     # and it authorizes exactly ONE thing: DISPATCHING a builder lane. It never
@@ -302,15 +317,154 @@ except Exception:
         NR_AUTOBUILD=""
         ;;
     esac
-    if [ -z "$NR_AUTOBUILD" ] && [ -f "$REPO_ROOT/compile/.auto-build" ]; then
-      echo "[notrest] compile/.auto-build is IGNORED since v4.5 — an in-estate marker is writable by any lane and travels with a clone. Re-authorize with: compile.py auto --on --root $REPO_ROOT (writes to ~/.notrest/auto-build/), then delete the old file."
-    fi
-    if [ -n "$NR_AUTOBUILD" ]; then
+    if [ -n "$NR_AUTOBUILD" ] && [ -n "$CSLUG" ]; then
       echo "[notrest] AUTO-BUILD opted in: dispatch ONE opus builder lane this session for ripe candidate $CSLUG (/compile $CSLUG) — isolated under compile/$CSLUG/, benchmarked, receipted; NEVER installed: shipping stays the owner's act."
-    else
+    elif [ -n "$CSLUG" ]; then
       echo "[notrest] Ripe compile candidate: $CSLUG seen ${CSEEN}x — repeated work the estate already recorded. Say /compile $CSLUG to move its stable parts into code (or compile.py decide --status DECLINED to silence)."
     fi
   fi
+  # ── THE DRAFTED SLUG (4.7.0). `draft --all-ripe` runs from the pulse, so by the time a
+  # session opens, the daemon may already have scaffolded a candidate. Naming it is the
+  # difference between work waiting in the tree and work nobody knows about.
+  if [ -n "$COMPILE_DRAFTED" ]; then
+    if [ -n "$NR_AUTOBUILD" ]; then
+      echo "[notrest] AUTO-BUILD dispatch ready: $COMPILE_DRAFTED is DRAFTED (contract + skeleton already scaffolded under compile/$COMPILE_DRAFTED/) — dispatch ONE opus builder lane for it this session. Isolated, benchmarked, receipted; NEVER installed: shipping stays the owner's act."
+    else
+      echo "[notrest] compile: $COMPILE_DRAFTED is DRAFTED and waiting under compile/$COMPILE_DRAFTED/ — say /compile $COMPILE_DRAFTED to build it, or compile.py decide --status DECLINED to retire it."
+    fi
+  fi
+fi
+# ── THE 24-HOUR GATE SWEEPER (refuter B3, 2026-09-05). A lane that dies without ever
+# reaching SubagentStop — killed, crashed, the session closed — leaves its gates section
+# behind, and an unretireable gate holds the seat's Stop red forever. Nothing else in the
+# estate would ever clear it. So every session start retires any `## lane <key> · opened
+# <ts>` section older than 24h and says so in COORD-AGENTS.md, where the lane's own row
+# lives. Hand-written sections carry no `opened` stamp and are never touched.
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/gates/ACTIVE.md" ]; then
+  NR_SWEPT="$(python3 -c '
+import os, re, sys, time
+
+gp = sys.argv[1]
+try:
+    with open(gp, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+except OSError:
+    raise SystemExit(0)
+
+now = time.time()
+out, swept, skip = [], [], False
+for ln in lines:
+    m = re.match(r"^## lane ([0-9a-f]{4,32}) . opened "
+                 r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s*$", ln)
+    if m:
+        try:
+            age = now - time.mktime(time.strptime(m.group(2), "%Y-%m-%dT%H:%M:%SZ")) \
+                + time.timezone
+        except ValueError:
+            age = 0
+        if age > 86400:
+            skip = True
+            swept.append(m.group(1))
+            continue
+        skip = False
+    elif skip and ln.startswith("## "):
+        skip = False
+    if not skip:
+        out.append(ln)
+if not swept:
+    raise SystemExit(0)
+while out and not out[-1].strip():
+    out.pop()
+# the same gate-less husk the ledger avoids: a file with no CHECK: left is exit 3 from
+# gate-check ("declares no gate"), which blocks every Stop until someone deletes it
+live = [l for l in out if l.strip() and not l.lstrip().startswith(("#", "<!--", "-->"))]
+armed = [l for l in out if re.match(r"^\s{0,3}(?:[-*]\s+)?CHECK:", l)]
+try:
+    if not armed and not live:
+        os.remove(gp)
+    else:
+        tmp = gp + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(out) + "\n")
+        os.replace(tmp, gp)
+except OSError:
+    raise SystemExit(0)
+sys.stdout.write(",".join(swept))' "$REPO_ROOT/gates/ACTIVE.md" 2>/dev/null)"
+  if [ -n "$NR_SWEPT" ] && [ -f "$REPO_ROOT/COORD-AGENTS.md" ]; then
+    # one row, in the ledger the lanes already write to — a gate that vanished without a
+    # trace would be indistinguishable from one that was never written.
+    printf -- '- [%s] gates SWEPT lane=%s | a gates/ACTIVE.md section outlived its 24h TTL and was retired at session start; the lane never reached SubagentStop\n' \
+      "$(date -u '+%Y-%m-%d %H:%MZ')" "$NR_SWEPT" >> "$REPO_ROOT/COORD-AGENTS.md" 2>/dev/null
+  fi
+  [ -n "$NR_SWEPT" ] && echo "[notrest] gates: retired stale lane section(s) $NR_SWEPT from gates/ACTIVE.md (older than 24h — the lane never stopped)."
+fi
+# ── THE UNATTENDED DAEMON'S OWN STATUS (4.7.0). A daemon that stops working stops
+# QUIETLY: on this estate the headless CLI's OAuth expired, every auto-run refused
+# authorization, and nothing said so — the pulse simply produced no builds. lane C writes
+# one overwritten line to pulse/auto-run.status; this surfaces it, but ONLY when it is bad
+# news (BLOCKED / COOLDOWN). OK and IDLE stay silent: a daemon that is working is not news,
+# and a banner every session is how a banner stops being read.
+# `compile.py auto` is again the ONE reader of the marker — unattended-ness is its answer,
+# not this hook's parse. The whole probe is behind a file test, so an estate without the
+# daemon pays nothing. Under NOTREST_UNATTENDED=1 this hook has already exited: the runner
+# is the daemon, and it does not need to be told about itself.
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/pulse/auto-run.status" ] \
+   && [ -f "$NR_PLUG/skills/compile/scripts/compile.py" ]; then
+  if python3 "$NR_PLUG/skills/compile/scripts/compile.py" auto --root "$REPO_ROOT" 2>/dev/null \
+     | grep -q "unattended: YES"; then
+    # ONCE PER UTC DAY (owner ruling, 2026-09-05). A stuck daemon stays stuck for as
+    # long as it takes the owner to fix it, and a line that repeats every session is a
+    # line that stops being read — the nag is how a real warning becomes wallpaper. The
+    # stamp is a date in pulse/auto-run.banner-day, written ONLY when the banner actually
+    # printed, so a day with no banner never spends the day's one telling.
+    # BLOCKED auth carries the remedy; COOLDOWN does not — a cooldown needs no command,
+    # it needs the clock.
+    NR_ARSTAT="$(python3 -c '
+import os, re, sys, time
+
+status, stampf = sys.argv[1], sys.argv[2]
+try:
+    with open(status, "r", encoding="utf-8", errors="replace") as f:
+        line = (f.readline() or "").strip()
+except OSError:
+    raise SystemExit(0)
+# the state word is the one after the [stamp]; anything else is not this grammar
+m = re.match(r"^\[[^\]]*\]\s+(BLOCKED|COOLDOWN)\b(.*)$", line)
+if not m:
+    raise SystemExit(0)
+
+today = time.strftime("%Y-%m-%d", time.gmtime())
+try:
+    with open(stampf, "r", encoding="utf-8", errors="replace") as f:
+        if f.read(32).strip() == today:
+            raise SystemExit(0)          # already told today
+except OSError:
+    pass
+
+out = line
+if m.group(1) == "BLOCKED" and m.group(2).strip().lower().startswith("auth"):
+    out += (" — run: python3 $CLAUDE_PLUGIN_ROOT/skills/compile/scripts/"
+            "compile.py credential --setup")
+out = out.encode("utf-8")[:240].decode("utf-8", "ignore")
+
+try:
+    tmp = stampf + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(today + "\n")
+    os.replace(tmp, stampf)              # stamped only because we are about to print
+except OSError:
+    pass                                 # unstampable: say it anyway, and say it again
+sys.stdout.write(out)' \
+      "$REPO_ROOT/pulse/auto-run.status" "$REPO_ROOT/pulse/auto-run.banner-day" 2>/dev/null)"
+    [ -n "$NR_ARSTAT" ] && echo "[notrest] unattended compile: $NR_ARSTAT"
+  fi
+fi
+# ── THE LEGACY MARKER (4.7.0): hoisted OUT of the ripe-candidate block above, where it
+# only spoke when a NEW ripe candidate happened to exist — an estate whose authorization
+# had silently stopped working could go a long time without being told. One line, and
+# only when the old file is really there and no valid marker replaced it.
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/compile/.auto-build" ] && [ -z "$NR_AUTOBUILD" ]; then
+  echo "[notrest] compile/.auto-build is IGNORED since v4.5 — an in-estate marker is writable by any lane and travels with a clone, so it is not the owner's authorization. Re-authorize with: compile.py auto --on --root $REPO_ROOT (writes to ~/.notrest/auto-build/), then delete the old file."
 fi
 # A lane blackboard is COORD-<LANE>.md — NOT the machine-written ledgers
 # (COORD-AGENTS.md, COORD-ARCHIVE.md, COORD-AGENTS-ARCHIVE.md), which exist in

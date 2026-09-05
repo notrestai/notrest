@@ -41,9 +41,10 @@ model. **Run it; don't re-improvise it.**
 | Call | Does | Exit |
 |---|---|---|
 | `watch.py add --from-findings --root .` | builds one row per watchable record in the findings store; idempotent | 0 (a re-run appends nothing) |
-| `watch.py due --root .` | parses the table, computes what the cadence has made due | **3** = something is due · 0 = nothing (a hook can branch on this) |
+| `watch.py due --root .` | parses the table **and the store's live `open` records**, computing what the cadence and the recheck dates have made due | **3** = something is due · 0 = nothing (a hook can branch on this) |
 | `watch.py probe <ID> --root .` | HEAD, then a conditional GET of that row's source; sha256 of the body against the row's stored `Hash` cell | **0** UNCHANGED · **3** CHANGED (body path printed) · **4** DEAD-SOURCE |
 | `watch.py append --json <file> --root .` | writes the dated block and updates Last checked/Status/Hash | 0 written · **5** refused (see below) |
+| `watch.py close O-<n> --exit <code> [--command …] [--ran …] --root .` | closes an open question: appends the closing `result` through `index.py`, cites the open id, and prints the COORD line for it | **0** written · **2** no such id, or the id is not a live open question · **5** already closed |
 
 **What this buys:** two of the three outcomes cost zero model tokens. A source that 404s,
 times out, or DNS-fails resolves to DEAD-SOURCE without a model reading anything; a page
@@ -194,6 +195,27 @@ it was added. Claims stay in double quotes, verbatim.
 ## `/watch run` — the recheck cycle
 
 Runs **now**, in this session. It is the same work factcheck does, scoped to one claim each.
+
+### Open questions are watched too
+
+Facts expire; so do the questions a project left open. An **`open` record** in the findings
+store — what was not tested, did not work, or could not be verified — carries a `recheck`
+date, and `watch.py due` lists the due ones **by id** beside the due claims. Same calendar,
+same instrument, one place to look.
+
+`due` reports both populations in one pass — *"N due of M rows"* for the watchlist and
+*"N open question(s) due of M live open"* for the store — and exits **3** when anything at all
+is due, so a hook can branch on one number.
+
+Closing one is `watch.py close O-<n> --exit <code> --command '<what you ran>'`: it appends the
+closing record through `index.py` and **cites the open id**. The `--exit` is not ceremony — an
+open question closes because something *ran*, so the closing record is a `result` carrying what
+ran, the exact command and the integer exit code, exactly like any other, so the answer and the question stay linked and the store
+can say *when* a thing stopped being unknown. Closing twice is refused (**exit 5**): the store
+is append-only, and a second closure would make the count of open questions a matter of
+opinion. An open question that quietly disappears from a
+handoff is the failure this prevents — an unanswered question is not the same as an answered
+one, and after a month nobody can tell them apart from prose alone.
 
 **Due:** `watch.py due --root .` — it computes `Last checked + cadence ≤ today` from the table
 so nobody does date arithmetic by eye. Check only what is due (`--all` overrides). Rows with

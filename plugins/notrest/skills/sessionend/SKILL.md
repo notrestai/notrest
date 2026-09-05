@@ -78,6 +78,19 @@ One-command closes, run after the files are written:
 - **archivist** installed and the project has ORACLE output folders → re-run its `scan` so
   `oracle-index.md` includes every dossier this session produced; the next session's oracle
   intake then starts already knowing the estate.
+  Then read the lessons back and **name the newest ones in `HANDOFF.md`**:
+  ```bash
+  python3 "<archivist-skill>/scripts/index.py" learnings --digest --limit 3 --root .
+  ```
+  Paste those digest lines under **Lessons banked** in the handoff, verbatim. The
+  continuation packet will carry them to a *model* successor on its own; the handoff is what
+  a **person** opens, and a lesson only a hook ever shows is a lesson the owner never reads.
+  Do the same for what is **unfinished**: `index.py card` prints the OPEN box, and those are
+  the questions the next session inherits — each already carrying a recheck date, so they age
+  on `watch.py due` instead of on somebody's memory.
+  If this session took a correction, a refuter defect or a red gate and banked nothing, say
+  that plainly instead of leaving the line empty — the Stop gate asks the same question, and
+  an empty line and an unlearned lesson look identical to the next reader.
 - **spend** installed and this session spawned agents / workflows / gpt calls → run its
   `report` and paste the verdict line into `HANDOFF.md` — and any ROUTING VIOLATIONS
   verbatim, never smoothed.
@@ -300,6 +313,8 @@ Plain-language, skimmable. The session's "read me first."
 - **Next up:** <the immediate next move>
 - **Open questions / blockers:** <or "none">
 - **Must-know for next session:** <anything that would trip them up>
+- **Lessons banked:** <the `learnings --digest` lines from Phase 3.6, or "none banked this session — and why">
+- **Open questions:** <the OPEN box from `index.py card`, or "none">
 ```
 
 ### `STATE.md` — decisions + code + changes (append; newest on top)

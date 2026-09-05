@@ -90,8 +90,130 @@ if [ -z "$ROOT" ]; then
   exit 0
 fi
 
+
+# ── THE LEARNINGS GATE (4.6.3). The gates above ask "are the declared checks green?";
+# this asks the other half of "done": WAS THE LESSON BANKED? `index.py learnings
+# --triggers --json` answers it — the trigger tags, the window and the citation
+# check are ONE implementation, over there, and this hook only formats the refusal.
+# A lesson lived and not written down means the loop never closed, so this blocks
+# exactly like a red gate does.
+#
+# ARMED BY THE STORE, never by this hook: no archive/findings.jsonl, no COORD.md, no
+# index.py, no python3, or an index.py that does not know the verb → return, silently,
+# having done nothing. Every failure path here is silent on purpose (brief 4.6.3): this
+# runs at EVERY stop in every estate on the machine, and a note on each one would be
+# noise rather than evidence — unlike the gates path, where a contract was declared.
+nr_learnings_gate() {
+  [ -f "$ROOT/archive/findings.jsonl" ] || return 0
+  [ -f "$ROOT/COORD.md" ] || return 0
+  NR_IDX="$HOOK_DIR/../skills/archivist/scripts/index.py"
+  [ -f "$NR_IDX" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+
+  NR_LREASON="$(NR_ROOT="$ROOT" NR_IDX="$NR_IDX" python3 <<'NRPY' 2>/dev/null
+import json, os, re, subprocess, sys
+
+# THE HOOK MATCHES NOTHING (seat correction, 2026-09-05). Trigger extraction — the regex,
+# the window, and which triggers are already cited — lives ONCE, in index.py, behind
+# `learnings --triggers --uncited`. A copy of that logic here would be a second authority
+# that drifts silently the first time the tag set changes. This block asks, and formats.
+root = os.environ["NR_ROOT"]
+idx = os.environ["NR_IDX"]
+
+try:
+    p = subprocess.run([sys.executable, idx, "learnings", "--root", root,
+                        "--triggers", "--json"],
+                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)
+    # A refusal, a missing verb, a bad payload: all one answer — no basis to block.
+    if p.returncode != 0:
+        raise SystemExit(0)
+    blob = json.loads(p.stdout.decode("utf-8", "replace") or "null")
+
+    # THE CONTRACT (seat-relayed, 2026-09-05), and nothing else is read:
+    #   {"armed": bool, "floor": "<ts>|null", "regex": "...",
+    #    "uncited": [{"ts": "[…]", "headline": "…"}], "cited": <n>}
+    # ARMED IS THE ARMING FLOOR. A store with no learnings has no floor, and without one
+    # every old line in the ledger looks unbanked — live-proven on the seat, which was
+    # blocked over a line from 2026-07-25. Not armed, or the key absent (an older verb),
+    # means this gate says nothing at all. Absence is treated as UNARMED on purpose: the
+    # gate that cannot tell must not be the gate that blocks.
+    if not isinstance(blob, dict) or blob.get("armed") is not True:
+        raise SystemExit(0)
+    # TWO WAYS A STOP IS UNEARNED, both answered by the same call (4.7.0):
+    #   uncited  — the estate PAID for a lesson and nobody banked it;
+    #   untested — the session ADMITTED it did not verify something, and no `open` record
+    #              carries that admission forward. An untested claim with no open record
+    #              is how "we'll check later" becomes never.
+    # uncited is reported first: a paid lesson lost is the more expensive of the two.
+    unc = blob.get("uncited") if isinstance(blob.get("uncited"), list) else []
+    unt = blob.get("untested") if isinstance(blob.get("untested"), list) else []
+    if not unc and not unt:
+        raise SystemExit(0)
+    items, mode = (unc, "uncited") if unc else (unt, "untested")
+
+    first = items[0] if isinstance(items[0], dict) else {}
+    ts = str(first.get("ts") or "").strip()
+    line = str(first.get("headline") or "").strip()
+    if not ts and not line:
+        raise SystemExit(0)
+    ts = ts.strip("[]")
+    # The excerpt is clipped by BYTES, not characters: the ledger is UTF-8 and a
+    # character clip can still blow a byte budget.
+    line = line.encode("utf-8")[:200].decode("utf-8", "ignore")
+
+    idxpath = "$CLAUDE_PLUGIN_ROOT/skills/archivist/scripts/index.py"
+    if mode == "uncited":
+        head = ("notrest completion gate: completion is not earned — a lesson was lived "
+                "and never banked.\n"
+                "The COORD line at [%s] is trigger-tagged and no learning cites it:" % ts)
+        fix = ("Bank it before you stop (statement <=300 chars; evidence and scope are "
+               "both required):\n"
+               "   python3 %s add --kind learning --tag LEARNED \\\n"
+               "     --statement '<what will be done differently, in one sentence>' \\\n"
+               "     --evidence '[%s]' --scope '<path glob, skill name, or estate>'"
+               % (idxpath, ts))
+    else:
+        head = ("notrest completion gate: completion is not earned — something was left "
+                "UNTESTED and nothing carries it forward.\n"
+                "The COORD line at [%s] admits it was not verified, and no open record "
+                "cites it:" % ts)
+        fix = ("Open it before you stop (an untested claim needs an owner and a date, or "
+               "it is never revisited):\n"
+               "   python3 %s add --kind open \\\n"
+               "     --statement '<what is still unverified>' \\\n"
+               "     --closes-when '<the check that would settle it>' \\\n"
+               "     --owner '<seat or a lane id>' --recheck YYYY-MM-DD \\\n"
+               "     --evidence '[%s]' --scope '<path glob, skill name, or estate>'"
+               % (idxpath, ts))
+
+    sys.stdout.write("%s\n   %s\n\n%s\n\nOverride (states itself in the transcript): "
+                     "NOTREST_GATE_OVERRIDE=1" % (head, line.strip(), fix))
+    raise SystemExit(7)
+except SystemExit:
+    raise
+except Exception:
+    raise SystemExit(0)
+NRPY
+)"
+  [ "$?" -eq 7 ] || return 0
+  [ -n "$NR_LREASON" ] || return 0
+
+  # The override stays LOUD, exactly as the gates path treats it: a bypassed gate that
+  # says nothing is worse than no gate.
+  if [ "${NOTREST_GATE_OVERRIDE:-}" = "1" ]; then
+    printf '[notrest] LEARNINGS GATE OVERRIDDEN (env): a trigger-tagged COORD line is still unbanked.\n' >&2
+    return 0
+  fi
+  printf '%s\n' "$NR_LREASON" >&2
+  printf '%s' "$NR_LREASON" | python3 -c 'import sys, json
+print(json.dumps({"decision": "block", "reason": sys.stdin.read()}))' 2>/dev/null
+  exit 2
+}
+
 ACTIVE="$ROOT/gates/ACTIVE.md"
-[ -f "$ACTIVE" ] || exit 0
+# No declared gates is not the end of the stop any more: the learnings gate is armed by
+# the STORE, not by gates/ACTIVE.md, so it runs on this path too.
+[ -f "$ACTIVE" ] || { nr_learnings_gate; exit 0; }
 
 # Containment, the same law COORD.md and the auto-build marker are held to: a gates file
 # that resolves OUTSIDE the estate is not this estate's contract.
@@ -130,6 +252,7 @@ RC=$?
 # ANY other code is the instrument itself failing (2 unreadable at the OS level, 127 no
 # interpreter, …) and must not be read as a verdict.
 if [ "$RC" -eq 0 ]; then
+  nr_learnings_gate   # gates green — now the other half of "done" (4.6.3)
   exit 0
 fi
 if [ "$RC" -ne 5 ] && [ "$RC" -ne 3 ]; then

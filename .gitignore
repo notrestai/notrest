@@ -31,3 +31,8 @@ compile/*/.fixture-scratch/
 # the pulse layer: machine-written instrument readings, refreshed in the background.
 # Derived and disposable — the ledgers (COORD, COORD-AGENTS, spend) remain the record.
 /pulse/
+
+# 4.7.0: the daemon's DRAFTED scaffolds are the compile queue, not release content — a runtime enters git only when ADOPTED (git add -f compile/<slug>)
+/compile/*/
+!/compile/release-ritual/
+/compile/.auto-run.lock

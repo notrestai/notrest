@@ -888,6 +888,40 @@ def check_estate(t):
             detail.append("compile/candidates.json: valid · %d candidates"
                           % len((obj or {}).get("candidates", [])))
 
+    # 4.6.3: the LEARNINGS LOOP, reported as a FACT — no new status. Doctor's job here is
+    # to say what the estate holds; whether the loop is being HONOURED is eval's
+    # LEARNING-LOOP check, which audits triggers against citations. A store with no
+    # learnings is a young loop, not a sick install, and must never redden an install gate.
+    store = os.path.join(t.root, "archive", "findings.jsonl")
+    if os.path.isfile(store):
+        seen = True
+        total, newest = 0, None
+        for line in (read(store) or "").splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue                    # one bad line is not a broken store
+            if not isinstance(rec, dict) or rec.get("kind") != "learning":
+                continue
+            total += 1
+            ts = str(rec.get("ts", ""))
+            if ts and (newest is None or ts > newest):
+                newest = ts
+        if not total:
+            detail.append("learnings: 0 records — the loop is armed but nothing banked yet")
+        else:
+            age = "unknown age"
+            try:
+                dt = datetime.datetime.strptime(newest, "%Y-%m-%dT%H:%M:%SZ")
+                hrs = (utc_now() - dt).total_seconds() / 3600.0
+                age = ("%.1fh ago" % hrs) if hrs < 48 else ("%.0fd ago" % (hrs / 24.0))
+            except (TypeError, ValueError):
+                pass
+            detail.append("learnings: %d records, newest %s" % (total, age))
+
     if not seen:
         return SKIP, ["no estate files here (COORD.md / COORD-AGENTS.md / spend / compile)"], None
     return status, detail, fix
@@ -1451,6 +1485,162 @@ def check_render_surfaces(t):
     return status, detail, fix
 
 
+def _learn_index(t):
+    """archivist's index.py, imported by path — the ONE home of the trigger rule. doctor
+    reports loop health; it never re-implements what a trigger is."""
+    if not t.primary:
+        return None
+    path = os.path.join(t.primary, "skills", "archivist", "scripts", "index.py")
+    if not os.path.isfile(path):
+        return None
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_notrest_archivist_index", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod if hasattr(mod, "trigger_report") else None
+    except Exception:
+        return None
+
+
+def _reviewed(recs):
+    """Ids the seat has already ruled on (accepted or rejected), read the append-only way:
+    a ruling record names its target in the statement head and in `links`."""
+    out = set()
+    for r in recs:
+        m = re.match(r"^(accepts|rejects)\s+([FLOA]-\d+)\b",
+                     str(r.get("statement", "")), re.I)
+        if m and m.group(2).upper() in (r.get("links") or []):
+            out.add(m.group(2).upper())
+    return out
+
+
+def check_loop_health(t):
+    """Is the learnings loop being FED, or has it quietly stopped?
+
+    ⛔ WARN-GRADE, NEVER FAIL. A loop that is behind is a fact about how the estate is
+    being worked, not a broken install — and doctor's exit code gates SHIPPING. eval's
+    LEARNING-LOOP is the check with teeth; this one is the dashboard beside it. Four
+    numbers, because each fails differently: uncited triggers (lessons bought and not
+    banked), open questions by age (what we admitted and never went back to), learnings
+    per week (whether anyone is still feeding it), and candidates drafted but undecided
+    (work the compiler did that nobody ruled on).
+    """
+    store = os.path.join(t.root, "archive", "findings.jsonl")
+    if not os.path.isfile(store):
+        return SKIP, ["no archive/findings.jsonl — the loop has no store here"], None
+
+    recs = []
+    for line in (read(store) or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict):
+            recs.append(rec)
+    superseded = set(r.get("id") for r in recs
+                     if str(r.get("status", "")) in ("superseded", "refuted"))
+    learns = [r for r in recs if r.get("kind") == "learning"]
+    opens = [r for r in recs if r.get("kind") == "open" and r.get("id") not in superseded]
+
+    status, detail, fix = PASS, [], None
+
+    mod = _learn_index(t)
+    uncited = untested = None
+    if mod is not None:
+        try:
+            rep = mod.trigger_report(t.root)
+            if rep.get("armed"):
+                uncited = len(rep.get("uncited") or [])
+                untested = len(rep.get("untested") or [])
+        except BaseException:            # SystemExit included — index.py's die() raises it
+            uncited = untested = None
+    if uncited is None:
+        detail.append("uncited triggers: not readable (index.py absent or the loop is "
+                      "unarmed)")
+    else:
+        detail.append("uncited triggers: %d · untested admissions with no open record: %d"
+                      % (uncited, untested))
+        if uncited or untested:
+            status = WARN
+            fix = ("bank what the estate paid for: `index.py add --kind learning …` for a "
+                   "trigger, `--kind open …` for an admission (eval's LEARNING-LOOP is the "
+                   "gate; this line is the dashboard)")
+
+    now = utc_now()
+    if not opens:
+        detail.append("open questions: none")
+    else:
+        ages, overdue = [], 0
+        for r in opens:
+            try:
+                dt = datetime.datetime.strptime(str(r.get("ts", "")), "%Y-%m-%dT%H:%M:%SZ")
+                ages.append((now - dt).days)
+            except (TypeError, ValueError):
+                pass
+            rc = str(r.get("recheck", ""))
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", rc) and rc < now.strftime("%Y-%m-%d"):
+                overdue += 1
+        oldest = max(ages) if ages else 0
+        detail.append("open questions: %d (oldest %dd) · %d past their recheck date"
+                      % (len(opens), oldest, overdue))
+        if overdue:
+            status = WARN
+            fix = fix or ("re-check the overdue open questions (`watch.py due`) — an open "
+                          "record past its date is an admission ageing into folklore")
+
+    proposed = [r for r in recs if str(r.get("status", "")) == "proposed"
+                and r.get("id") not in _reviewed(recs)]
+    if proposed:
+        status = WARN if status == PASS else status
+        detail.append("proposed: %d awaiting review — a lane's claim is not estate law "
+                      "until `index.py accept <id>`" % len(proposed))
+        fix = fix or ("review the lane proposals: `index.py learnings --include-proposed`, "
+                      "then `index.py accept <id>` or `reject <id> --why '...'`")
+    else:
+        detail.append("proposed: none awaiting review")
+    if not learns:
+        detail.append("learnings: none banked — the loop is armed but unfed")
+    else:
+        stamps = []
+        for r in learns:
+            try:
+                stamps.append(datetime.datetime.strptime(str(r.get("ts", "")),
+                                                         "%Y-%m-%dT%H:%M:%SZ"))
+            except (TypeError, ValueError):
+                pass
+        if stamps:
+            span_days = max(1.0, (now - min(stamps)).total_seconds() / 86400.0)
+            detail.append("learnings: %d banked · %.1f/week over %.0fd · newest %.1fh ago"
+                          % (len(learns), len(stamps) / (span_days / 7.0), span_days,
+                             (now - max(stamps)).total_seconds() / 3600.0))
+        else:
+            detail.append("learnings: %d banked (no readable timestamps)" % len(learns))
+
+    if t.candidates:
+        obj, err = jload(t.candidates)
+        if err or not isinstance(obj, dict):
+            detail.append("compile candidates: unreadable")
+        else:
+            cands = obj.get("candidates") or []
+            drafted = [c for c in cands
+                       if isinstance(c, dict) and str(c.get("status", "")).upper()
+                       in ("DRAFTED", "PROPOSED")]
+            detail.append("compile candidates: %d drafted/proposed but undecided"
+                          % len(drafted))
+            if drafted:
+                status = WARN if status == PASS else status
+                fix = fix or ("rule on the drafted compile candidates (`compile.py decide "
+                              "--slug <s> --status ADOPTED|DECLINED`) — a draft nobody "
+                              "ruled on is work already paid for and not used")
+    else:
+        detail.append("compile candidates: no candidates.json")
+    return status, detail, fix
+
+
 CHECKS = [
     ("FRONTMATTER", check_frontmatter),
     ("MANIFESTS", check_manifests),
@@ -1462,6 +1652,7 @@ CHECKS = [
     ("INSTALL FRESHNESS", check_install_freshness),
     ("SHADOW-APPSIDE", check_shadow_appside),
     ("TOKEN BUDGET", check_token_budget),
+    ("LOOP HEALTH", check_loop_health),
     ("GITIGNORE", check_gitignore),
     ("RENDER SURFACES", check_render_surfaces),
 ]

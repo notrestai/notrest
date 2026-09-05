@@ -40,8 +40,19 @@ Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
 - **chatroom** — shared rooms where any Claude session and GPT work together: append-only
   room files as the wire, armed watches as wakes, a gpt-bridge member with persistent
   memory; no-secrets boundary (rooms feed other vendors' models).
-- **archivist** — content continuity: one greppable `oracle-index.md` over every dossier
-  the project has produced; consult before re-spending a search budget (reuse/extend/fresh).
+- **archivist** — content continuity: the append-only findings store
+  (`archive/findings.jsonl`, validated at the door), the cross-project library shelf, and one
+  greppable `oracle-index.md` over every dossier the project has produced; consult before
+  re-spending a search budget (reuse/extend/fresh). It also holds the estate's **learnings** —
+  `kind=learning` records tagged `INHERITED` / `RULED` / `LEARNED`, each required to name its
+  evidence and its scope — and `index.py learnings --digest` is the one line format the
+  continuation packet, the spawn gate and the router all read, so a lesson banked once is
+  delivered to every session and every lane instead of being re-paid for. Alongside them:
+  `open` records (what was not tested or could not be verified, with a recheck date that puts
+  it on `watch.py due`), `alternative` records, and `result` records that must name what ran,
+  the command and the exit code. `index.py card` renders the four boxes — TESTS / OPEN /
+  FINDINGS / LEARNINGS — which is also the shape every lane's return ends in, so the
+  SubagentStop hook banks a return by parsing it.
 - **graph** — an Obsidian-style file graph: a script walks the repo and renders a
   self-contained force-directed HTML view of every file and the references between them
   (wikilinks, links, imports, sourced scripts, estate pointers) at zero model tokens;
@@ -53,8 +64,9 @@ Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
   checks over the shipped files — the dual runtime model map, inherited-fork ban,
   honesty labels, scanners that exist and compile, append-only ledgers, the
   worker contract, front-matter YAML accepts with a `/slash` trigger, the named safety
-  laws, silent-on-failure hooks. A law that is well-encoded leaves a static fingerprint;
-  check the fingerprint, not the behavior. ~0.1s, zero model tokens, file:line on every
+  laws, silent-on-failure hooks, and the learnings loop (`LEARNING-LOOP`: every correction,
+  refuter defect or red gate in the ledger is cited by a banked lesson). A law that is
+  well-encoded leaves a static fingerprint; check the fingerprint, not the behavior. ~0.1s, zero model tokens, file:line on every
   FAIL. Model-graded `behavior` cases are bounded, code-graded and opt-in.
 - **doctor** — the harness's self-check: `doctor.py check --root .` runs a roster of named
   PASS/WARN/FAIL checks (the roster grows with each scar — run it for the current list) —

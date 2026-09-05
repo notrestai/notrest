@@ -103,6 +103,28 @@ Say it naturally ("research X, then critique it, then plan it") — **director**
 
 Every skill enforces: real sources only (invented citations are banned), tiered sourcing (primary beats secondary beats blogs), disconfirmation passes (each skill actively tries to break its own answer), severity/verdict grammars instead of vibes, and honest "unverified / not found / it depends" outcomes when that's the truth. The suite's job is not to sound right — it's to be checkably right, and to show its work.
 
+And it only learns a lesson once. A correction you give it, a defect a review finds, a gate that
+goes red — each is banked as a **learning** in the project's own store, with the evidence that
+taught it and the files or skills it applies to. The harness hands those back automatically: the
+next session gets them in its pickup packet, every delegated lane gets the ones matching its own
+files appended to its instructions, and a session that took a correction and did not bank it
+cannot say *done* until it does. You never have to give the same note twice.
+
+It is equally honest about what it did **not** do. Every delegated lane ends its return with
+the same four boxes — what it tested (with the command and the exit code), what it left open,
+what it found, what it learned — and those are filed as records automatically, so "not tested"
+survives as a dated open question with a recheck date instead of dissolving into a summary.
+The checks a job is judged by are written down before it starts and run when it claims to be
+finished. And work you have done three times gets compiled into a script — scanned and drafted in the
+background for free, then built, independently attacked, benchmarked against the old way and
+adopted, all without waiting for you. What keeps that safe is not supervision but limits: a
+daily token cap you set and it refuses to exceed, a receipt in the spend ledger for every run
+it makes, one job at a time, and a quiet stop rather than a retry loop when something is
+wrong. That background half is entirely optional — you turn it on deliberately, and nothing
+else in the plugin ever asks for a credential. If you are already logged in to the CLI it needs
+nothing from you; if it ever cannot authenticate it keeps doing the free work, says so once a
+day, and gives you one command to fix it.
+
 ## 7. Costs, quick
 
 Full runs search the web and write files; `--quick` variants stay in chat and cost a fraction. Search budgets are built in (a researcher run defaults to ~20 searches, factcheck ~3 per claim). You can always say "max 5 searches" or "keep it quick" — the skills honor stated caps and say what was traded away. Delegated fan-out carries an explicit model whatever model holds the seat, and the seat picks it by the difficulty of the task and declares the choice in the brief — opus for judgment-bearing work, sonnet for bounded well-specified work, opus when unsure (owner ruling 2026-09-01); never haiku, never a fork, never an inherited Fable, and an omitted model is a violation rather than a default — via **agentswarm**; the **spend** ledger receipts every lane so the routing stays checkable, not asserted.

@@ -40,10 +40,17 @@ model-last — the model is the *last* instrument you reach for, not the first.
 Every check names the law it guards, cites the **file and line** it judged, and carries
 a fix hint. A finding you cannot act on is a bug in this skill.
 
-## The twelve checks
+## The sixteen checks
+
+*Sixteen as of v4.7.0 — the roster grows with the laws, so the live count is whatever
+`python3 scripts/eval.py check` prints in its `SUMMARY` line, and that is the number to
+quote.*
 
 | Check | The law |
 |---|---|
+| `NETWORK-EGRESS` | shipped hooks and scripts make **no network calls** except an allowlist of loopback-bound ones (fixtures and render checks over `127.0.0.1`), and two external-by-design lanes named in the script itself (`watch.py` — fetching *is* the skill; `fable-launcher.sh`); a compiled runtime makes none at all |
+| `KERNEL-REVIEW` | the **kernel surfaces** are named where they are claimed — a `KERNEL SURFACES` block in the runtime foundation (`AGENTS.md` / `CLAUDE.md`) — and carry the refuter law, so "be careful here" stays a list rather than a feeling. SKIPs where there is no refuter skill or no foundation |
+| `RELEASE-SURFACE` | a release touches **exactly** the agreed surface set named in `evals/golden-release-surface.txt` — no more (an uncommitted release-shaped edit to a path nobody agreed on), no fewer (a golden path that no longer exists). A *deletion* is not an unagreed surface; the git half SKIPs in a tree with no git |
 | `OFFLOAD-POLICY` | every documented spawn maps **Codex=gpt-5.6-sol** and **Claude=opus**; inherited/full-history forks are banned; the Claude SessionStart hook carries the Claude rule |
 | `HONESTY-LABELS` | every claim-making skill (researcher, factcheck, marketresearcher, explainer, decider, recap, watch, draft) defines or uses `[cited]/[recall]/[estimate]/[unverified]` or its documented verdict grammar |
 | `SCRIPT-OWNS-SCANNING` | every cited scanner exists in the tree and `py_compile`s, and every shipped script is named by its SKILL.md — this is what backs "the scanner reads the files, the model never has to" |
@@ -56,6 +63,7 @@ a fix hint. A finding you cannot act on is a bug in this skill.
 | `ROUTER` | the routing law has an enforcer: `hooks/router.sh` is registered under **UserPromptSubmit**, `bash -n` accepts it, it is silent-on-failure, and every `/notrest:<skill>` its table can emit names a skill directory that exists |
 | `ROUTE-TABLE-PARITY` | the routing table's **two authorities agree**: every verb `router.sh` can emit is named in oracle's `**Route to the right tool:**` bullet and vice-versa (a verb in one and not the other is a FAIL — the user is *told* one route and *nudged* another), and every routed skill acknowledges the shape that lands on it with a body line ``**Router shape:** `<shape>` `` (a token that drifted from the router arm is a WARN; a verb with no skill dir is left to `ROUTER`, so one defect never lights two checks) |
 | `ROUTE-CONFORMANCE` | **WARN-grade, never a gate.** Every `routed to /<skill>` line the estate recorded left downstream evidence — a later COORD line naming that skill, a `skill=` record in `archive/findings.jsonl`, or a `COORD-AGENTS.md` entry. The newest **3** ledger lines are a grace window (a lane routed a minute ago has landed nothing yet), a route the line itself *declines* ("not routed to …") is the law being applied deliberately, and an estate with no route lines SKIPs |
+| `LEARNING-LOOP` | **the lessons loop is closed.** Every **trigger** line in the COORD ledger — a correction, a refuter defect, a `RED:`, a `HALTED` — that postdates the first banked learning is **cited by some `kind=learning` record's evidence**. A store with no learning SKIPs (`loop not armed`); a FAIL lists the first three uncited triggers. Bounded by an **arming floor** — the earliest evidence stamp any learning cites — so banking a first lesson does not retroactively indict the project's whole history. Neither the regex nor the rule is retyped here: this check and the Stop gate both call `index.py learnings --triggers --json`, one implementation, so the gate and its audit cannot drift apart |
 
 A line that names sonnet, haiku or `fork` **alongside a negation** is the law being
 stated, not a breach of it; the checker reads the line before judging it.

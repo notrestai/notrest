@@ -237,6 +237,57 @@ chk "spawn gate: malformed payload passes through silently" 0 \
   "$(printf '%s' 'not json at all{' | bash "$SG" >/dev/null 2>&1; echo $?)"
 chk "spawn gate: empty stdin passes through silently" 0 "$(printf '' | bash "$SG" >/dev/null 2>&1; echo $?)"
 
+# ── 4.7.0 · AN UNATTENDED RUN DOES NOT FAN OUT. NOTREST_UNATTENDED=1 marks a session
+# with nobody at the keyboard: a lane spawned there has no reader and no owner for its
+# spend. Refused before the model rules, because no model is lawful here.
+UOUT="$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"lane","model":"opus","subagent_type":"general-purpose","prompt":"x"}}' \
+        | NOTREST_UNATTENDED=1 bash "$SG" 2>&1 >/dev/null; )"
+URC="$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"lane","model":"opus","subagent_type":"general-purpose","prompt":"x"}}' \
+        | NOTREST_UNATTENDED=1 bash "$SG" >/dev/null 2>&1; echo $?)"
+case "$URC:$UOUT" in
+  2:*"unattended runs do not fan out — one runner, one lane"*)
+      ok "spawn gate: an unattended run is refused a lane, with the exact reason" ;;
+  *)  no "spawn gate: an unattended run is refused a lane" "rc=$URC msg=$(printf '%s' "$UOUT" | head -c 90)" ;;
+esac
+UOUT="$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"lane","model":"opus","subagent_type":"general-purpose","prompt":"x"}}' \
+        | NOTREST_UNATTENDED=1 NOTREST_GATE_OVERRIDE=1 bash "$SG" 2>&1 >/dev/null)"
+URC="$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"lane","model":"opus","subagent_type":"general-purpose","prompt":"x"}}' \
+        | NOTREST_UNATTENDED=1 NOTREST_GATE_OVERRIDE=1 bash "$SG" >/dev/null 2>&1; echo $?)"
+case "$URC:$UOUT" in
+  0:*"OVERRIDDEN"*) ok "spawn gate: the unattended ban is overridable, and says so out loud" ;;
+  *) no "spawn gate: the unattended ban is overridable and loud" "rc=$URC msg=$(printf '%s' "$UOUT" | head -c 90)" ;;
+esac
+chk "spawn gate: an ATTENDED lawful lane is untouched by the unattended rule" 0 "$(spawn Agent opus general-purpose)"
+
+# ── 4.6.3 · THE DIGEST NEVER TOUCHES A REFUSAL. spawn-gate may rewrite the Agent prompt
+# (hookSpecificOutput.updatedInput) for a LAWFUL lane only. A denied call must come back
+# byte-for-byte as it did in 4.6.2: exit 2, the reason on stderr, the deny decision on
+# stdout, and nothing that could be read as an input rewrite.
+inj(){   # inj <tool> <model|-> <subagent_type|-> -> the gate's stdout
+  python3 -c 'import json, sys
+ti = {"description": "lane", "prompt": "fix plugins/notrest/hooks/router.sh"}
+if sys.argv[2] != "-": ti["model"] = sys.argv[2]
+if sys.argv[3] != "-": ti["subagent_type"] = sys.argv[3]
+print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": sys.argv[1],
+                  "tool_input": ti}))' "$1" "$2" "$3" | bash "$SG" 2>/dev/null
+}
+for spec in "haiku:-" "-:general-purpose" "opus:fork"; do
+  M="${spec%%:*}"; ST="${spec##*:}"
+  OUT="$(inj Agent "$M" "$ST")"
+  case "$OUT" in
+    *updatedInput*) no "spawn gate: a DENIED call (model=$M type=$ST) is never rewritten" "deny carried updatedInput" ;;
+    *'"permissionDecision": "deny"'*) ok "spawn gate: a DENIED call (model=$M type=$ST) carries the deny and no updatedInput" ;;
+    *) no "spawn gate: a denied call still denies (model=$M type=$ST)" "got: ${OUT:-<silent>}" ;;
+  esac
+done
+# A lawful lane OUTSIDE any estate has no store to read and must stay exactly as silent
+# as it was before the digest existed.
+NOEST_DIR="$(mktemp -d)"
+OUT="$(cd "$NOEST_DIR" && inj Agent opus general-purpose)"
+if [ -z "$OUT" ]; then ok "spawn gate: a lawful lane outside any estate stays silent (no digest, no output)"
+else no "spawn gate: lawful lane outside an estate stays silent" "got: $(printf '%s' "$OUT" | head -c 90)"; fi
+rm -rf "$NOEST_DIR"
+
 # The escape hatch exists AND is loud — a bypassed gate that says nothing is worse than none.
 # haiku, not sonnet: sonnet became lawful on 2026-08-30, so a sonnet spawn would exercise
 # the ALLOW path and prove nothing about the override.

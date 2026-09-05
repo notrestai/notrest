@@ -292,6 +292,130 @@ quietly doing judgment work gets caught. Three guards stay on:
 
 The **gpt lane** is unaffected (it bills the owner's ChatGPT plan, not this session).
 
+## Every lane arrives carrying the estate's lessons
+
+The spawn gate does two jobs at the door. It **refuses** an unlawful lane (above); on a
+lawful one it also **rewrites the prompt**. `hooks/spawn-gate.sh` reads the brief for
+path-like tokens and known skill names, asks the store for the lessons in that scope —
+`index.py learnings --digest --scope <tokens…> --limit 5` — and appends them to the prompt
+the lane actually receives:
+
+```
+[notrest LEARNINGS — banked lessons in scope; read before acting]
+| L-3 [RULED] A kernel change ships only through a refuter round. — evidence: [2026-09-05 04:52Z]
+```
+
+Only this hook may touch the `Agent` prompt: when two PreToolUse hooks rewrite one input the
+last writer wins, so the injection lives in exactly one place. A denied call is never
+rewritten, and when the store holds nothing in scope nothing is appended.
+
+**The lane's half of it: cite the id.** A lane that acts on a banked lesson names it in the
+return — *"per L-3, ran the refuter round before shipping"* — and a lane that believes one is
+wrong says so with evidence instead of quietly ignoring it (a correction is a new record,
+never an edit). The seat cannot see a lane's reasoning, so the citation is the only thing that
+makes the delivery checkable: an uncited digest is indistinguishable from a digest nobody read.
+
+## The return card — four boxes, banked by the hook
+
+**Every lane return ends with the same block.** It is not a courtesy summary: the
+`agent-ledger.sh` hook parses it and **banks each line as a record** in the findings store,
+with `lane:<id>` as `source` and the lane's own banked brief (`briefs/agent-<id>.md`) as
+evidence. A lane that wrote the card has banked its work by construction — and a lane that
+forgot to bank cannot exist, because the card *is* the return.
+
+```
+TESTS (1)
+- [x] the archivist fixture holds — ran: archivist fixture · command: `bash skills/archivist/scripts/fixture.sh` · exit: 0
+OPEN (1)
+- [ ] the packet's byte law is unproven above 200 records — closes when: seed 500 records and re-run the notrest fixture · owner: seat · recheck: 2026-09-12
+FINDINGS (1)
+- [x] establish.py renders the LEARNINGS block after the ledger tail — evidence: skills/notrest/scripts/establish.py:1232
+LEARNINGS (1)
+- [x] [RULED] A kernel change ships only through a refuter round. — scope: plugins/notrest/hooks/**
+```
+
+**The grammar is exact, because a parser reads it.** A header is `BOX (n)` with the count in
+parentheses; an item is `- [x]` or `- [ ]`, then the statement, then ` — ` and the fields as
+`key: value` joined by ` · `. **The kind comes from the box, never from the checkbox** — an
+unchecked TESTS item is still a `result`, it is just one that failed. Fields are the ones each
+kind requires: **`ran` *and* `command` *and* `exit`** for TESTS — both of the first two, always,
+because a test whose exact command is missing cannot be re-run by anyone but its author, and
+`exit` is a bare integer, not prose about how it went; `closes when` / `owner` / `recheck` for
+OPEN; `evidence` for FINDINGS; a `[TAG]` and `scope` for LEARNINGS. The hook does not carry a
+copy of this grammar: it imports `index.py`'s own `parse_card`, so a lane's return and the
+estate's reader cannot drift.
+
+- **TESTS** becomes `result` records, and a result is required to be *runnable*: what ran, the
+  command, the exit code. "Tested it" with no command is not a test — the door refuses it, so
+  a TESTS count is a count of things that actually ran.
+- **OPEN** is what was **not** tested, did not work, or could not be verified, plus what would
+  close it. This is the box that makes a return honest rather than triumphant, and it is
+  enforced from the other end: a return or a ledger line saying *not tested* / *could not
+  verify* / *unverified* with no `open` record behind it is a Stop-gate trigger.
+- **FINDINGS** — what is now known about the system, each with its file:line or its output.
+- **LEARNINGS** — what should be done differently next time, tagged and scoped (rule 13).
+
+A card is banked **all or nothing**: one item that cannot be written means the whole card is
+skipped, with the reason in the lane's `COORD-AGENTS.md` row. The store is append-only, so half
+a banked card is a mess nobody can undo — and a parser that guessed at the broken half would
+invent records nobody wrote, which is worse than a gap you can see. A **header count that
+disagrees with the items under it** is *reported, not refused*: it is a miscount, not a
+corruption, and refusing the card would throw away good records to punish a wrong integer.
+
+**What a lane banks is `proposed`, not law.** The judgment kinds — LEARNINGS, OPEN,
+ALTERNATIVES — land with `status=proposed` (the door **refuses** a lane-sourced one that
+claims anything else), and they reach no other lane's prompt, no router line and no packet
+until the seat rules: `index.py accept <id>` promotes, `index.py reject <id> --why '<reason>'`
+retires. TESTS and FINDINGS are ungated — a command that ran and an observation about the tree
+are data, and data does not need promoting. This is the worker-never-grades-itself law reaching
+the store: a lane may *say* what the estate should learn, and only the seat makes it the
+estate's lesson.
+
+## DONE-WHEN blocks become that lane's Stop gates
+
+A commission's done-when stops being prose the moment the brief writes it as a block:
+
+```
+NOTREST-GATES:
+DONE-WHEN:
+CHECK: bash skills/archivist/scripts/fixture.sh
+EXPECT: exit 0
+END-GATES
+```
+
+**Fenced here for display; write it unfenced in the brief.** The harvester takes only a
+block the seat marks explicitly — a line `NOTREST-GATES:` at **column 0** opens it, `END-GATES` at column 0 closes it, `DONE-WHEN:` is the human label inside; anything in a code fence (at any indent) is documentation and is never harvested — a
+fenced block is documentation, and a gate armed from an example nobody meant is a gate that
+blocks the wrong lane. (This very page is the reason the rule exists.)
+
+The **spawn gate** reads that block out of the Agent prompt and writes its lines to
+`gates/ACTIVE.md` — creating the file if it is absent and never rewriting anyone else's
+section — so the checks the seat named **at dispatch** are the checks the **Stop gate** runs,
+with nobody re-typing them into a second file:
+
+```
+## lane 9f3a1c07 · opened 2026-09-05T06:40Z
+# lane 9f3a1c07 · from the commission's DONE-WHEN block
+CHECK: bash skills/archivist/scripts/fixture.sh
+EXPECT: exit 0
+```
+
+The section is keyed by a random **8-hex lane key**, not by anything the lane could guess or
+collide with, and the gate appends that key to the prompt tail as `[notrest lane-key: <key>]`
+so the lane can see the contract it is under. Every line carries its **provenance comment**,
+because a `CHECK:` in a shared file with no author is a check nobody dares delete. When the
+lane stops, `agent-ledger.sh` retires the section **by that key**; a lane that dies without
+stopping cleanly leaves one behind, so `session-start.sh` **sweeps sections older than 24 h**
+and records the removal as a `COORD-AGENTS.md` row — `gates SWEPT lane=<key>` — with an empty
+husk of a file deleted rather than left as a header over nothing. A red one reads
+`RED: lane <key> gate N — exit=…`, so the block names which lane's contract stopped you.
+
+The effect is that the seat's own "gates green" stops being a claim and becomes something the
+estate produces: a lane cannot quietly end while the checks its commission named are red. It
+is also why the seat writes done-whens as **runnable commands** — a done-when the seat cannot
+state as a command was already the signal to route the work to opus (the model rule above),
+and now it is also a gate that cannot be armed.
+
 ## The seat contract — what the seat keeps
 
 The seat stays the seat regardless of model. It keeps exactly the work where its judgment

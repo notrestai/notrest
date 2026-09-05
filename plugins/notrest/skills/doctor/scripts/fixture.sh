@@ -249,7 +249,7 @@ echo '{"generated":"2026-07-24 10:03Z","candidates":[]}' > "$H/compile/candidate
 echo "── A · healthy synthetic harness"
 runjson "$H"; t "healthy harness exits 0" "$RC" "0"
 t "--json parses" "$(py 'import json,sys;print("yes" if json.load(open(sys.argv[1]))["checks"] else "no")' "$W/out.json")" "yes"
-t "twelve checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "12"
+t "thirteen checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "13"
 t "verdict is HEALTHY" "$(py 'import json,sys;print(json.load(open(sys.argv[1]))["verdict"])' "$W/out.json")" "HEALTHY"
 t "no check fails" "$(nfail)" "0"
 t "no check warns" "$(nwarn)" "0"
@@ -523,6 +523,97 @@ grep -q 'plugins/fixtureplug/graph/graph.json' "$W/out.json" \
 runjson "$G"
 t "untracking it clears the finding, files still on disk" "$(st GITIGNORE)" "PASS"
 t "…and the anchored plugins/*/ rule does not ignore the skill dirs" "$(nfail)" "0"
+
+# ── 4.7 H · LOOP HEALTH · the dashboard beside eval's gate ───────────────────────────
+# ⛔ WARN-GRADE, NEVER FAIL. A loop that is behind is a fact about how the estate is being
+# WORKED, not a broken install — and doctor's exit code gates SHIPPING. eval's
+# LEARNING-LOOP is the check with teeth; this one is the number beside it.
+echo "── 4.7 · LOOP HEALTH (WARN-grade, never a ship blocker)"
+LH="$W/loophealth"; rm -rf "$LH"; cp -R "$H" "$LH"
+runjson "$LH"
+t "no findings store at all → LOOP HEALTH SKIPs" "$(st 'LOOP HEALTH')" "SKIP"
+t "…and the harness is still healthy" "$RC" "0"
+mkdir -p "$LH/archive"
+cat > "$LH/archive/findings.jsonl" <<'FJ'
+{"id":"L-1","ts":"2026-09-01T00:00:00Z","kind":"learning","tag":"RULED","statement":"a banked lesson","evidence":[{"type":"coord-line","ref":"[2026-09-01 00:00Z]","label":"cited"}],"scope":["estate"],"source":"seat","status":"live"}
+FJ
+runjson "$LH"
+t "a store with a learning and no debt → PASS" "$(st 'LOOP HEALTH')" "PASS"
+t "…and the exit code is untouched" "$RC" "0"
+grep -q 'learnings: 1 banked' "$W/out.json" && ok "…reporting how many are banked" \
+  || no "the learnings count is missing"
+grep -q 'open questions: none' "$W/out.json" && ok "…and that nothing is open" \
+  || no "the open line is missing"
+# an OVERDUE open question is a WARN, never a FAIL
+cat >> "$LH/archive/findings.jsonl" <<'FJ'
+{"id":"O-1","ts":"2026-09-01T00:00:00Z","kind":"open","statement":"the consumer flow was never run","closes_when":"the documented flow exits 0","owner":"seat","recheck":"2020-01-01","evidence":[{"type":"coord-line","ref":"[2026-09-01 00:00Z]","label":"cited"}],"scope":["estate"],"source":"seat","status":"live"}
+FJ
+runjson "$LH"
+t "an open question past its recheck date → WARN" "$(st 'LOOP HEALTH')" "WARN"
+t "…exit 5, never 6 — this must not block a ship" "$RC" "5"
+t "…and nothing FAILs" "$(nfail)" "0"
+grep -q '1 past their recheck date' "$W/out.json" && ok "…counting the overdue ones" \
+  || no "the overdue count is missing"
+grep -q 'open questions: 1' "$W/out.json" && ok "…and the open total with its oldest age" \
+  || no "the open total is missing"
+# a superseded open question stops asking
+python3 - "$LH/archive/findings.jsonl" <<'PY5'
+import sys
+with open(sys.argv[1], "a", encoding="utf-8") as f:
+    f.write('{"id":"O-2","ts":"2026-09-02T00:00:00Z","kind":"open","statement":"closed one",'
+            '"closes_when":"x","owner":"seat","recheck":"2020-01-01","evidence":[{"type":'
+            '"command","ref":"abc1234","label":"cited"}],"scope":["estate"],"source":"seat",'
+            '"status":"superseded"}\n')
+PY5
+runjson "$LH"
+grep -q 'open questions: 1' "$W/out.json" \
+  && ok "a superseded open question stops asking" || no "a superseded open is still counted"
+# a corrupt store line must not take the check down
+printf 'not json at all\n' >> "$LH/archive/findings.jsonl"
+runjson "$LH"
+t "a corrupt store line does not break LOOP HEALTH" "$(nfail)" "0"
+grep -q 'learnings: 1 banked' "$W/out.json" && ok "…and the readable records still report" \
+  || no "one bad line took the whole check down"
+# drafted-but-undecided compile candidates are the fourth number
+python3 - "$LH/compile/candidates.json" <<'PY6'
+import json, sys
+json.dump({"generated": "2026-09-05 00:00Z",
+           "candidates": [{"slug": "release-ritual", "status": "DRAFTED"},
+                          {"slug": "other", "status": "ADOPTED"}]},
+          open(sys.argv[1], "w"))
+PY6
+runjson "$LH"
+grep -q '1 drafted/proposed but undecided' "$W/out.json" \
+  && ok "a drafted candidate nobody ruled on is counted" || no "the candidate count is wrong"
+t "…still WARN, still not a FAIL" "$(nfail)" "0"
+
+# ── B2 · doctor surfaces the proposals awaiting the seat's review ────────────────────
+cat >> "$LH/archive/findings.jsonl" <<'FJ'
+{"id":"L-9","ts":"2026-09-03T00:00:00Z","kind":"learning","tag":"LEARNED","statement":"a lane's unreviewed claim","evidence":[{"type":"coord-line","ref":"[2026-09-01 00:00Z]","label":"cited"}],"scope":["estate"],"source":"lane:a1","status":"proposed"}
+FJ
+runjson "$LH"
+t "an unreviewed lane proposal → WARN, never a FAIL" "$(st 'LOOP HEALTH')" "WARN"
+t "…exit 5, so it cannot block a ship" "$RC" "5"
+grep -qE 'proposed: 1 awaiting review' "$W/out.json" && ok "…and doctor counts it awaiting review" \
+  || no "the proposed count is missing"
+python3 - "$LH/archive/findings.jsonl" <<'PY8'
+import sys
+with open(sys.argv[1], "a", encoding="utf-8") as f:
+    f.write('{"id":"F-70","ts":"2026-09-04T00:00:00Z","kind":"decision","statement":'
+            '"accepts L-9 — reviewed by the seat.","evidence":[{"type":"record","ref":'
+            '"L-9","label":"cited"}],"relation":"back","links":["L-9"],"status":"live"}\n')
+PY8
+runjson "$LH"
+# bites BOTH ways: the count must clear AND the check must still say it looked.
+# 'proposed: none awaiting review' also contains the phrase, so the count is what is
+# matched — an arm that cannot tell "none" from "one" is not an arm.
+if grep -qE 'proposed: [0-9]+ awaiting review' "$W/out.json"; then
+  no "an accepted proposal is still counted"
+elif grep -q 'proposed: none awaiting review' "$W/out.json"; then
+  ok "…and once the seat accepts it, the count clears"
+else
+  no "LOOP HEALTH stopped reporting the proposed line entirely"
+fi
 
 # ── B2 · the WARN classes: real findings that are not breakage ────────────────────────
 # doctor must be able to say "this is worth knowing" without saying "this is broken".

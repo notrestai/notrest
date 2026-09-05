@@ -60,8 +60,10 @@ python3 <compile-skill>/scripts/compile.py report --root "$ROOT"
   `COORD.md` plus any sealed `COORD-<NNN>.md` volumes in order (+ legacy
   `COORD-ARCHIVE.md`) (the `ask -> landed | evidence` lines), `COORD-AGENTS.md`
   (each lane's last conclusion, falling back to the sibling `agent-<id>.meta.json` where the
-  hook wrote `last: ?`), and `spend/ledger.md` (`purpose=` strings — the estate's most
-  explicit statement of what a lane was *for*). Clusters them by **shape**, then writes
+  hook wrote `last: ?`), `spend/ledger.md` (`purpose=` strings — the estate's most
+  explicit statement of what a lane was *for*, minus the `lane=daemon` lines the compiler
+  writes about itself) and `archive/findings.jsonl` (the `learning` and `open` records —
+  lessons, below). Clusters them by **shape**, then writes
   `<root>/compile/candidates.md` (the reading copy) and `candidates.json` (what `report` and
   the ritual read). Optional `--transcripts DIR` adds repeated Bash-command 5-grams from
   session `.jsonl` files; it is never required and never assumed.
@@ -78,13 +80,29 @@ python3 <compile-skill>/scripts/compile.py report --root "$ROOT"
 - **`report`** — one `[compile] RIPE …` line per ripe candidate. **Exit 3** when at least one
   ripe candidate is still `NEW`, so a hook can branch on it for free; **exit 0** otherwise —
   including when nothing has been scanned yet, because a hook must never break.
-- **`decide --slug S --status NEW|PROPOSED|COMPILED|DECLINED [--alias A] [--note T]`** —
-  appends a ruling to `compile/decisions.md`, which the next scan carries back into
-  `candidates.md`. Rulings match on slug **and** on the recorded `sig=` core, so a candidate
-  the scanner renames as the ledger grows keeps its ruling.
-- **`auto [--on|--off]`** — the standing authorization (see below). `--on` writes
-  `~/.notrest/auto-build/<estate-sha>.json` (owner-private, outside the repo — v4.5), `--off` removes it, bare prints status: **exit 0** opted in,
-  **exit 5** not. It authorizes DISPATCH only and never touches installation.
+- **`decide --slug S --status NEW|PROPOSED|DRAFTED|COMPILED|ADOPTED|PARKED|DECLINED
+  [--alias A] [--note T] [--evidence KIND=REF]`** — appends a ruling to
+  `compile/decisions.md`, which the next scan carries back into `candidates.md`. Rulings match
+  on slug **and** on the recorded `sig=` core, so a candidate the scanner renames as the ledger
+  grows keeps its ruling. `ADOPTED` is the one status that needs receipts — all three of
+  `fixture=`, `benchmark=`, `refuter=`, or it is refused at exit 2 having written nothing.
+  The three statuses the pipeline adds: **DRAFTED** (contract + skeleton exist, nothing built),
+  **ADOPTED** (all gates green; the estate may use it — still installed nowhere), **PARKED**
+  (failed twice unattended; never retried until the owner re-arms it).
+- **`draft [--all-ripe | --slug S]`** — scaffolds every ripe `NEW` candidate into its own
+  `compile/<slug>/` (contract, skeleton, benchmark harness) and records it `DRAFTED`. Zero
+  model tokens, idempotent, and it **never touches an existing slug**. **Exit 0** even with
+  nothing scanned, because the pulse daemon calls it after every scan and a hook must not
+  break; **3** for a `--slug` the scan never saw.
+- **`auto-run [--next | --slug S] [--runner CMD] [--dry-run] [--model M] [--max-turns T]
+  [--timeout S] [--today YYYY-MM-DD]`** — the unattended pipeline (see below). With neither
+  `--next` nor `--slug`, it behaves as `--next`.
+- **`auto [--on [--unattended --daily-cap N --run-cap M --max-turns T --stop-cooldown H]|--off]`** — the standing
+  authorization (see below). `--on` writes `~/.notrest/auto-build/<estate-sha>.json`
+  (owner-private, outside the repo — v4.5), `--off` removes it, bare prints status **and all
+  four rails**: **exit 0** opted in, **exit 5** not, **exit 2** on a cap flag without
+  `--unattended` (a budget for something that never runs is a setting nobody reads). Without
+  `--unattended` it authorizes DISPATCH only; installation is untouched either way.
 
 The same script also carries the ritual's two scaffolding verbs — documented where they are
 used, in Steps 1 and 2:
@@ -95,11 +113,34 @@ used, in Steps 1 and 2:
 - **`scaffold --slug S`** — the `compile/<slug>/` runtime skeleton. **Exit 2** if the directory
   already exists; it never overwrites a runtime.
 
-Exit codes: `scan` 0 · `report` 0/3 · `contract` 0/3 · `scaffold` 0/2 · `auto` 0/5 · bad
-arguments 2 · an invalid status 1.
+Exit codes: `scan` 0 · `report` 0/3 · `contract` 0/3 · `scaffold` 0/2 · `auto` 0/2/5 ·
+`draft` 0/2/3 (`--recheck` 0) · `auto-run` 0/2/3/5/6 · `credential` 0/2/5 · bad arguments 2 · an invalid status 1.
 
-The skill's own contract test is `scripts/fixture.sh` — 110 assertions over a synthetic estate;
+`auto-run`'s codes are the ones a daemon branches on, so they are listed separately:
+**0** ran to completion — adopted, nothing to do, BUSY (the lock was held), or a quiet stop
+on a runner that failed or was not logged in · **2** usage/refused before anything ran ·
+**3** a gate came back RED; the status is unchanged and the reason is in `decisions.md` ·
+**5** not authorized for unattended spending (no marker, or a dispatch-only one) ·
+**6** a cap stopped it; nothing further was spent.
+
+The skill's own contract test is `scripts/fixture.sh` — 554 assertions over a synthetic estate,
+including the whole unattended pipeline driven by a FAKE runner that spends nothing;
 run it after any change to `compile.py`.
+
+### Lessons become candidates too
+
+The scan reads more than the ledgers. It also walks `archive/findings.jsonl`'s **learning**
+and **open** records — both id spaces, `L-<n>` and `O-<n>` — and a lesson whose statement
+recurs **three or more times** (normalized the same way repeated work is: the volatile
+literals masked, stemmed, stopworded, then keyed on the whole token *set*, so the same lesson
+in different words months apart still groups) becomes a candidate of kind **`rule`**, carrying
+in `records:` the record ids it was built from. A record the store has marked `superseded` or
+`refuted` never reaches one, and a statement with fewer than three content tokens is skipped
+rather than grouped — *"it did not work"* normalizes to almost nothing and would sweep every
+terse record in the store into one triumphant candidate that means nothing. It then enters the same pipeline as any other candidate — because the
+compiled form of a lesson is not a paragraph, it is a **hook arm or an eval check**. A rule
+nobody encoded is a rule the estate re-learns; three learnings saying the same thing are the
+estate asking for a gate.
 
 ### How it decides two entries are the same job
 
@@ -115,6 +156,32 @@ Then a **cross-source fusion** pass merges candidates whose cores describe the s
 has to: one ritual leaves lines in COORD *and* purposes in the spend ledger, and its wording
 drifts over a year of ledger, so counting those separately understates the repetition twice
 over.
+
+### Job-likeness — is this candidate work, or an account of work?
+
+Every candidate carries a **`job`** score: the share of its cited rows carrying a **runnable
+token** — a flag, an exit code, a command, a path, a version, a commit. A row recording what a
+machine DID names something a machine can do; a row narrating a decision does not.
+
+- **Scored on the ledger line, never on the contract row.** Every `CONTRACT.md` row carries
+  its own citation by construction, so scoring the row scores the scaffolding — measured
+  here: it returned 1.00 for all 38 drafted slugs on this estate.
+- **A candidate scoring 0.00 is `narration, not a job`** and is never drafted; the scanner
+  banks a `DECLINED` ruling naming itself as the author, and the owner can re-rule it.
+- **`draft --all-ripe --max N`** (default 5) drafts the best N per pass, highest score first,
+  ties by occurrence count; the rest stay NEW with `not drafted: below the per-pass cap`. A
+  slug already scaffolded consumes no slot, or the queue never advances.
+- **`auto-run --next`** takes the highest-scored DRAFTED slug, then the oldest — with 41
+  drafted, blind first-armed order spends the night on whichever narration was scaffolded
+  first.
+- **A missing score is not a score of zero.** A `candidates.json` written before the score
+  existed is re-scored from its cited rows, never condemned for a missing field.
+- **⛔ IT DOES NOT SEPARATE EVERY CORPUS, AND SAYS SO.** Measured on this estate: all 41
+  drafted slugs score **0.93–1.00**, so `--recheck` declines **none** of them. They are the
+  seat's own narration about building a release — and that narration is *dense with runnable
+  tokens* because the work it describes is runnable (`eval rc=0`, `fixture.sh`, `--daily-cap`).
+  Job-likeness separates work from talk; it does not separate work from *talk about work*.
+  What bounds the flood here is the per-pass cap and the ranking, not the refusal.
 
 ### Reading `candidates.md` honestly
 
@@ -143,6 +210,36 @@ over.
   other candidate — a purpose says what a lane was CALLED, a COORD line says what was ASKED
   and what LANDED. Demoted, never deleted: read a weak-source row as shared vocabulary until
   the ledger says otherwise.
+- **The compiler never reads its own paperwork — the ouroboros has TWO doors.** Door one is
+  the daemon's own `lane=daemon` spend receipts (below). Door two is the **operator**:
+  `decide --status ADOPTED` and `auto-run` both print a COORD line for a human to paste, and
+  the pulse log gets pasted too. The refuter pasted 12 adopt lines and 12 pulse lines and
+  `scan` returned **three ripe candidates**, `slug-adopt-benchmark` at 12× among them — and
+  with the marker merely opted, estate-pulse runs `draft --all-ripe` on every pulse, so the
+  compiler's own paperwork becomes a drafted runtime overnight. **The tag is the test:** the
+  COORD and COORD-AGENTS readers drop any line tagged `[compile]`, `[hook]`, `[daemon]` or
+  `[pulse]` — the estate's names for its own machinery. A line written *by* the harness
+  *about* the harness is not evidence a human did the same job twice, however often it
+  repeats. Dropped at the reader, before the vocabulary, exactly as `lane=daemon` is.
+  **`draft --recheck` is the retroactive half:** it re-judges every slug already DRAFTED on
+  disk, reading each one's cited rows from *today's* ledgers through its own `CONTRACT.md`
+  (a machinery-built candidate no longer exists in `candidates.json` to be judged from), and
+  DECLINES the machinery-derived ones. It deletes nothing — a `DECLINED` ruling takes a slug
+  out of `auto-run`'s reach, and what happens to the directory is the owner's call. A slug
+  with no contract is reported **unjudgeable**, never declined by default.
+  As defence in depth, **`draft` re-reads the cited rows** and refuses a candidate more than
+  half of whose evidence is machinery-tagged — because dropping lines at the reader does
+  nothing about a `candidates.json` an older scan already wrote, which is the file the next
+  pulse actually reads. The refusal is banked as a ruling (`DECLINED`, naming the scanner as
+  its author and the owner's override) so it is not re-examined and re-noted every pulse.
+- **The compiler never reads its own receipts — door one.** `auto-run` writes a
+  `lane=daemon` line to `spend/ledger.md` for every headless call, and those are ledger lines
+  like any other: on the third unattended run the scanner clustered *the compiler's own
+  spending* into a ripe candidate, which `draft` would scaffold and `auto-run` would then pay
+  to compile. Found on this lane's own smoke test before the arms for it existed; the estate
+  would have paid for it nightly. `lane=daemon` is now dropped **at the reader**, before the
+  vocabulary, the signatures or the fusion weights — the `ESTATE_STOP` principle applied to a
+  whole line rather than a token, so no wording of the purpose string can smuggle it back in.
 
 ---
 
@@ -153,7 +250,7 @@ a human typing `/compile`. `compile.py auto --on` closes that gap without moving
 line one inch.
 
 - `python3 <compile-skill>/scripts/compile.py auto --on --root "$ROOT"` writes
-  `~/.notrest/auto-build/<estate-sha>.json` (owner-private, outside the repo — v4.5) — one JSON line, `{"opted": true, "stamp": "<UTC>"}`. `--off` removes
+  `~/.notrest/auto-build/<estate-sha>.json` (owner-private, outside the repo — v4.5) — one JSON line, `{"opted": true, "stamp": "<UTC>"}`. Adding `--unattended --daily-cap N` puts `unattended: true` and `daily_cap_tokens` in the same marker: the opt-in and its budget live together, so revoking one revokes the other. `--off` removes
   it; bare `auto` prints status (exit 0 opted in, exit 5 not). The marker is the **owner's
   standing authorization**, on disk where it can be read and revoked.
 - With the marker present and a ripe `NEW` candidate scanned, the SessionStart hook stops
@@ -167,9 +264,215 @@ line one inch.
   Step 7 the quality law. Standing authorization buys the *start*, never a shortcut.
 - A missing or malformed marker is **not** an opt-in: the hook falls back to the old nudge
   silently, and `auto` reports OFF. A corrupt opt-in is no opt-in.
-- **What it never authorizes: installation.** The runtime stays isolated under
-  `compile/<slug>/`, nothing installs itself, and shipping remains a versioned release the
-  owner gates by hand — forever, marker or no marker (Part 3).
+- **A legacy marker is a warning, not a silent no.** Before v4.5 the opt-in lived at
+  `compile/.auto-build` inside the repo. The move to `~/.notrest/auto-build/` did not migrate
+  it, so an estate that had opted in went quietly back to nudging for weeks and nobody was
+  told. Now `auto` and the SessionStart hook both **WARN once** when the legacy marker exists
+  and the new one does not, and the message names the migration. An authorization that lapses
+  in silence is worse than one that was never given.
+
+### Automatic end to end — the owner's 2026-09-05 ruling
+
+The owner ruled the whole pipeline automatic, superseding the older *installation is
+owner-gated forever* line above it. Each step still leaves a ledger line, and the safety that
+mattered is kept in a different place — **in the gates**, not in a human clicking through:
+
+1. **Draft is automatic and costs nothing.** After a fresh scan the pulse daemon runs
+   `compile.py draft --all-ripe`: every ripe `NEW` candidate is scaffolded into its own
+   isolated `compile/<slug>/` — contract, skeleton, benchmark harness — idempotently, never
+   touching an existing slug, recorded as `DRAFTED`. Zero model tokens.
+2. **Build and refuter run unattended.** Owner ruling, same day: *"the daemon should spend
+   tokens too, make it fully unattended."* `compile.py auto-run --next` is the pipeline runner
+   the pulse daemon calls after a scan. It takes the **oldest DRAFTED** candidate and runs
+   **BUILD → `fixture.sh` → REFUTE → `benchmark.sh` → adopt**, the two token steps as headless
+   `claude -p --model opus --output-format json --max-turns 60` calls with the contract as the
+   prompt (the free script gates sit between them on purpose — see the rails below). `--next`
+   takes the oldest drafted candidate, `--slug` names one, `--model` is recorded on every
+   receipt, and `--dry-run` prints the plan while spending nothing and taking no lock.
+   **Exit codes:** `0` adopted, a quiet stop, or `BUSY` · `2` usage · `3` a step went red (a
+   strike — the status is unchanged and it will be retried) · `5` no valid marker, or
+   authorized for dispatch only · `6` a cap stopped it.
+   In-session automation stays as it was: the SessionStart echo names the
+   candidate and the seat dispatches the builder and refuter lanes without asking again.
+3. **The rails are what make that safe, and each one is armed.** Spending tokens with nobody
+   watching is only defensible if every way it can go wrong is bounded *first*:
+   - **One estate-wide lock** at `compile/.auto-run.lock` (flock, non-blocking). Never two
+     runs at once, and never while a live session is running its own compile — a session
+     running the ritual by hand takes the same file. A held lock is **exit 0 `BUSY`**, never
+     a queue: a queue of unattended runs is how one slow build becomes ten concurrent ones.
+     A `BUSY` beside another run's `STOPPED` in the same second is **the lock working**, and
+     the log says so in those words — two pulses raced and one stood down.
+   - **Two strikes and the slug is PARKED.** A candidate whose build, fixture, refuter or
+     benchmark comes back red twice is written `PARKED` with the reason and is **never
+     retried unattended**; the owner re-arms it with `decide --slug S --status DRAFTED`.
+     (The owner's rule names build and refute; fixture and benchmark reds count too, because
+     a slug that fails its own fixture every night is the same bill.) An unattended loop that
+     retries forever is a bill with a heartbeat.
+   - **An unreported run is charged at the run ceiling.** The daily cap summed only the
+     *numeric* receipts, so a runner whose result carried no `usage` cost **zero** against
+     it — the cap was bypassed entirely by a CLI that simply stopped reporting, while the
+     line beside it said "unverifiable" and gated nothing. *A disclosure that changes no
+     decision is a comment.* An unknown-usage run is now counted at the **run ceiling** (the
+     most it could have cost under this estate's own rails), the receipt records
+     `tokens=unknown counted-as=<n>` — the token count is still never invented, only the
+     charge is stated — and `--dry-run` shows the conservative sum. It over-counts on
+     purpose: what is being bounded is a bill, and the safe direction to be wrong in is
+     "stopped early".
+   - **Caps the owner sets, on two clocks.** `auto --on --unattended --daily-cap N --run-cap M
+     --max-turns T` writes `unattended: true` and the budgets into the marker (defaults:
+     1,500,000 tokens/day, 400,000 per invocation, 60 turns per runner call). The runner
+     **refuses to start a step that would breach one**, and the refusal is a pulse line rather
+     than a silence. Two clocks because they fail differently: a run-cap bounds one runaway
+     build, a daily cap bounds a week of small ones.
+   - **Every headless run is receipted.** `spend.py log` records the observed token count from
+     the CLI's own JSON result, with `lane=daemon` and the model explicit — the same ledger,
+     the same routing gate, no exemption for work nobody watched. The receipt is written
+     **before** any verdict on the run, so a call that failed is still counted. A result whose
+     JSON carries no usage is logged `tokens=unknown grade=estimate` and says so in the
+     purpose: **a plausible-looking number in a spend ledger is worse than a gap**, because a
+     gap is visibly a gap. Those `lane=daemon` lines are then **excluded from `scan`** — see
+     the ouroboros note in Part 1, without which the compiler compiles its own receipts.
+   - **The fixture runs between build and refute, and the refuter's verdict fails closed.**
+     The order is BUILD → `fixture.sh` → REFUTE → `benchmark.sh` → adopt: the two script gates
+     cost nothing, and paying a refuter to tell you what a free script already said is a
+     waste. The refuter must end with a literal **`REFUTER: CLEAN`** (in its result or in
+     `REFUTER.md`); silence, a crash, or a wandered-off lane all read as a **defect**. Nobody
+     is watching, so silence must never be able to promote a runtime.
+   - **A quiet stop backs off, and a run of them counts.** A runner that fails — non-zero
+     exit, an auth refusal, or a result whose JSON says `is_error` — ends the run with one
+     pulse line, the status unchanged, and **no retry**. It is *not* a strike (the candidate
+     did nothing wrong), so the slug is **stamped and cooled down** for
+     `--stop-cooldown H` hours (default 6, on the marker) and **three consecutive quiet
+     stops are converted into one strike** — a permanently broken runner therefore parks its
+     slug instead of being dialled every pulse. An explicit `decide --status DRAFTED` clears
+     both the cooldown and the run. *Live, 2026-09-05:* before this existed, an armed marker
+     had the pulse retry one slug on three consecutive pulses, each logged "strike 0 of 2";
+     nothing was spent only because the CLI failed **before** reporting usage.
+   - **`is_error` outranks the exit code, and the reason is kept.** Probed at the seat: an
+     expired session comes back as `{"subtype":"success","is_error":true,"result":"Failed to
+     authenticate: OAuth session expired…"}` **at exit 0**, and a clean environment says
+     `Not logged in · Please run /login` instead — two reports with no words in common. So
+     the result is judged on `is_error` whatever the exit code, and the reason (the result
+     string, or the last 400 bytes of stderr) goes into the pulse line **and the receipt
+     purpose**. The live report was three identical `runner exited 1` lines carrying no cause
+     at all; a diagnosis nobody can read is not a diagnosis.
+   - **The credential step is OPTIONAL** (owner ruling, 2026-09-05). Precedence is
+     `CLAUDE_CODE_OAUTH_TOKEN` in the environment → the owner's file → **the CLI's own
+     login**. With neither of the first two, `auto-run` **calls the runner anyway** and lets
+     the CLI use whatever login the machine has — so an owner whose terminal is already
+     logged in never meets a credential step at all. *Absence of a file is not evidence of
+     absence of a login.* Only an **auth-shaped `is_error` coming back from that call** is a
+     block, and that is the one moment anything mentions setting a credential up.
+   - **When it IS needed, one command does it.** `claude setup-token` prints a long-lived
+     token but does **not** log the CLI in (live probe: `auth status` still said
+     `loggedIn false` afterwards), and the pulse daemon is spawned by hooks *inside the app*
+     — there is no shell in the chain, so an export can never reach it. So:
+
+         python3 <compile-skill>/scripts/compile.py credential --setup
+
+     runs `claude setup-token` on the owner's own TTY (they complete the browser step),
+     captures its stdout, recovers the single token from it, **verifies it with a one-turn
+     probe**, and only then writes
+     **`${NOTREST_HOME:-~/.notrest}/credentials/claude-oauth-token`** at **mode 0600 in a
+     0700 directory**. It prints exactly `credential: ok` or `credential: invalid — <first
+     120 chars>`. `--set` (hidden stdin paste) and `--status` (present/absent + modes) stay
+     as fallbacks. A token that fails the probe is never written — a 3am run should not be
+     the thing that discovers it.
+   - **A wrapped token is one token.** Live failure, 2026-09-05: the terminal wrapped the
+     printed token, the clipboard carried the break, and the CLI rejected *"a line break at
+     character 80 (110 characters on 2 lines)"*. Every step of that is normal behaviour by a
+     terminal, a clipboard and a CLI; what was missing was something that turned the paste
+     into a credential. So **all** whitespace — newlines, CR, spaces, tabs — is stripped
+     from the file's contents *and* from any paste, and `--setup` joins **adjacent**
+     token-shaped output lines (which is exactly what a wrap looks like) before deciding
+     how many candidates it found. Zero candidates or more than one is refused, never
+     guessed between; so are a label that came along with the paste, a truncated paste
+     (under 16 characters), and an issuer prefix appearing twice.
+   - **The mode rule is kept, and a bad mode still blocks.** File and directory must have no
+     group or other bits and be owned by the user running the daemon. Anything else is
+     **refused with a `BLOCKED` status naming the mode problem**, never silently downgraded
+     to "no credential" — that would teach the owner a world-readable token is merely
+     ineffective rather than dangerous. A block costs the slug **no strike and no cooldown**:
+     an estate-wide problem is not the candidate's fault.
+   - **The value goes to exactly one place: the child's environment.** It is never printed,
+     logged, receipted, put in a status line, or included in an error — not even in the
+     refusal that rejects it. Every surface says only which source was used
+     (`credential: env` · `file` · `cli` · `none`) and, at most, the token's *length* and
+     how many lines it was recovered from. Env wins when both exist, and the file is then
+     not read at all.
+   - **The child starts from a scrubbed environment.** The pulse daemon is spawned by hooks
+     inside a *live* Claude session, so the runner would otherwise inherit that session's
+     `CLAUDECODE` / `CLAUDE_CODE_*` and boot a headless `claude -p` inside another Claude.
+     Those are removed before exec. Credentials are the exception and pass through by name
+     (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`) — a daemon
+     cannot answer `/login`. No value is ever read, logged, or receipted.
+   - **One status line anyone can branch on.** `pulse/auto-run.status` is a single
+     overwritten line: `[ts] BLOCKED auth: <reason>` · `[ts] COOLDOWN <slug> until <ts>` ·
+     `[ts] OK <slug> <step>` · `[ts] IDLE nothing drafted`. **BLOCKED** and **COOLDOWN** are
+     the two a SessionStart banner should surface — they are the states where silence is
+     indistinguishable from success. A BUSY run never overwrites it: that status belongs to
+     the run that holds the lock.
+   - **The runner is injectable, and the plan is printable.** `--runner <cmd>` lets the
+     fixtures drive the whole pipeline without spending a token — which is why this path can be
+     tested at all — and `auto-run --dry-run` prints what would happen while spending nothing,
+     taking no lock and changing no state.
+   - **`NOTREST_UNATTENDED=1` on every headless run**, and the hooks honor it: no AUTO-BUILD
+     echo, and **no lane spawns from inside an unattended run**. One level deep, never a tree.
+   One candidate at a time either way — the echo names exactly one, the runner takes the oldest
+   one — which is what keeps "automatic" from meaning "unbounded".
+### The credential — optional, and one command
+
+**Nothing else in this plugin needs a credential.** Every other verb, hook and instrument is a
+local script. This one thing — the daemon spending tokens while nobody is at the keyboard — is
+the exception, and it is **opt-in**: no `auto --on --unattended`, no credential, no question.
+
+The runner resolves one in order, and the first that works wins:
+
+1. **`CLAUDE_CODE_OAUTH_TOKEN`** in the environment.
+2. **The owner file** `${NOTREST_HOME:-~/.notrest}/credentials/claude-oauth-token` — mode
+   `0600` in a directory with no group or other bits. A bad mode is a **refusal, not a
+   warning**: silently using a world-readable token would teach the owner that the mode does
+   not matter.
+3. **The CLI's own login.** A logged-in terminal needs nothing at all.
+
+*Why a file and not an export:* `claude setup-token` prints a long-lived token but does **not**
+log the CLI in, and the pulse daemon is spawned by hooks **inside the app** — there is no shell
+in that chain, so a token exported in a terminal never reaches it. A file on the owner's own
+disk is the only place both sides can meet, and it sits beside the authorization marker for the
+same reason: nothing inside an estate can write it and no clone can carry it.
+
+**When none of the three works, nothing breaks and nothing hides.** Drafting still runs (it is
+free), the runner writes `BLOCKED` to `pulse/auto-run.status`, and the SessionStart banner says
+so **once per UTC day** — a line that repeats every session is a line that stops being read —
+carrying the single remedy:
+
+```bash
+python3 <compile-skill>/scripts/compile.py credential --setup
+```
+
+`--setup` runs `claude setup-token` on the owner's terminal, recovers the token from its output
+(wrapped or not), writes it at `0600` in a `0700` directory and verifies it — one turn, printing
+only `credential: ok` or `credential: invalid — <reason>`. `--set` takes a hidden paste and `--status` reports present/absent and
+the modes; `--verify` spends one headless turn proving a token works **before** writing it.
+**The value is never printed, logged, receipted or put in an error** — every surface names only
+which source was used: `credential: env` · `credential: file` · `credential: none`. A secret in
+a pulse log is a secret in a file the owner thought was diagnostics.
+
+4. **Adoption is automatic under green gates.** Fixture green **and** a FAIR benchmark green
+   **and** the refuter CLEAN → the seat's gate step writes `decide --status ADOPTED` with the
+   receipt line, and the estate starts using the runtime. `decide --status ADOPTED` refuses
+   (exit 2, writing nothing) without `--evidence fixture=REF --evidence benchmark=REF
+   --evidence refuter=REF` — all three, each a ref a reader can go and check — so an adoption
+   that cannot show its receipts cannot be written; `decide --status DECLINED` revokes one.
+   Because DRAFTED scaffolds are **gitignored** (`/compile/*/` with an allow-list — an
+   unattended daemon that drafts 36 directories overnight must not also decide what the
+   repository contains), adoption prints the exact **`git add -f compile/<slug>`** that
+   admits one, and `auto-run --dry-run` names it in advance. The `-f` is the point: it
+   overrides the ignore rule, and a person types it.
+   **ADOPTED is still not INSTALLED**: it rules that the estate may *use* the runtime, and
+   wiring it into the harness remains the versioned release of Part 3 that the owner ships.
+   No marker has ever authorized that, and none can. Cheaper-but-worse is still a *failed*
+   compile (Step 7) — the quality law outranks the automation exactly as it outranks a number.
 
 
 # Part 2 · Compilation is a ritual run
@@ -373,6 +676,13 @@ rollback until the owner retires it.
 Local only. No publishing, sending, committing, pushing, installing, or replacing as part of a
 compile. Side-effectful workflows get replay/dry-run adapters — **a draft is never evidence it
 was sent**. Pause and ask before a benchmark run that would spend more than a few dollars.
+
+**Under the unattended pipeline none of that moves — the asking does.** A run nobody is
+watching cannot pause for a question, so the owner answers once, in advance, with the
+`--daily-cap` on the marker; the runner refuses the step that would breach it rather than
+guessing what the owner would have said. Adoption still marks a runtime as the estate's chosen
+path and **installs nothing** — shipping a compiled runtime remains a normal versioned release
+the owner gates by hand.
 
 ## When there is nothing to compile — say so
 

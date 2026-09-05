@@ -223,4 +223,27 @@ except Exception:
 sys.exit(0)
 PY
 
+# ── THE AUTO-BUILD DAEMON SEQUENCE (4.7.0, lane C's CLI). The pulse is the estate's
+# heartbeat, so it is where a fresh scan turns into work — but only where the OWNER said
+# so, and never at the cost of the pulse's own speed.
+#   draft --all-ripe   runs when the marker is OPTED      (`auto` exit 0)
+#   auto-run --next    runs only when it says UNATTENDED  (`auto`'s own printed answer)
+# THE MARKER IS NEVER PARSED HERE. `compile.py auto` is the one reader of that file, and
+# its exit code and its printed line are the whole interface (lane C, 2026-09-05): a hook
+# that read the JSON itself would become a second authority on what "authorized" means.
+# BOTH CALLS ARE DETACHED, like the scan above: auto-run is self-locking (a second caller
+# exits 0 BUSY at once) and logs to pulse/auto-run.log, so nothing here waits on it and a
+# long build cannot slow a prompt. Every failure path is silent; the pulse still exits 0.
+NR_COMPILE="$NR_SKILLS/compile/scripts/compile.py"
+if [ -f "$NR_COMPILE" ] && command -v python3 >/dev/null 2>&1; then
+  NR_AUTO_OUT="$(python3 "$NR_COMPILE" auto --root "$NR_PULSE_ROOT" 2>/dev/null)"
+  if [ "$?" -eq 0 ]; then
+    ( python3 "$NR_COMPILE" draft --all-ripe --root "$NR_PULSE_ROOT" >/dev/null 2>&1 & ) 2>/dev/null
+    case "$NR_AUTO_OUT" in
+      *"unattended: YES"*)
+        ( python3 "$NR_COMPILE" auto-run --next --root "$NR_PULSE_ROOT" >/dev/null 2>&1 & ) 2>/dev/null ;;
+    esac
+  fi
+fi
+
 exit 0

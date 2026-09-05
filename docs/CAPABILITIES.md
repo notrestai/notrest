@@ -77,6 +77,28 @@ upgrades: 1) cushion line should carry version + HEAD + dirty-file count — a c
 does: re-anchors the discipline before auto-compaction (~409 chars, fires rarely).
 upgrades: none needed now — re-measure after the router ships.
 
+### completion-gate.sh · spawn-gate.sh · router.sh — the learnings loop (4.7.0)
+does: closes the loop on lessons. `completion-gate.sh` (Stop) blocks a "done" while a trigger
+line in COORD — a correction, a refuter defect, a `RED:`, a `HALTED` — postdates the newest
+banked `kind=learning` record with nothing citing it, and hands back the `index.py add` command.
+`spawn-gate.sh` (PreToolUse `Agent`), on a call it allows, appends the scope-matched LEARNINGS
+digest to the lane's prompt through `hookSpecificOutput.updatedInput`. `router.sh`
+(UserPromptSubmit) keeps its one-line budget and spends it on a banked lesson where a route
+nudge would not have spoken — no verb matched, or the prompt already named one.
+4.7.0 widens all three: the spawn gate also lifts an explicitly marked gates block (`NOTREST-GATES:` … `END-GATES`, column 0, never inside a code fence) out of the
+prompt into `gates/ACTIVE.md` under a random 8-hex lane key (fenced blocks are documentation;
+each line carries provenance; session-start sweeps sections past 24 h), `agent-ledger.sh` parses
+each lane's trailing TESTS/OPEN/FINDINGS/LEARNINGS card into records — judgment kinds as
+`proposed` until the seat runs `accept` / `reject --why`, tests and findings ungated — and
+retires that gate section by key, and the Stop
+gate gains a third trigger — an *unverified* / *not tested* / *could not verify* claim with no
+`open` record behind it.
+how: all three read one digest format and one trigger regex out of
+`archivist/scripts/index.py` (`learnings --digest`, `learnings --trigger-regex`), so the gate,
+the injection, the nudge and eval's LEARNING-LOOP audit cannot drift apart. Every one keeps the
+house law — fast path on the miss, fail open and silent on error, always exit 0. Only the spawn
+gate may rewrite an `Agent` prompt: with several PreToolUse writers, the last one wins.
+
 ## Toolsets — scripts and runtimes
 
 ### doctor.py (a growing roster of named checks, exits 0/5/6/3/2, read-only)
@@ -88,7 +110,7 @@ does: law conformance as fingerprint — offload policy, honesty labels, script-
 upgrades: 1) ~~check #9 ROUTER~~ **SHIPPED**, with ROUTE-TABLE-PARITY and ROUTE-CONFORMANCE beside it. 2) an opt-in behavioral arm via the CLI's native `claude plugin eval` (our case format runs first-class now, with a no-plugin baseline) — the old runner died, the cases in evals-legacy-external-runner/ did not.
 
 ### compile.py + compile/<slug>/ runtimes
-does: zero-token estate scanner finds work done ≥3× (`compile.py report` prints the live count and exits 3 while any ripe candidate is unruled); the ritual compiles stable parts into isolated, fair-benchmarked runtimes; ship.py (853 lines, replay-proven) is the maiden compile — NOT live-verified, no version-monotonicity check.
+does: zero-token estate scanner finds work done ≥3× (`compile.py report` prints the live count and exits 3 while any ripe candidate is unruled); the ritual compiles stable parts into isolated, fair-benchmarked runtimes; ship.py (853 lines, replay-proven) is the maiden compile — NOT live-verified, no version-monotonicity check. Since 4.7.0 the pipeline runs **unattended** (owner ruling 2026-09-05): the pulse daemon scans, `draft --all-ripe` scaffolds every ripe candidate for free, and `auto-run --next` builds and then refutes the oldest drafted one as headless opus CLI runs before a scripted fair benchmark and a gated adopt. The rails carry the safety a human used to: one estate-wide lock, an owner-set daily token cap the runner refuses to breach, a spend receipt per headless run (`lane=daemon`), a quiet stop with no retry storm on auth failure, an injectable runner so fixtures spend nothing, and `NOTREST_UNATTENDED=1` honored by the hooks (no AUTO-BUILD echo, no lane spawns inside a run). The credential is **optional and one command**: unattended is opt-in, nothing else in the plugin needs one, and the runner takes `CLAUDE_CODE_OAUTH_TOKEN`, else `~/.notrest/credentials/claude-oauth-token` (0600, dir 0700 — a wrong mode is refused, not warned), else the CLI's own login, so a logged-in terminal needs nothing. With none of them the daemon drafts for free, writes `BLOCKED` to `pulse/auto-run.status`, and the SessionStart banner surfaces it once per UTC day with `compile.py credential --setup` (`--set` hidden paste, `--status` present/absent + modes, `--verify` proves a token before writing it). The value never leaves the runner: every surface prints only `credential: env` · `file` · `none`.
 upgrades: 1) add the monotonicity guard, then run ship.py in replay beside the next real ship and decide graduation. 2) compile the next ripe candidate. 3) scanner learns the speed law: flag candidates whose receipts show high wall-clock (compilation saves the most there).
 
 ### spend.py
@@ -135,7 +157,7 @@ upgrades: 1) `scripts/watch.py due|append` — parse the table, compute due rows
 gap: A table/cadence/receipt protocol with no script — every due date, count, and status edit is hand-maintained.
 
 ### archivist
-does: Scans ORACLE output folders into one greppable `oracle-index.md`; adds pointer entries for the agent ledger and compile candidates.
+does: Scans ORACLE output folders into one greppable `oracle-index.md`; adds pointer entries for the agent ledger and compile candidates. Owns the append-only findings store, the cross-project library shelf, and (4.7.0) the estate's **learnings** — `kind=learning` records tagged `INHERITED` / `RULED` / `LEARNED`, refused at the door without evidence and scope, read back by `learnings --digest` into the continuation packet, every lane prompt and the Stop gate. 4.7.0 adds the `open` and `alternative` kinds, required `ran`/`command`/`exit` fields on a `result`, `index.py card` (TESTS/OPEN/FINDINGS/LEARNINGS with counts), and `promote` for a learning scoped `library`.
 how: `scripts/index.py` (stdlib) `scan`/`find`; indexes `*Dossier.md` title + mtime date + path + Read-Me-First lines; counts `COORD-AGENTS.md` entries and `compile/candidates.json` ripe/total.
 upgrades: 1) Add a `grep` subcommand searching dossier **bodies** — `find` splits the index on `### ` and matches only head lines, so body terms are invisible today. 2) Index the rest of the estate the same pointer way: `watch/watchlist.md` rows + drift-log dates, `recap/*map.html`, background docs, chatroom rooms. 3) Parse the dossier's own date instead of `st_mtime` (any clone/copy resets it) and stamp entry age + `[cited]`-claim count so `find` can recommend reuse vs re-verify unopened.
 gap: `find` is blind to dossier bodies — the index answers "was this titled" not "was this said".
@@ -291,7 +313,7 @@ upgrades: 1) `--fix-script` emitting every fix line as one copy-paste block (sti
 gap: HOOKS FIRED now looks for marks a live hook would have left, but the check says so itself: a mark on the estate means something wrote it, not that every hook fires. Liveness evidence, not proof.
 
 ### eval
-does: Static law-conformance suite over the shipped text — a roster of checks (run it for the current count), zero model tokens, sub-second.
+does: Static law-conformance suite over the shipped text — a roster of checks (run it for the current count), zero model tokens, sub-second. Since 4.7.0 that roster includes `LEARNING-LOOP`: every trigger line the ledger records is cited by a banked learning, or the check names the first three that are not.
 how: `eval.py check --root [--json]`, exits 0/5/6/2; negation-aware line reading; every finding cites `file:line` plus a fix hint. `behavior --case` prints a bounded one-shot and its grader but never executes it. `fixture.sh` proves each violation flips only its own check.
 upgrades: 1) A `ROUTE-CONFORMANCE` check giving oracle's routing a fingerprint: the route table's targets all exist as skills, and a COORD `routed to /X` has downstream evidence. 2) A `references/*.md` citation check — `check_scripts` covers `scripts/*.py` only, so a skill citing a reference file it does not ship passes clean today. 3) `--baseline` diffing against the previous run so a release reports what conformance CHANGED, not just its current state.
 gap: Judges shipped text only — any law without a textual fingerprint is invisible to it.

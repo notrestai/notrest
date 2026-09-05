@@ -95,6 +95,89 @@ if [ -z "$out" ] && [ "$rc" -eq 0 ]; then ok "empty stdin -> silent, exit 0"
 else no "empty stdin -> silent, exit 0" "exit $rc, out: $out"; fi
 
 echo "----"
+echo "── 4.6.3 · the banked lesson speaks only when the route does not"
+# A scratch PLUGIN (hooks + the tree's index.py) and a scratch ESTATE, because this hook
+# now reads a store and this repo's store is not a fixture.
+RWORK="$(mktemp -d)"
+RPLUG="$RWORK/plug"; mkdir -p "$RPLUG/skills/archivist/scripts"
+cp -Rp "$SD/../../../hooks" "$RPLUG/hooks"
+RIDX_SRC="$SD/../../../skills/archivist/scripts/index.py"
+[ -f "$RIDX_SRC" ] && cp -p "$RIDX_SRC" "$RPLUG/skills/archivist/scripts/index.py"
+for rsk in "$SD"/../../../skills/*/; do [ -d "$rsk" ] && mkdir -p "$RPLUG/skills/$(basename "$rsk")"; done
+REST="$RWORK/est"; mkdir -p "$REST/archive"
+printf '# COORD.md\n\n- [2026-09-05 04:10Z] [seat] scratch\n' > "$REST/COORD.md"
+printf '%s\n' '{"id":"L-1","kind":"learning","ts":"2026-09-05T04:50:00Z","tag":"LEARNED","statement":"run every fixture from a scratch estate","evidence":[{"ref":"[2026-09-05 04:45Z]"}],"scope":["plugins/notrest/hooks/**"],"source":"seat"}' > "$REST/archive/findings.jsonl"
+rfire() {   # rfire <prompt> -> the hook's stdout, fired from the scratch estate
+  printf '%s' "$1" \
+    | python3 -c 'import sys,json;print(json.dumps({"session_id":"router-fixture","hook_event_name":"UserPromptSubmit","prompt":sys.stdin.read()}))' \
+    | ( cd "$REST" && bash "$RPLUG/hooks/router.sh" 2>/dev/null )
+}
+if [ -f "$RPLUG/skills/archivist/scripts/index.py" ] \
+   && python3 "$RPLUG/skills/archivist/scripts/index.py" learnings --root "$REST" --digest >/dev/null 2>&1; then
+  OUT="$(rfire "take another look at plugins/notrest/hooks/router.sh before we call it done")"
+  LN="$(printf '%s' "$OUT" | grep -c .)"
+  case "$OUT" in
+    *"a banked lesson applies: L-1"*)
+        if [ "$LN" -eq 1 ]; then ok "a path in scope -> ONE banked-lesson line"
+        else no "a path in scope -> exactly one line" "got $LN lines"; fi ;;
+    *) no "a path in scope -> the banked lesson speaks" "got: ${OUT:-<silent>}" ;;
+  esac
+  OUT="$(rfire "can you research how vector databases handle deletes in plugins/notrest/hooks/router.sh")"
+  LN="$(printf '%s' "$OUT" | grep -c .)"
+  case "$OUT" in
+    *"/notrest:researcher"*)
+        case "$OUT" in
+          *"banked lesson"*) no "the ROUTE outranks the lesson (one line per prompt)" "both lines were printed" ;;
+          *) if [ "$LN" -eq 1 ]; then ok "the ROUTE outranks the lesson — still one line per prompt"
+             else no "the route outranks the lesson" "got $LN lines"; fi ;;
+        esac ;;
+    *) no "the route still fires when a path is also named" "got: ${OUT:-<silent>}" ;;
+  esac
+  OUT="$(rfire "have a look at docs/TUTORIAL.md and tell me whether it still reads right")"
+  if [ -z "$OUT" ]; then ok "a path with NO learning in scope -> silent"
+  else no "a path with no learning in scope stays silent" "got: $OUT"; fi
+  # THE LIVE CONDITION FIRST: the seat's defect needed an ESTATE-scoped record in the
+  # store, because that is what makes any junk token match something. Seeding it here is
+  # what makes the tokenizer arms below red on the old code instead of accidentally green.
+  printf '%s\n' '{"id":"L-9","kind":"learning","ts":"2026-09-05T06:00:00Z","tag":"LEARNED","statement":"an estate-wide lesson that must never become router furniture","evidence":[{"ref":"[2026-09-05 05:00Z]"}],"scope":["estate"],"source":"seat"}' > "$REST/archive/findings.jsonl"
+  # ── SPECIFIC SCOPE ONLY + THE TOKENIZER (seat, live defect 2026-09-05). The seat was
+  # shown a lesson on a SYSTEM NOTIFICATION because "<task-id>…</task-id>" contains a
+  # slash, and because an 'estate'-scoped record matches every prompt ever typed.
+  OUT="$(rfire "--scope <task-id>ad1b941f8c2e4b1d9f3a</task-id> please continue the work")"
+  if [ -z "$OUT" ]; then ok "a <task-id> system notification is not a path -> silent"
+  else no "a <task-id> notification must not look like a path" "got: $OUT"; fi
+  for junk in "look at 'quoted/path.md' now please" "check [bracketed/thing] for me please"; do
+    OUT="$(rfire "$junk")"
+    if [ -z "$OUT" ]; then ok "a quoted/bracketed token is not a path -> silent"
+    else no "quoted/bracketed tokens are not paths" "got: $OUT"; fi
+  done
+  # an ESTATE-scoped store must stay quiet however specific the prompt is: those lessons
+  # ride the packet and the lane digest, never this line
+  printf '%s\n' '{"id":"L-9","kind":"learning","ts":"2026-09-05T06:00:00Z","tag":"LEARNED","statement":"an estate-wide lesson that must never become router furniture","evidence":[{"ref":"[2026-09-05 05:00Z]"}],"scope":["estate"],"source":"seat"}' > "$REST/archive/findings.jsonl"
+  OUT="$(rfire "take another look at plugins/notrest/hooks/router.sh before we call it done")"
+  if [ -z "$OUT" ]; then ok "an ESTATE-only store prints nothing (estate lessons are not router furniture)"
+  else no "an estate-only store prints nothing" "got: $OUT"; fi
+  # and a store holding BOTH still speaks — but only for the specific one
+  printf '%s\n' '{"id":"L-9","kind":"learning","ts":"2026-09-05T06:00:00Z","tag":"LEARNED","statement":"an estate-wide lesson","evidence":[{"ref":"[2026-09-05 05:00Z]"}],"scope":["estate"],"source":"seat"}
+{"id":"L-1","kind":"learning","ts":"2026-09-05T04:50:00Z","tag":"LEARNED","statement":"run every fixture from a scratch estate","evidence":[{"ref":"[2026-09-05 04:45Z]"}],"scope":["plugins/notrest/hooks/**"],"source":"seat"}' > "$REST/archive/findings.jsonl"
+  OUT="$(rfire "take another look at plugins/notrest/hooks/router.sh before we call it done")"
+  LN="$(printf '%s' "$OUT" | grep -c .)"
+  case "$OUT" in
+    *"L-1"*) if [ "$LN" -eq 1 ]; then ok "estate + path-scoped store -> one line, and it is the PATH-scoped lesson"
+             else no "estate + path store -> one line" "got $LN lines"; fi ;;
+    *) no "estate + path-scoped store still speaks for the specific one" "got: ${OUT:-<silent>}" ;;
+  esac
+
+  rm -f "$REST/archive/findings.jsonl"
+  OUT="$(rfire "take another look at plugins/notrest/hooks/router.sh before we call it done")"
+  if [ -z "$OUT" ]; then ok "NO store at all -> silent (the line is armed by the store)"
+  else no "no store means no lesson line" "got: $OUT"; fi
+else
+  echo "SKIP  index.py has no 'learnings' verb in this tree — the lesson arms are UNRUN"
+  FAIL=$((FAIL+1))
+fi
+rm -rf "$RWORK"
+
 echo "router-fixture: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1
 exit 0

@@ -1,5 +1,99 @@
 # Changelog — the notrest harness
 
+## 4.7.0 — 2026-09-05
+
+**Everything the estate learns is banked, delivered and audited; everything it repeats is drafted, built, refuted and adopted — automatically.**
+learnings loop.**
+
+The owner's observation: a rule that tells the model to bank what it learned gets skipped,
+sometimes. This release makes the skip impossible to hide. An estate's ledger here held 29
+lesson-shaped lines (corrections, refuter findings, things "earned") and a findings store with
+no learning in it and no field linking the two.
+
+- **The record.** `archive/findings.jsonl` gains kind `learning`: a tag (INHERITED · RULED ·
+  LEARNED), a statement, evidence (a ledger timestamp, a brief, a commit, a finding id) and a
+  scope (paths, skills, or the estate). `index.py add` refuses a learning without evidence or
+  scope; `index.py learnings` emits a framed, byte-capped digest, scoped and newest-first.
+- **Written or blocked.** The Stop gate now treats a correction, a refuter finding or a red gate
+  in the ledger as a trigger: if one is newer than the last learning record and no learning
+  cites it, "done" is blocked with the exact `index.py add` command. The trigger regex lives in
+  one place, printed by `index.py learnings --trigger-regex`, and eval asserts the hook and the
+  check read the same one.
+- **Delivered three ways.** The SessionStart packet carries a LEARNINGS block (count + the
+  newest three). The spawn gate injects the digest that matches a lane's scope into the lane's
+  prompt through PreToolUse `updatedInput` — the only hook permitted to touch the Agent prompt,
+  because the last writer wins. The router prints one line when a prompt names a path or skill a
+  learning covers. Digests are ids plus one line each, never the store.
+- **Audited.** eval `LEARNING-LOOP`: every trigger line newer than the first learning record has
+  a learning citing it; SKIP while the loop is unarmed, FAIL naming the first uncited triggers.
+  Doctor's ESTATE line reports the count and the newest record's age.
+- **The archivist grows into a record of everything a session pays for.** New kinds `open` (what
+  was not tested or did not work, what would close it, a recheck date) and `alternative` (a method
+  that might work better, when to try it); `result` now requires what ran, the command and the exit
+  code, so a TESTS count is a count of records. `index.py card` renders the four boxes — TESTS · OPEN ·
+  FINDINGS · LEARNINGS — and the packet carries their counts. A "not tested / could not verify" claim
+  with no `open` record behind it is now a Stop trigger.
+- **Lanes cannot forget to bank.** Every lane return ends in the four-box card; the SubagentStop hook
+  parses it and banks each line as a record with the lane as source and its banked brief as evidence.
+- **Lessons travel.** `index.py promote L-n` copies a learning to the machine-wide shelf
+  (`~/.claude/notrest-library`); every estate's packet carries the shelf's newest.
+- **The compiler runs unattended (owner ruling 2026-09-05).** Auto-build's authorization was restored —
+  the 4.5.0 move of the marker out of the repo had silently dropped it; `auto` and the SessionStart
+  hook now warn on a legacy marker. After each scan the pulse daemon drafts every ripe candidate
+  (`draft --all-ripe`, zero tokens) and `auto-run --next` builds it with a headless Opus run, attacks
+  it with a headless refuter, benchmarks it, and adopts it under green gates — or parks it with the
+  reason. Rails, each proven to fire in the fixture under a fake runner: one candidate at a time
+  (estate lock), 400k tokens and a turn limit per run, 1.5M daemon tokens per day (owner-set), two
+  strikes parks a slug, a spend receipt per run with the CLI's observed usage, a quiet stop when the
+  login has expired, and `NOTREST_UNATTENDED=1` honored by the hooks (no AUTO-BUILD echo, no fan-out).
+- **The daemon tells you when it is stuck, once, with the fix.** Every run writes one status line
+  (`pulse/auto-run.status`: BLOCKED · COOLDOWN · OK · IDLE); the SessionStart banner prints it at
+  most once per UTC day, and only for BLOCKED or COOLDOWN. A quiet stop puts the slug on a
+  six-hour cooldown and three in a row count as a strike, so a broken runner parks its candidate
+  instead of being dialled every pulse. The CLI's error field is judged regardless of exit code —
+  an auth failure comes back as `subtype: success, is_error: true` at exit 0. And the compiler no
+  longer eats its own tail: `lane=daemon` receipts are dropped at the scanner, because on the third
+  unattended run they had clustered into a ripe candidate the daemon would have paid to compile.
+- **The credential is optional and one command.** Nothing in the plugin needs a credential except
+  unattended building, which is opt-in. The runner uses, in order, `CLAUDE_CODE_OAUTH_TOKEN`, the
+  owner-private file `~/.notrest/credentials/claude-oauth-token` (0600 in a 0700 dir, refused
+  otherwise), or the CLI's own login — a logged-in terminal needs nothing. When none works the
+  daemon drafts for free and the banner names the remedy: `compile.py credential --setup`, which
+  runs `claude setup-token` for you, recovers the token from its output (wrapped or not), stores
+  and verifies it, and prints only `ok` or `invalid`. The value is never printed, logged or
+  receipted; the daemon's surfaces say `credential: env · file · cli · none`.
+- **Drafts are the queue, not release content.** The daemon's DRAFTED scaffolds under `compile/<slug>/`
+  are gitignored (the hand-built `release-ritual` stays tracked); a runtime enters the repo only when
+  it is ADOPTED, with the `git add -f` the adopt step prints. `draft --recheck` re-runs the machinery
+  guard over drafts made before the fix and declines the self-derived ones.
+- **Learnings compile too.** The scan reads learning and open records; a statement recurring three
+  times becomes a candidate of kind `rule`.
+- **Open questions expire.** `watch.py due` lists open records past their recheck date; `close <id>`
+  writes the closing record citing the open one.
+- **Loop health in doctor.** One WARN line: uncited triggers, open records by age, learnings per week,
+  candidates drafted but undecided.
+- **A commission's done-when is the Stop contract.** The spawn gate appends a lane's `DONE-WHEN:` /
+  `CHECK:` block to `gates/ACTIVE.md` under the lane id; the completion gate runs it; the ledger hook
+  retires it when the lane returns.
+- **The refuter round on this release found four blockers, and they shaped it.** A fenced code
+  example in a lane's prompt could become a live shell gate in the seat's session — the spawn gate
+  now harvests only a block the seat marks explicitly (`NOTREST-GATES:` … `END-GATES` at column 0),
+  ignores anything inside a code fence at any indent, and writes each line with its provenance. A lane
+  could bank a "lesson" that every sibling lane then received as law — lane-authored records are
+  now `proposed` until the seat accepts them, and only accepted records are ever injected. A lane
+  whose prompt already carried the LEARNINGS marker could leave a gate nobody could retire — lanes
+  now carry an explicit random 8-hex key matched exactly (a prefix retires nothing) and stale sections
+  are swept after a day. And the compiler's own
+  adopt and pulse lines could re-enter the scan as a ripe candidate — machinery-tagged lines are
+  dropped at both readers. Also fixed from the same round: unknown-usage runs now count against
+  the daily cap at the run cap; the headline is bounded by the arrow, not by 120 characters; two
+  corrections in one minute need two citations; "has not been verified" and "never ran" are
+  admissions; the quoted-span rule has an arm; a card whose header count disagrees with its items
+  is refused.
+- **RELEASE-SURFACE treats a deleted path as a deletion, not an unagreed surface** (`lexists`,
+  so a dangling symlink is still a surface). Retiring a golden file is now green before the
+  commit that retires it; the existence half still guards the other direction. Refuter-checked.
+
 ## 4.6.2 — 2026-09-01
 
 **The package audited itself and fixed what it found; the seat now picks the lane's model by

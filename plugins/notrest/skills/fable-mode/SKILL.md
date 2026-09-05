@@ -161,6 +161,24 @@ and skipping it is how a confident build ships broken.
     sees; **overriding it deliberately is fine — silently ad-hoc'ing a job a skill
     already owns is the violation.** Authority: `skills/oracle/SKILL.md` intake routing.
 
+13. **Bank the lesson.** A correction, a refuter defect, or a red gate is a **trigger**:
+    before the session says done, the lesson enters the store as a record rather than as
+    prose — `index.py add --kind learning --tag LEARNED --statement '…' --evidence
+    '[YYYY-MM-DD HH:MMZ]' --scope '<path glob | skill | estate>'` (`--json` takes the whole
+    record where a script is writing it). `INHERITED` is a standing rule the estate
+    arrived with, `RULED` a judgment settled here, `LEARNED` a defect the estate actually
+    paid for. Evidence and scope are both required at the door, and the evidence has to be
+    walkable (a COORD timestamp, a `briefs/` path, a commit, a record id) — a lesson that
+    cannot say what taught it, or where it applies, is an opinion.
+    Enforced, not remembered: the **Stop gate** (`hooks/completion-gate.sh`) blocks a
+    "done" while a trigger line in the ledger postdates the newest banked learning, and
+    what is banked comes back — to the next session in the continuation packet, to every
+    lane in the spawn gate's scoped digest. A lesson written only into COORD prose is a
+    lesson the estate will pay for twice. The same rule covers the other half of honesty:
+    what was **not** tested or could not be verified is banked as an `open` record with what
+    would close it — the Stop gate treats an unverified claim with no `open` behind it exactly
+    as it treats an unbanked lesson.
+
 ## THE FABLE DIFFERENCE — your instinct vs the fable move
 
 The gap between a strong model and a Fable session is not intelligence; it is which

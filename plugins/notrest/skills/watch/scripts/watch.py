@@ -11,8 +11,16 @@ Subcommands:
         row already names is skipped, and what was left off says why. exit 0.
 
   due   [--root .] [--today YYYY-MM-DD]
-        parse watch/watchlist.md, print the rows whose cadence has come round.
-        exit 3 = something is due (branch here in a hook) · 0 = nothing due.
+        parse watch/watchlist.md, print the rows whose cadence has come round — AND the
+        findings store's live `open` records whose `recheck` date has arrived, which are
+        the same kind of thing on the same calendar. exit 3 = something is due (branch
+        here in a hook) · 0 = nothing due.
+
+  close O-<n> --exit N [--command CMD] [--ran TEXT] [--note TEXT] [--root .]
+        close an open question by recording, through index.py's own door, the check that
+        closed it: a kind=result record citing the open id in `links` and headed
+        `closes O-<n>`. Refuses a second closure (exit 5) and a non-zero exit with no
+        note (exit 2). exit 0 = closed.
 
   probe <row-id> [--root .] [--url URL] [--scratch DIR] [--timeout 10]
         HEAD, then a conditional GET (If-None-Match/If-Modified-Since from the last
@@ -119,11 +127,17 @@ def is_sep(line):
     return bool(re.match(r"^\s*\|[\s:|-]+\|\s*$", line))
 
 
-def parse_watchlist(root):
+def parse_watchlist(root, required=True):
     """Return (path, lines, rows). Tables are located by their header row, so a table
-    that has grown a Hash column parses exactly like one that has not."""
+    that has grown a Hash column parses exactly like one that has not.
+
+    `required=False` is for `due`, which now also runs over the findings store's OPEN
+    records: an estate that tracks open questions but keeps no watchlist has a real
+    calendar, and dying at exit 2 would hide it."""
     p = wdir(root) / "watchlist.md"
     if not p.exists():
+        if not required:
+            return p, [], []
         die("no watchlist at %s — run /watch add first" % p, 2)
     lines = p.read_text(encoding="utf-8").splitlines()
     rows, cols, table, section = [], None, 0, ""
@@ -377,6 +391,70 @@ def cmd_add(a):
              "" if len(recs) == 1 else "s", p))
 
 
+# ── open questions on the same clock (docket G) ─────────────────────────────
+#
+# The archivist's `open` kind records what was NOT tested or did not work, and it carries
+# three required fields: what would CLOSE it, an OWNER who can, and a RECHECK date. That
+# third field only means something if something READS it — otherwise an open question
+# ages quietly into folklore, which is the exact failure the kind exists to prevent. So
+# `due` runs over open records as well as watchlist rows: one calendar, two kinds of
+# thing on it, one exit code.
+#
+# ⛔ THE CLOSING GRAMMAR, AND THE GAP IT PAPERS OVER. The store has no status flip for an
+# open question: `index.py`'s tombstone grammar is `supersedes|refutes F-<n>` (F- ids
+# only), and its `record` evidence refs are `[FL]-<n>`, so an `O-<n>` cannot legally be
+# cited as evidence at all. Until the store grows one, closure is DERIVED here: a record
+# whose statement head reads `closes O-<n>` AND whose `links` names that id closes it.
+# Both halves are required, exactly as the tombstone grammar requires both — a sentence
+# that merely mentions an id is not a flip. `watch.py close` writes precisely that shape.
+# If index.py later adds a real `closes` tombstone, this derivation should be deleted and
+# the store's own resolution read instead; two grammars for one flip is one too many.
+OPEN_KIND = "open"
+CLOSES_RE = re.compile(r"^closes\s+(O-\d+)\b", re.I)
+OPEN_ID_RE = re.compile(r"^O-\d+$", re.I)
+
+
+def open_records(root):
+    """(open_recs, closed_by, why) — the store's live open questions and their closers.
+
+    `closed_by` maps a closed open-id to the id of the record that closed it, so `due`
+    can leave it off the calendar and `close` can refuse to close it twice.
+    """
+    recs, why = findings(root)
+    opens, closed = [], {}
+    for rec in recs.values():
+        stmt = str(rec.get("statement") or "")
+        m = CLOSES_RE.match(stmt.strip())
+        if m:
+            oid = m.group(1).upper()
+            links = [str(x).upper() for x in (rec.get("links") or [])]
+            if oid in links:
+                closed[oid] = str(rec.get("id") or "?")
+        if rec.get("kind") != OPEN_KIND:
+            continue
+        # A record the store no longer calls live is not a question this estate is
+        # carrying — the store already ruled on it, and re-listing it would be this
+        # script overriding that ruling.
+        if (rec.get("effective_status") or rec.get("status") or "live") != "live":
+            continue
+        opens.append(rec)
+    opens.sort(key=lambda r: (str(r.get("recheck") or ""), str(r.get("id") or "")))
+    return opens, closed, why
+
+
+def open_due(rec, now):
+    """(is_due, why) for one open record. A missing or unparsable recheck date is DUE
+    NOW and says so — the same ruling `next_due` makes for an unparsable Last checked,
+    and for the same reason: a clock nobody can read is not a reason to stop watching.
+    A date in the FUTURE is honoured; a date in the future is the whole point of one."""
+    raw = str(rec.get("recheck") or "").strip()
+    try:
+        d = datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return True, "unparsable recheck %r — treated as due now" % raw
+    return d <= now, ""
+
+
 # ── due ─────────────────────────────────────────────────────────────────────
 def next_due(row):
     """(due-date, why) — None when the cadence means 'never on a clock'."""
@@ -405,7 +483,11 @@ def next_due(row):
 
 
 def cmd_due(a):
-    _p, _l, rows = parse_watchlist(a.root)
+    p, _l, rows = parse_watchlist(a.root, required=False)
+    opens, closed, why = open_records(a.root)
+    if not rows and not opens and not p.exists():
+        die("no watchlist at %s and no open records in the findings store%s — "
+            "run /watch add first" % (p, " (%s)" % why if why else ""), 2)
     now, due, held = today(a), [], []
     for r in rows:
         nd, why = next_due(r)
@@ -427,7 +509,114 @@ def cmd_due(a):
     print("watch: %d due of %d rows (%d never-due: %s)"
           % (len(due), len(rows), len(held),
              ", ".join("%s=%s" % (r.id, w) for r, w in held) or "-"))
-    sys.exit(3 if due else 0)
+
+    # ── the other half of the calendar: open questions whose recheck date has come ──
+    odue = []
+    for rec in opens:
+        oid = str(rec.get("id") or "?").upper()
+        if oid in closed:
+            continue
+        is_due, note = open_due(rec, now)
+        if is_due:
+            odue.append((rec, note))
+    for rec, note in odue:
+        oid = str(rec.get("id") or "?")
+        stmt = " ".join(str(rec.get("statement") or "").split())
+        print("OPEN %-5s recheck=%-10s owner=%-12s%s"
+              % (oid, str(rec.get("recheck") or "?"), str(rec.get("owner") or "?"),
+                 "  [%s]" % note if note else ""))
+        print("       %s" % (stmt[:110] + "…" if len(stmt) > 110 else stmt))
+        print("       closes when: %s" % " ".join(str(rec.get("closes_when") or "?").split()))
+        print("       close it: watch.py close %s --exit <code> --root %s" % (oid, a.root))
+    print("watch: %d open question(s) due of %d live open (%d already closed)%s"
+          % (len(odue), len(opens), len(closed),
+             " · %s" % why if (why and not opens) else ""))
+    sys.exit(3 if (due or odue) else 0)
+
+
+# ── close ───────────────────────────────────────────────────────────────────
+def cmd_close(a):
+    oid = a.open_id.upper()
+    if not OPEN_ID_RE.match(oid):
+        die("%r is not an open-record id (O-<n>)" % a.open_id, 2)
+    opens, closed, why = open_records(a.root)
+    rec = next((r for r in opens if str(r.get("id") or "").upper() == oid), None)
+    if rec is None:
+        recs, _why = findings(a.root)
+        if oid in recs:
+            die("%s is kind=%s, not an open question%s"
+                % (oid, recs[oid].get("kind"),
+                   "" if (recs[oid].get("effective_status") or "live") == "live"
+                   else " (and the store no longer calls it live)"), 2)
+        die("no open record %s in the findings store%s — open ids here: %s"
+            % (oid, " (%s)" % why if why else "",
+               ", ".join(str(r.get("id")) for r in opens) or "none"), 2)
+    if oid in closed:
+        die("%s was already closed by %s — an append-only store records a closure once; "
+            "a second one would make the count of open questions a matter of opinion"
+            % (oid, closed[oid]), 5)
+
+    # An open question is closed by RUNNING its own closing check, so the closing record
+    # is a `result`: what ran, the exact command, and the integer exit code. That is the
+    # store's own bar for a result and it is exactly the right bar here — "we looked into
+    # it" is not a closure.
+    command = a.command or str(rec.get("closes_when") or "").strip()
+    if not command:
+        die("%s carries no closes_when and no --command was given — there is nothing to "
+            "record as the check that closed it" % oid, 2)
+    if a.exit_code != 0 and not (a.note or "").strip():
+        # ⛔ A FAILING CHECK MAY STILL CLOSE A QUESTION — "we tried it and it does not
+        # work" is an answer. It may never do so SILENTLY, though: without a note the
+        # record would read as a closure and the exit code as a detail.
+        die("closing %s with exit %d needs --note saying what the failure SETTLED — a "
+            "non-zero check that closes a question is a finding, not a formality"
+            % (oid, a.exit_code), 2)
+    ran = a.ran or ("the closes_when check of %s" % oid)
+    note = " ".join((a.note or "").split())
+    head = "closes %s" % oid
+    stmt = ("%s — %s" % (head, note) if note else
+            "%s — %s exited %d" % (head, " ".join(command.split()), a.exit_code))
+    if len(stmt) > 300:                       # index.py's STATEMENT_MAX
+        stmt = stmt[:297] + "..."
+
+    payload = {
+        "session": a.session or "watch", "skill": "watch", "kind": "result",
+        "ask": "close open question %s" % oid, "statement": stmt,
+        "ran": ran, "command": command, "exit": a.exit_code,
+        # The citation rides in `links`, not in evidence: index.py's record-evidence
+        # grammar is [FL]-<n>, so an O- id cannot legally be cited there (gap disclosed
+        # at the top of this section). `links` validates against the store's known ids,
+        # so this is still a checked reference, not a string.
+        "links": [oid],
+        "evidence": [{"type": "command", "ref": command, "label": "cited"}],
+        "relation": "toward",
+    }
+    script = index_script()
+    if not script.exists():
+        die("no findings-store writer at %s — the closing record has to go through the "
+            "store's own door, so nothing was written" % script, 2)
+    try:
+        r = subprocess.run([sys.executable, str(script), "add", "--root", str(a.root)],
+                           input=json.dumps(payload).encode("utf-8"), timeout=60,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except (OSError, subprocess.SubprocessError) as exc:
+        die("%s writing the closing record" % exc.__class__.__name__, 2)
+    out = r.stdout.decode("utf-8", "replace").strip()
+    err = r.stderr.decode("utf-8", "replace").strip()
+    if r.returncode != 0:
+        die("the store REFUSED the closing record (index.py exit %d): %s\n"
+            "watch: nothing was written — %s is still open"
+            % (r.returncode, err or out, oid), 5)
+    print("CLOSED %s by %s — %s" % (oid, out or "(new record)", stmt))
+    print("       ran: %s" % ran)
+    print("       command: %s (exit %d)" % (command, a.exit_code))
+    if a.exit_code != 0:
+        print("       note: the closing check FAILED (exit %d). The question is closed "
+              "because the failure settled it, not because it passed." % a.exit_code)
+    print("COORD line: - [%s] [watch] close %s -> closed by %s | evidence: %s exit %d"
+          % (datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ"), oid,
+             out or "the new record", command, a.exit_code))
+    return 0
 
 
 # ── probe ───────────────────────────────────────────────────────────────────
@@ -683,6 +872,20 @@ def main():
     pr.set_defaults(f=cmd_probe)
     ap_ = sub.add_parser("append"); ap_.add_argument("--json", required=True)
     ap_.add_argument("--root", default="."); ap_.set_defaults(f=cmd_append)
+    cl = sub.add_parser("close", help="close an open question (O-<n>) by recording the "
+                                      "check that closed it, citing the open id")
+    cl.add_argument("open_id", metavar="O-<n>")
+    cl.add_argument("--root", default=".")
+    cl.add_argument("--exit", dest="exit_code", type=int, required=True,
+                    help="the integer exit code of the closing check — 'it worked' is "
+                         "not an exit code")
+    cl.add_argument("--command", default="",
+                    help="the exact command that ran (default: the record's closes_when)")
+    cl.add_argument("--ran", default="", help="what was run, in words")
+    cl.add_argument("--note", default="",
+                    help="what the check settled; REQUIRED when --exit is non-zero")
+    cl.add_argument("--session", default="")
+    cl.set_defaults(f=cmd_close)
     a = ap.parse_args()
     a.f(a)
 

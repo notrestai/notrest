@@ -18,7 +18,24 @@ bad()  { FAILS=$((FAILS+1));  echo "FAIL  $1"; }
 # ---------------------------------------------------------------- base harness
 P="$BASE/plugins/notrest"
 mkdir -p "$P/skills/agentswarm" "$P/skills/researcher" "$P/skills/graph/scripts" \
-         "$P/skills/draft/references" "$P/skills/oracle" "$P/hooks"
+         "$P/skills/draft/references" "$P/skills/oracle" "$P/hooks" \
+         "$P/skills/archivist/scripts"
+# LEARNING-LOOP reads its trigger regex out of archivist's index.py — the ONE home both
+# it and lane H's Stop hook read. The synthetic harness carries the REAL file (not a
+# stub) so the parity arm below compares what actually ships, not a copy of it.
+cp "$(cd "$(dirname "$0")/../../archivist/scripts" && pwd)/index.py" \
+   "$P/skills/archivist/scripts/index.py"
+cat > "$P/skills/archivist/SKILL.md" <<'EOF'
+---
+name: archivist
+description: "The findings store and the learnings loop. Use on /archivist."
+---
+# archivist
+Records land through `scripts/index.py add` — the store is **append-only**, never
+hand-edited. `scripts/index.py learnings` renders the banked lessons.
+## Self-check
+- every record was validated at the door (exit 2 names the rule it broke)
+EOF
 
 cat > "$P/skills/agentswarm/SKILL.md" <<'EOF'
 ---
@@ -384,6 +401,163 @@ passcase "no CLAUDE.md at all SKIPs the kernel check" \
 passcase "a golden list whose surfaces all exist" \
   'mkdir -p "$W/evals" && printf "CHANGELOG.md\n" > "$W/evals/golden-release-surface.txt";
    printf "x\n" > "$W/CHANGELOG.md"'
+
+# ── RELEASE-SURFACE · a DELETION is not an unagreed surface ───────────────────────────
+# `git diff --name-only HEAD` lists REMOVED paths as well as changed ones, so retiring a
+# golden-surface file could never be green before the commit: delist it and the "touched
+# but not agreed" half fires; keep it listed and the "named file does not exist" half
+# fires. The workshop rebuild sat in exactly that vice — 10 module files deleted and
+# delisted in one change, with no ordering that passed. These arms need a real work tree,
+# so this block builds one.
+gitsurface() {  # gitsurface <label> <want-exit> <want-FAIL-checks> <mutation>
+  label="$1"; wantrc="$2"; wantfail="$3"; shift 3
+  W="$TMP/w"; rm -rf "$W"; cp -R "$BASE" "$W"
+  P="$W/plugins/notrest"
+  mkdir -p "$W/docs" "$W/evals"
+  printf "the retiring module\n" > "$W/docs/retiring-module.md"
+  printf "docs/retiring-module.md\n" > "$W/evals/golden-release-surface.txt"
+  (
+    cd "$W" || exit 1
+    git init -q 2>/dev/null
+    git config user.name Fixture; git config user.email fixture@example.com
+    git config commit.gpgsign false
+    git add -A >/dev/null 2>&1
+    git -c commit.gpgsign=false commit -qm "the agreed surface" >/dev/null 2>&1
+  ) || { bad "$label — git setup failed"; return; }
+  ( eval "$@" )
+  python3 "$EVAL" check --root "$W" > "$TMP/out" 2>&1
+  rc=$?
+  got="$(grep -E '^FAIL ' "$TMP/out" | awk '{print $2}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  if [ "$rc" -eq "$wantrc" ] && [ "$got" = "$wantfail" ]; then
+    ok "$label (exit $rc)"
+  else
+    bad "$label -> got [$got] exit $rc (want [$wantfail] exit $wantrc)"
+    grep -E '^FAIL ' "$TMP/out"
+  fi
+}
+
+# 1 · deleted on disk AND delisted, uncommitted — the retirement the ruling admits
+gitsurface "a delisted file deleted but not yet committed is a RETIREMENT, not a breach" 0 "" \
+  'rm -f "$W/docs/retiring-module.md"; : > "$W/evals/golden-release-surface.txt"'
+# 2 · deleted but still named in the list — the other half must still catch it
+gitsurface "…but a file still NAMED in the golden list and deleted is caught" 6 "RELEASE-SURFACE" \
+  'rm -f "$W/docs/retiring-module.md"'
+# 3 · a new release-shaped surface nobody agreed to — unchanged behaviour
+gitsurface "an ADDED docs/ surface that is not in the golden list still FAILs" 6 "RELEASE-SURFACE" \
+  'printf "new\n" > "$W/docs/unagreed-page.md"; (cd "$W" && git add docs/unagreed-page.md >/dev/null 2>&1)'
+# 3b · a DANGLING SYMLINK is not a deletion. os.path.exists() follows the link, so a
+# broken link at a touched unlisted path read as "removed" and slipped the unagreed-surface
+# half while the index still carried a blob. lexists sees the link itself.
+gitsurface "a dangling symlink at an unlisted touched path is NOT a deletion" 6 "RELEASE-SURFACE" \
+  'printf "sneak\n" > "$W/docs/SNEAK.md"; (cd "$W" && git add docs/SNEAK.md >/dev/null 2>&1);
+   rm -f "$W/docs/SNEAK.md"; ln -s /nonexistent-target "$W/docs/SNEAK.md"'
+# …while a REAL removal at the same shape still reads as the retirement it is
+gitsurface "…and a real deletion beside it still passes" 0 "" \
+  'rm -f "$W/docs/retiring-module.md"; : > "$W/evals/golden-release-surface.txt"'
+
+# 4 · the deletion exclusion must not blind the check to a real addition beside it
+gitsurface "…even when a legitimate retirement happens in the same change" 6 "RELEASE-SURFACE" \
+  'rm -f "$W/docs/retiring-module.md"; : > "$W/evals/golden-release-surface.txt";
+   printf "new\n" > "$W/docs/unagreed-page.md"; (cd "$W" && git add docs/unagreed-page.md >/dev/null 2>&1)'
+
+# ── LEARNING-LOOP (4.6.3) · did the estate BANK the lessons it paid for? ─────────────
+# ⛔ ONE REGEX, ONE HOME. eval and lane H's Stop hook both read LEARN_TRIGGER_REGEX out of
+# archivist's index.py. Two copies is two regexes the moment somebody edits one — and then
+# the hook prompts for lessons the gate does not audit, or the gate reddens on lines the
+# hook never surfaced. This parity arm is the thing that makes the single home real.
+IDXP="$BASE/plugins/notrest/skills/archivist/scripts/index.py"
+if [ -f "$IDXP" ]; then
+  RX_IDX="$(python3 "$IDXP" learnings --trigger-regex 2>/dev/null)"
+  RX_EVAL="$(python3 -c "
+import importlib.util,sys
+sp=importlib.util.spec_from_file_location('e','$EVAL'); m=importlib.util.module_from_spec(sp)
+sp.loader.exec_module(m)
+rx,_p=m.learning_trigger_regex('$BASE/plugins/notrest')
+sys.stdout.write(rx or '')" 2>/dev/null)"
+  [ -n "$RX_IDX" ] && [ "$RX_IDX" = "$RX_EVAL" ] \
+    && ok "eval's trigger regex IS index.py's, byte for byte" \
+    || bad "trigger regex drift: index[$RX_IDX] eval[$RX_EVAL]"
+else
+  bad "archivist index.py is not in the synthetic harness — parity unprovable"
+fi
+
+# 4.7: the contract gained `untested` — ADDITIVELY, so the five original keys keep their
+# exact meaning and a consumer reading only them is unaffected. eval must not fail on it.
+python3 -c "
+import importlib.util, json, sys, os
+sp=importlib.util.spec_from_file_location('ix','$IDXP'); m=importlib.util.module_from_spec(sp)
+sp.loader.exec_module(m)
+rep=m.trigger_report('$BASE')
+assert sorted(rep)==['armed','cited','floor','regex','uncited','untested'], sorted(rep)
+" && ok "the trigger contract carries all six keys eval and the hook read" \
+  || bad "the trigger contract keys are not what eval expects"
+
+lloop() {  # lloop <label> <want-exit> <want-FAIL-checks> <mutation>
+  label="$1"; wantrc="$2"; wantfail="$3"; shift 3
+  W="$TMP/w"; rm -rf "$W"; cp -R "$BASE" "$W"
+  P="$W/plugins/notrest"; mkdir -p "$W/archive"
+  cat > "$W/COORD.md" <<'CO'
+# COORD.md — session coordination ledger
+## LEDGER
+- [2026-09-05 04:00Z] [seat] ordinary work -> landed | evidence: exit 0
+- [2026-09-05 04:45Z] [seat] owner CORRECTION: bank the lessons -> loop designed | evidence: brief
+- [2026-09-05 04:47Z] [seat] REFUTER round found a DEFECT in the gate -> fixed | evidence: exit 0
+CO
+  ( eval "$@" )
+  python3 "$EVAL" check --root "$W" > "$TMP/out" 2>&1
+  rc=$?
+  got="$(grep -E '^FAIL ' "$TMP/out" | awk '{print $2}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  if [ "$rc" -eq "$wantrc" ] && [ "$got" = "$wantfail" ]; then ok "$label (exit $rc)"
+  else bad "$label -> got [$got] exit $rc (want [$wantfail] exit $wantrc)"; grep -E '^FAIL ' "$TMP/out"; fi
+}
+LSTAMP='[2026-09-05 04:45Z]'
+mkrec() {  # mkrec <ts> <evidence-ref>  -> one learning record on stdout
+  python3 -c "
+import json,sys
+print(json.dumps({'id':'L-1','ts':sys.argv[1],'session':'','skill':'','kind':'learning',
+ 'ask':'','statement':'a lesson the estate paid for','tag':'RULED',
+ 'evidence':[{'type':'coord-line','ref':sys.argv[2],'label':'cited'}],
+ 'relation':'toward','links':[],'status':'live','scope':['estate'],'source':'seat'}))" "$1" "$2"
+}
+
+# no learning at all -> the loop is NOT ARMED. It must SKIP, never invent a debt.
+lloop "no learning record -> the loop SKIPs, it never invents a debt" 0 "" 'true'
+python3 "$EVAL" check --root "$TMP/w" > "$TMP/out" 2>&1
+grep -q 'SKIP  LEARNING-LOOP' "$TMP/out" && ok "…and says so as a SKIP line" || bad "no SKIP line"
+grep -q 'loop not armed' "$TMP/out" && ok "…naming the reason" || bad "the SKIP did not name its reason"
+
+# a learning that cites the trigger closes the loop for it; the LATER trigger does not
+lloop "a trigger cited by no learning FAILs" 6 "LEARNING-LOOP" \
+  "mkrec 2026-09-05T04:46:00Z '$LSTAMP' > \"\$W/archive/findings.jsonl\""
+python3 "$EVAL" check --root "$TMP/w" > "$TMP/out" 2>&1
+grep -q '04:47Z' "$TMP/out" && ok "…naming the uncited trigger by its timestamp" \
+  || bad "the finding did not name the uncited line"
+grep -q '04:45Z\].*cited by no learning' "$TMP/out" && bad "the CITED trigger was reported too" \
+  || ok "…and the cited one is not reported"
+
+# both triggers cited -> PASS
+lloop "every trigger cited -> PASS" 0 "" \
+  "{ mkrec 2026-09-05T04:46:00Z '$LSTAMP'; mkrec 2026-09-05T04:48:00Z '[2026-09-05 04:47Z]'; } > \"\$W/archive/findings.jsonl\""
+python3 "$EVAL" check --root "$TMP/w" > "$TMP/out" 2>&1
+grep -q 'PASS  LEARNING-LOOP' "$TMP/out" && ok "…reported as a PASS with counts" || bad "no PASS line"
+grep -qE 'LEARNING-LOOP.*loop armed at .* trigger line\(s\) since, all cited' "$TMP/out" \
+  && ok "…stating the floor it armed at and how many triggers it audited" \
+  || bad "the PASS did not carry its counts"
+
+# ⛔ THE AUDIT IS BOUNDED BY WHEN THE LOOP WAS ARMED. A trigger OLDER than the first
+# learning predates the practice; grading an estate against a rule it did not have is how
+# a gate becomes something people switch off.
+lloop "a trigger OLDER than the first learning is not a debt" 0 "" \
+  "mkrec 2026-09-05T04:46:30Z '[2026-09-05 04:47Z]' > \"\$W/archive/findings.jsonl\""
+# an ordinary line is never a trigger, however many learnings exist
+lloop "an ordinary ledger line is never a trigger" 0 "" \
+  "{ mkrec 2026-09-05T04:46:00Z '$LSTAMP'; mkrec 2026-09-05T04:48:00Z '[2026-09-05 04:47Z]'; } > \"\$W/archive/findings.jsonl\""
+python3 "$EVAL" check --root "$TMP/w" > "$TMP/out" 2>&1
+grep -q '04:00Z' "$TMP/out" && bad "an ordinary line was audited as a trigger" \
+  || ok "…the 04:00Z ordinary line is not audited"
+# a corrupt store line must not take the check down
+lloop "a corrupt store line does not break the check" 0 "" \
+  "{ mkrec 2026-09-05T04:46:00Z '$LSTAMP'; echo 'not json'; mkrec 2026-09-05T04:48:00Z '[2026-09-05 04:47Z]'; } > \"\$W/archive/findings.jsonl\""
 
 # THE SANDBOX LAW, now asserted: this fixture writes only inside its own mktemp dir.
 if [ -e /evals ] || [ -e /golden-release-surface.txt ]; then

@@ -43,7 +43,15 @@ new record, and `track` resolves what is currently true.
 - **`id`** — assigned by the store, `F-<n>`, monotonic. A caller that supplies one is rejected.
 - **`ts`** — ISO8601 Z. Caller-supplied or stamped now.
 - **`session` · `skill`** — who wrote it. **`ask`** — the question it was answering.
-- **`kind`** — `finding` · `result` · `decision` · `conflict` · `backtrack` · `side-route`.
+- **`kind`** — `finding` · `result` · `decision` · `conflict` · `backtrack` · `side-route` ·
+  `learning` (below) · `open` · `alternative`. Three kinds carry required fields of their own,
+  refused at the door like everything else:
+
+| kind | required | because |
+|---|---|---|
+| `result` | `ran` · `command` · `exit` | a TESTS count must count things that actually ran, never things somebody said they ran (`ran-required`, `command-required`, `exit-required`) |
+| `open` | `closes_when` · `owner` · `recheck` | what was *not* tested or could not be verified, what would close it, who holds it, and when to look again — *"an open question nobody can close is a worry, not a record"* |
+| `alternative` | `method` · `when_to_try` · `cost` | a road not taken is only worth keeping if the next reader can actually take it |
 - **`statement`** — the finding itself, 1–3 sentences. Self-contained: it must read alone.
 - **`evidence`** — `[{type: url|path|command|coord-line|record, ref, label}]`, label one of
   `cited` · `estimate` · `recall` · `unverified` · `model-opinion`. A `record` ref cites
@@ -109,6 +117,120 @@ The flag is a **dependency made visible, not a verdict**. It does not refute the
 does not flip it: it says the evidence underneath moved, and leaves the judgment — does this
 decision survive the loss of that finding? — to the reader who has to make it.
 
+## Learnings — the lesson kind
+
+A finding is what the project learned about **the world**. A **learning** is what it learned
+about **working here** — a correction it was given, a rule that was ruled, a defect it paid
+for once and must not pay for twice. Those used to live only as prose in `COORD.md`, which
+means the next session inherited them only if it happened to scroll that far.
+
+`kind="learning"` makes a lesson a record, with its own required fields and the same door:
+
+```json
+{"id": "L-3", "ts": "2026-09-05T05:10:00Z", "kind": "learning", "tag": "RULED",
+ "statement": "A kernel change ships only through a refuter round.",
+ "evidence": [{"type": "coord-line", "ref": "[2026-09-05 04:52Z]", "label": "cited"}],
+ "scope": ["plugins/notrest/hooks/**", "establish.py"], "source": "seat"}
+```
+
+It goes in through the same door as everything else — `add --json` or stdin, **not** a set of
+per-field flags:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . --json '{
+  "kind":"learning","tag":"LEARNED",
+  "statement":"<what will be done differently, one sentence, <=300 chars>",
+  "evidence":[{"type":"coord-line","ref":"[YYYY-MM-DD HH:MMZ]","label":"cited"}],
+  "scope":["<path glob | skill name | estate>"],"source":"seat"}'
+```
+
+- **`id`** — `L-<n>`, assigned by the store, its own sequence beside `F-<n>`.
+- **`tag`** — exactly one of three, and the tag says where the lesson came from:
+
+| tag | the lesson came from |
+|---|---|
+| `INHERITED` | a standing rule the estate arrived with — an owner ruling, a policy, a law already written down somewhere else |
+| `RULED` | a judgment made here and settled — a decision, a refuter verdict, an argument that closed |
+| `LEARNED` | something the estate actually paid for — a red gate, a correction, a defect that shipped |
+
+- **`statement`** — the lesson itself, **≤300 chars** (`statement-too-long` above that),
+  imperative and self-contained. It has to read alone at the bottom of a lane prompt.
+- **`evidence`** — the ordinary `[{type, ref, label}]` list, and **at least one ref has to be
+  walkable**: a COORD timestamp `[YYYY-MM-DD HH:MMZ]`, a `briefs/` path, a commit hash, or a
+  record id (`F-<n>` / `L-<n>`). A lesson that cannot say what taught it is an opinion.
+- **`scope`** — **at least one**: a path glob, a skill name, or `estate` for a lesson that
+  applies everywhere. Scope is what decides which lane gets told.
+- **`source`** — `seat`, or the id of the lane that banked it.
+
+Every kind's extra fields are gated **both ways**: required on the kind that owns them, refused
+on any other (`kind-only-field`) — a `scope` quietly riding on a finding would be read by
+nobody and would make the field mean two things. `scope` and `source` are shared by `learning`
+and `open`, because both are delivered to somebody: a lesson to whoever touches those paths, a
+question to whoever inherits them. Learnings and open records each number in **their own id
+space** — `L-1`, `O-1` — beside `F-<n>`, and any of them can be cited as `record` evidence
+later.
+
+| rule | refuses a learning when |
+|---|---|
+| `tag-enum` | `tag` is not one of the three |
+| `statement-too-long` | the statement is over 300 chars |
+| `scope-required` · `scope-shape` | `scope` is missing, empty, or not a list of non-empty strings |
+| `evidence-unwalkable` | no evidence ref is a COORD timestamp, a `briefs/` path, a commit hash, or a record id |
+| `source-shape` | `source` is not `seat` or a lane id |
+
+Exit 2, the rule named, nothing written — the same door. Everything else about the store is
+unchanged: append-only, a correction is a new record, nothing is ever edited in place.
+
+### The loop — banked, delivered, audited
+
+Banking is only half of it: a lesson nobody reads is prose with better punctuation. The
+harness **delivers** the store into the places a session can act on it, and **audits** the
+other end.
+
+| surface | what it delivers | run by |
+|---|---|---|
+| the **continuation packet** | a `LEARNINGS` block after the ledger tail — the total, plus the newest 3 digest lines | `establish.py continuation --brief`, at every `/notrest` pickup |
+| the **spawn gate** | a digest scoped to the lane's own prompt, appended to that prompt before the lane starts | `hooks/spawn-gate.sh` (PreToolUse `Agent`) |
+| the **router** | at most one line, when the prompt names a path or a skill some learning is scoped to | `hooks/router.sh` (UserPromptSubmit) |
+| the **Stop gate** | a refusal, on two triggers: a session that took a correction, a refuter defect or a red gate and then said *done* without banking the lesson — **and** a return or ledger line **admitting** something went unchecked — *not tested*, *could not be verified*, *has not been verified/tested*, *never ran/tested/verified/checked*, *not (yet\|fully) verified* — with no `open` record behind it. Either way the block carries the `add` command that clears it | `hooks/completion-gate.sh` (Stop) |
+| **`eval.py check`** | `LEARNING-LOOP` — the same law, statically: every trigger line in the ledger is cited by some learning | the release gate |
+
+**Only `accepted` records are delivered.** A lesson a *lane* banked is a claim by a worker
+about the estate, and a worker never grades itself — so a `learning`, `open` or `alternative`
+carrying a `lane:<id>` source is **refused at the door unless its status is `proposed`**
+(`lane-record-must-be-proposed`), and a proposed record reaches no lane prompt, no router line
+and no packet until the seat rules on it:
+
+```bash
+python3 "$IDX" accept L-7                       # promote: it now travels
+python3 "$IDX" reject  L-7 --why '<the reason>'  # retire it; --why is required
+python3 "$IDX" learnings --include-proposed      # the review queue
+python3 "$IDX" learnings --include-superseded    # what was retired, and why
+```
+
+`--why` is not politeness: a rejected lesson that never says why it was rejected gets
+re-proposed by the next lane that hits the same wall. **Findings and results from a lane are
+data, not judgment, and are ungated** — a test that ran and an observation about the tree do
+not need a promotion to be true.
+
+All of them read **one digest line format**, so no two surfaces can drift:
+
+```
+| L-3 [RULED] A kernel change ships only through a refuter round. — evidence: [2026-09-05 04:52Z]
+```
+
+The seat and the Stop gate share one **trigger regex** too, printed by the script itself
+(`learnings --trigger-regex`) rather than retyped in the hook and again in the checker — and
+one **implementation**: `learnings --triggers --json` is the single place a trigger line is
+decided, so the gate and its audit cannot disagree about what counts.
+
+**The arming floor.** The loop is bounded by the earliest evidence stamp any learning cites.
+Trigger lines older than that floor are **grandfathered** — never returned, never owed — and
+an estate with no learning at all is **UNARMED**, owing nothing. Without a floor, the day the
+first lesson is banked, every correction in the project's whole history becomes an
+outstanding debt, and a gate that fires on everything is a gate that gets overridden by
+reflex. The floor makes the law start *when the estate opted in*.
+
 ## Commands
 
 **Write one record** (the sink every skill uses):
@@ -121,6 +243,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/index.py" add --root . -
   "relation":"toward","links":[]}'
 ```
 
+Or the **per-field form**, which is what the hooks and the Stop gate hand back because it
+survives a paste:
+
+```bash
+python3 "$IDX" add --root . --kind learning --tag LEARNED   --statement '<one sentence, <=300 chars>'   --evidence '[2026-09-05 04:52Z]' --scope 'plugins/notrest/hooks/**'
+```
+
+`--evidence` and `--scope` repeat; `--kind`, `--tag`, `--statement`, `--source`, `--session`,
+`--skill` and `--ask` fill the rest. Both forms go through the same validator.
 Prints the assigned id on success; exits 2 with the rule name on rejection. `--json` or stdin.
 `--strict-refs` hardens the one WARN-grade rule into a gate (see the qualification rule).
 (Loose install: the script sits at `../archivist/scripts/index.py` relative to any sibling skill.)
@@ -132,6 +263,30 @@ Prints the assigned id on success; exits 2 with the rule name on rejection. `--j
   `--json` is the machine surface (`graph` consumes it): every schema field plus
   `effective_status`, `status_by`, and `rests_on_refuted`. `--kind` takes **one** kind per
   call (chain two calls for two kinds); `--session`, `--status`, and `--kind` compose.
+- **Learnings:** `index.py learnings [--digest] [--scope <token…>] [--limit N] [--since <ts>]
+  [--json] [--trigger-regex]` — the banked lessons, newest first. `--digest` prints the framed
+  `| ` lines above (≤200 bytes each), which is the surface the packet, the spawn gate and the
+  router all consume; `--scope` keeps the records whose scope matches any token given **or** is
+  `estate`; `--since <ts>` keeps the ones newer than a ledger timestamp; `--trigger-regex`
+  prints the shared trigger pattern and nothing else; `--triggers [--uncited] [--json]` lists
+  the COORD lines where the estate **paid** for a lesson — the one implementation both `eval`
+  and the Stop gate call, so the law has a single home. `--json` is the contract they read:
+  `{"armed": bool, "floor": "<ts>|null", "regex": "…", "uncited": [{"ts": "[YYYY-MM-DD HH:MMZ]",
+  "headline": "…"}], "cited": <n>}`, with `uncited[].ts` **bracketed** because it is pasted
+  straight into `add --evidence`. When one minute carries several trigger lines the stamp is
+  disambiguated **`[ts]#k`** — a bare `[ts]` satisfies only a minute that holds a single line,
+  because otherwise citing one line would silently discharge the debt on all of them. The
+  `headline` is everything **before the arrow**, uncapped (the 120-char cap applies only to a
+  line with no arrow to bound it).
+- **The card:** `index.py card [--json] [--scope <token…>] [--limit N]` — the estate's state of
+  play in four boxes, **TESTS / OPEN / FINDINGS / LEARNINGS**, with counts and checkbox lines:
+  a closed box item is `- [x]`, an open question is `- [ ]` and carries its *closes when*,
+  owner and recheck date. Anything still awaiting the seat's ruling is counted in its own line —
+  `PROPOSED (n awaiting review): learning 2, open 1` — and the continuation packet carries the
+  same count as `PROPOSED n awaiting review` on its CARD line. It is
+  the same shape a lane's return card is written in, which is the point: what a lane hands
+  back and what the estate holds are one grammar, so banking is a parse rather than a
+  translation.
 - **Flip:** `index.py supersede F-3 --by F-9 [--note "…"]` ·
   `index.py refute F-3 --evidence <url|path> [--type …] [--label …]`.
 - **Search:** `index.py find "<term>" [--root .]` — matches statements and asks in the store,
@@ -164,6 +319,15 @@ the stores are*: `~/.claude/notrest-library/registry.jsonl`, one `{root, name, t
 line per project (`$NOTREST_LIBRARY_ROOT` moves the whole shelf; `--library-root` moves
 it for one call). Nothing else is central, so nothing else can rot, and a project you
 delete simply reads as `missing` instead of corrupting a shared index.
+
+**A lesson can outlive its estate.** Give a learning the scope token `library` and
+`index.py promote L-<n>` copies it to the shelf, where every project's continuation packet
+reads it back as **LIBRARY LEARNINGS** (the newest two, under the same digest format). This is
+the one thing that crosses the federation line on purpose, and it is narrow by design: a
+lesson about *this repo's* hooks belongs to this repo, but "a fork ignores the model
+parameter" is true in every house on the machine, and re-paying for it once per project is
+exactly the waste the shelf exists to stop. Scope is the opt-in — nothing is promoted because
+it looked important.
 
 **Registering feeds two consumers.** `library register` appends to the registry *and* to
 `~/.claude/oracle-projects.txt` — graph.py's cross-project registry, the file `graph.py

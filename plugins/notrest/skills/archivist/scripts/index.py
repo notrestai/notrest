@@ -29,6 +29,7 @@ Never hand-edit either one: re-run scan, or append a correcting record.
 import argparse
 import fcntl
 import hashlib
+import fnmatch
 import importlib.util
 import json
 import os
@@ -62,21 +63,224 @@ INDEX_PATH_RE = re.compile(r"\bpath: (\S+)")
 # ---------------------------------------------------------------- the store
 STORE = "archive/findings.jsonl"
 FIELDS = ("id", "ts", "session", "skill", "kind", "ask", "statement",
-          "evidence", "relation", "links", "status")
-KINDS = ("finding", "result", "decision", "conflict", "backtrack", "side-route")
+          "evidence", "relation", "links", "status", "tag", "scope", "source",
+          "closes_when", "owner", "recheck", "method", "when_to_try", "cost",
+          "ran", "command", "exit")
+KINDS = ("finding", "result", "decision", "conflict", "backtrack", "side-route",
+         "learning", "open", "alternative")
 RELATIONS = ("toward", "lateral", "back")
-STATUSES = ("live", "superseded", "refuted")
+# 4.7 B2: `proposed` and `rejected` are the LANE lifecycle. A record a lane banked from
+# its return card is a CLAIM until the seat reviews it — never estate law.
+STATUSES = ("live", "superseded", "refuted", "proposed", "rejected")
 EV_TYPES = ("url", "path", "command", "coord-line", "record")
 EV_LABELS = ("cited", "estimate", "recall", "unverified", "model-opinion")
-EVIDENCE_REQUIRED = ("finding", "result", "decision")
+EVIDENCE_REQUIRED = ("finding", "result", "decision", "learning", "open")
+
+# ── 4.7 · THE TWO KINDS THAT MAKE A RETURN HONEST ─────────────────────────────────────
+# A lane return that lists only what WORKED is a report with its failures edited out. The
+# store had no shape for the other half, so "not tested" lived in prose nobody could count
+# and nobody could re-check. These two kinds give it one.
+#
+#   open        — what was NOT tested, or did not work. Required: what would CLOSE it (a
+#                 runnable check, not a feeling), an OWNER who can close it, and a RECHECK
+#                 date so it surfaces again instead of ageing quietly into folklore.
+#   alternative — a path not taken. Required: the METHOD, WHEN it would be worth trying,
+#                 and its COST. Evidence is NOT required here and that is deliberate: an
+#                 alternative was never run, so demanding a citation would force a lie.
+#
+# `result` gains ran/command/exit for the same reason: TESTS becomes a COUNT OF RECORDS
+# each naming a command and an exit code, instead of a number somebody typed.
+OPEN_KIND = "open"
+ALT_KIND = "alternative"
+OPEN_REQUIRED = ("closes_when", "owner", "recheck")
+ALT_REQUIRED = ("method", "when_to_try", "cost")
+RESULT_REQUIRED = ("ran", "command", "exit")
+RECHECK_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Which extra fields each kind may carry. Gated BOTH ways — a `recheck` riding on a
+# finding is read by nobody and makes the field mean two things.
+KIND_ONLY_FIELDS = {
+    "learning": ("tag", "scope", "source"),
+    OPEN_KIND: ("closes_when", "owner", "recheck", "scope", "source"),
+    ALT_KIND: ("method", "when_to_try", "cost", "scope", "source"),
+    "result": ("ran", "command", "exit"),
+}
+EXTRA_FIELDS = tuple(sorted({f for v in KIND_ONLY_FIELDS.values() for f in v}))
+
+# ── THE LEARNINGS LOOP (4.6.3) ────────────────────────────────────────────────────────
+# A learning is a lesson the estate has ALREADY PAID FOR, banked so the next session and
+# the next lane inherit it instead of re-buying it. It rides in the same append-only store
+# as every other record — one store, one grammar, one set of readers — and carries three
+# extra fields that only this kind may use.
+#
+# ⛔ IT IS A RECORD, NOT A NOTE. A lesson with no evidence is a slogan: nobody downstream
+# can check whether it was ever true, and an unfalsifiable rule is the thing that outlives
+# its own reason. A lesson with no scope is worse — it applies everywhere, so it is quoted
+# at every lane forever and the digest becomes noise nobody reads. Both are refused AT THE
+# DOOR, where the cost of refusing is one error message, rather than downstream, where the
+# cost is a session acting on a rule that was never earned.
+LEARN_KIND = "learning"
+LEARN_TAGS = ("INHERITED", "RULED", "LEARNED")
+LEARN_ONLY_FIELDS = ("tag", "scope", "source")
+# `seat`, a bare lane id, or the explicit `lane:<id>` provenance form a card-banked
+# record carries. The prefix is what lets a reader tell an owner ruling from a sentence a
+# lane wrote about itself — the whole point of B2.
+LEARN_SOURCES_RE = re.compile(r"^(seat|lane:[A-Za-z0-9][A-Za-z0-9._-]*"
+                              r"|[A-Za-z0-9][A-Za-z0-9._-]*)$")
+LANE_SOURCE_RE = re.compile(r"^lane:[A-Za-z0-9][A-Za-z0-9._-]*$")
+# Only the kinds that get QUOTED AS LAW are gated. A lane's findings and results are DATA
+# — they report what it saw and what it ran, they are never injected into a sibling's
+# prompt as a rule, and gating them would just make lanes stop banking evidence.
+LANE_GATED_KINDS = ("learning", "open", "alternative")
+STATEMENT_MAX = 300
+# The four shapes a learning may cite. Each is something a reader can GO AND LOOK AT: a
+# ledger line, the commission that ordered the work, the commit that carries it, or another
+# record. Prose is not evidence.
+# D3 (refuter): a citation may carry a 1-based ORDINAL — `[ts]#2` — because a minute is
+# not an identifier. 16 live stamps carry more than one ledger line, and a bare `[ts]`
+# citation silently closed every one of them: two corrections written in the same minute
+# were discharged by banking a lesson about one.
+COORD_TS_RE = re.compile(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}Z)\](?:#(\d+))?")
+LEARN_EV_SHAPES = (
+    ("a COORD timestamp '[YYYY-MM-DD HH:MMZ]'", COORD_TS_RE.search),
+    ("a briefs/ path", re.compile(r"(?:^|/)briefs/\S+").search),
+    ("a commit hash", re.compile(r"^[0-9a-f]{7,40}$", re.I).fullmatch),
+    ("a record id (F-/L-/O-/A-<n>)", re.compile(r"[FLOA]-\d+$").fullmatch),
+)
+
+# ⛔ ONE REGEX, ONE HOME. These are the COORD ledger lines that mean the estate just paid
+# for a lesson: a correction, a refuter finding, a red gate, a halt. eval's LEARNING-LOOP
+# check audits them and lane H's Stop hook prompts on them — and two copies of a regex are
+# two regexes the moment somebody edits one. `index.py learnings --trigger-regex` prints
+# THIS string, both consumers read it from here, and the eval fixture asserts they agree.
+# ⛔ CASE-SENSITIVE, AND ONLY IN THE HEADLINE. The first cut matched case-insensitively
+# over the WHOLE line and flagged 12 lines on this estate of which 7 were noise: a SHIP
+# line that mentioned "refuter round (3 defects" in its report half, a plan-lane line
+# mentioning "two corrections for the pack", lowercase summaries of work that went fine.
+# A gate that cries at every mention of the word "correction" is a gate people switch off.
+#
+# The signal the estate actually writes is an UPPERCASE TAG IN THE HEADLINE — the text
+# BEFORE the first "->", which is what the line CLAIMS rather than what it reports. So the
+# match is case-SENSITIVE and runs on the headline only. `REFUTER[^>]*` cannot cross the
+# arrow, so a refuter round that CLEARED is not a trigger while one that returned a
+# DEFECT/BLOCKER/NOT CLEAN is.
+#
+# STOPPED IS IN THIS REGEX ON PURPOSE (seat gate 2026-09-05, confirmed). The ruling wrote
+# the pattern with HALTED only, and on this estate that missed 02:17Z — "owner STOPPED the
+# docs lane mid-correction; all workshop work halted" — whose uppercase tag is STOPPED and
+# whose lowercase "halted" the case-sensitive rule correctly ignores. The ruling's PRINCIPLE
+# is "an uppercase tag in the headline", not one particular verb, and STOPPED names exactly
+# the event HALTED names. With it, the ruling's own expected partition holds exactly: 00:41Z,
+# 01:10Z, 02:13Z, 02:16Z, 02:17Z fire; 01:14Z, 01:21Z, 01:25Z, 02:15Z, 04:34Z, 04:45Z and
+# 09-01 08:07Z do not. It also catches one older line (2026-07-25 13:15Z, a lane STOPPED by
+# the seat) which the FLOOR grandfathers.
+#
+# ⛔ THE HEADLINE IS BOUNDED: the text before the first "->", OR THE FIRST 120 CHARACTERS,
+# WHICHEVER IS SHORTER. Live false positive, 2026-09-05: a 613-character ledger line with
+# NO "->" separator became its own headline end to end, and the word STOPPED sitting at
+# char 477 — inside a sentence DESCRIBING this very regex — fired the gate and blocked the
+# seat. A tag that far into a line is a mention, not a claim. The estate's grammar puts the
+# claim first; 120 characters is the whole claim on every well-formed line here, and a line
+# that omits the arrow no longer gets to be one enormous headline.
+LEARN_TRIGGER_REGEX = (
+    r"OWNER CORRECTION|CORRECTION:|REFUTER[^>]*(DEFECT|BLOCKER|NOT CLEAN)|"
+    r"\bRED:|HALTED|STOPPED")
+LEDGER_LINE_RE = re.compile(r"^\s*-\s*\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}Z)\]")
+
+# ⛔ THE OTHER HALF OF AN HONEST RETURN. The trigger regex above catches lines where the
+# estate PAID for a lesson; this one catches lines where it ADMITTED A GAP — "not tested",
+# "could not verify", "[unverified]". Those admissions are the most perishable sentences in
+# the ledger: they are true when written, nobody owns them, and six weeks later they read
+# as though the work was done. An admission is closed by an `open` RECORD — which names
+# what would close it, who owns it, and when to look again — not by a learning.
+#
+# Case-INSENSITIVE, unlike the trigger tags, and deliberately so: these are prose phrases a
+# writer types mid-sentence, not uppercase tags they reach for. The 120-char headline bound
+# still applies, so an admission buried deep in a report half is a mention, not a claim.
+# ⛔ AND IT IS READ IN THE **BODY**, NOT THE HEADLINE — the outcome text AFTER the first
+# "->". The two families live in different halves of a ledger line, on principle: a
+# CORRECTION is a statement about the ASK (what we were told to do differently), so it
+# lives in the headline; an ADMISSION OF A GAP is a statement about the RESULT (what we
+# shipped without checking), so it lives in the body. Live false positive, 2026-09-05: the
+# line "LANE H (card banking + untested block) RETURNED and seat-gated" fired on a headline
+# that merely NAMES the feature and admits nothing. A line with no "->" has no body and
+# therefore cannot admit anything.
+#
+# ⛔ ACCEPTED LIMIT, STATED HERE BECAUSE IT IS REAL: a quoted feature name in the BODY —
+# "…untested blocks with the open-record comment…" — still fires. That is deliberate. A
+# body mentioning "unverified" is more often an admission than a title, and the cost of a
+# false fire is one `open` record that closes it in a line; the cost of a false silence is
+# a gap nobody ever re-checks. A quoted admission is treated as an admission.
+# ⛔ AN ADMISSION IS A VERDICT, NOT A WORD. Two earlier cuts read the vocabulary instead
+# of the claim. The first matched the bare words anywhere in the body, and half the live
+# list came back as this estate's own machinery — "untested admissions with no open
+# record", "the untested block", "an untested trigger". The second bolted on a STOPLIST of
+# the loop's nouns, which worked (6 → 3) but was a list that would have to grow forever:
+# every feature named after the loop would need a new entry, and the entry would always be
+# added one false fire too late. That history is why the grammar below is shaped this way.
+#
+# An admission is EITHER:
+#   (a) a BRACKETED HONESTY LABEL — [unverified] / [untested] / [not tested]. The estate's
+#       own grammar for "I did not check this"; a writer who reached for it meant it.
+#   (b) a VERDICT — the phrase preceded by a verb that ASSERTS it: "is unverified",
+#       "was not tested", "left untested", "remains unverified" — plus the standalone
+#       phrases "could not verify" / "couldn't verify" / "not verified".
+# A BARE NOUN USE IS NEVER AN ADMISSION: "adds untested)", "untested-admission list",
+# "untested trigger" name a thing; they claim nothing about a result.
+UNTESTED_VERBS = ("is", "are", "was", "were", "remains", "remain", "left", "still",
+                  "stays", "stay")
+UNTESTED_PHRASES = ("not tested", "unverified", "untested")
+UNTESTED_LABEL_RE = r"\[(?:unverified|untested|not tested)\]"
+# D4 (refuter): the first verdict cut caught only the simple copula. English admits a gap
+# in more shapes than "is unverified", and five real sentences walked straight through it:
+#   · the AUXILIARY PERFECT — "has not been verified", "had not been tested"
+#   · the NEVER form       — "never ran", "never tested", "never verified", "never checked"
+#   · a QUALIFIED negation — "not yet verified", "not fully verified", "not live-verified"
+# Each is a verdict by any reading; missing them is the same defect as reading bare nouns,
+# arriving from the other side.
+UNTESTED_PERFECT_RE = (r"\b(?:has|have|had|was|were|is|are|remains?|stays?|left|still)\s+"
+                       r"not\s+(?:yet\s+|fully\s+)?bee?n?\s+(?:verified|tested)\b")
+UNTESTED_NEVER_RE = r"\bnever\s+(?:ran|tested|verified|checked)\b"
+UNTESTED_NOTVERIFIED_RE = r"\bnot\s+(?:yet\s+|fully\s+|live[- ])?(?:verified|tested)\b"
+UNTESTED_VERDICT_RE = (r"\b(?:%s)\s+(?:%s)\b|\b(?:could not verify|couldn't verify)\b"
+                       r"|%s|%s|%s"
+                       % ("|".join(UNTESTED_VERBS), "|".join(UNTESTED_PHRASES),
+                          UNTESTED_PERFECT_RE, UNTESTED_NEVER_RE, UNTESTED_NOTVERIFIED_RE))
+UNTESTED_REGEX = "%s|%s" % (UNTESTED_LABEL_RE, UNTESTED_VERDICT_RE)
+
+# ⛔ AND A QUOTED SPAN IS SOMEBODY ELSE'S WORDS, NOT THIS LINE'S CLAIM. A ledger line
+# REPORTING on the loop quotes its labels — `the SessionEnd pool "[unverified] live"` —
+# and a report about an admission is not an admission. Double-quoted spans are removed
+# before matching, so quoting a label can never be mistaken for asserting one.
+QUOTED_SPAN_RE = re.compile(r'"[^"\n]*"')
+
+
+def body(line):
+    """The outcome half of a ledger line: everything after the FIRST '->'.
+
+    A line with no arrow has no body and returns "" — it made no claim about a result, so
+    it cannot have admitted a gap in one.
+    """
+    text = str(line or "")
+    return text.split("->", 1)[1] if "->" in text else ''
 STR_FIELDS = ("ts", "session", "skill", "ask")
 
 URL_RE = re.compile(r"^[a-z][a-z0-9+.-]*://[^\s/]+", re.I)
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
 ID_RE = re.compile(r"^F-(\d+)$")
+LID_RE = re.compile(r"^L-(\d+)$")
+ANY_ID_RE = re.compile(r"^([FLOA])-(\d+)$")
+# One id space per kind that gets cited on its own: a learning is quoted at lanes, an open
+# question is closed by id, an alternative is picked up later. Everything else stays F-.
+KIND_PREFIX = {"learning": "L", OPEN_KIND: "O", ALT_KIND: "A"}
 # The resolution grammar: a tombstone declares its flip in the statement HEAD and
 # names its target in links. Both must hold, or the flip does not count.
-TOMB_RE = re.compile(r"^(supersedes|refutes)\s+(F-\d+)\b", re.I)
+# ⛔ EVERY ID SPACE, NOT JUST F-. This anchored on `F-` while `supersede`/`refute` happily
+# wrote a tombstone for `L-5` — so the flip was RECORDED and never RESOLVED: the retired
+# lesson stayed status=live, kept appearing in every digest, and went on being injected
+# into lane prompts and the packet. A tombstone the resolver cannot read is a tombstone
+# that does nothing.
+TOMB_RE = re.compile(r"^(supersedes|refutes)\s+([FLOA]-\d+)\b", re.I)
+REVIEW_RE = re.compile(r"^(accepts|rejects)\s+([FLOA]-\d+)\b", re.I)
 
 # ---------------------------------------------------------------- the library
 # The shelf is a REGISTRY OF ROOTS, never a copy of anyone's store: each project
@@ -85,10 +289,17 @@ TOMB_RE = re.compile(r"^(supersedes|refutes)\s+(F-\d+)\b", re.I)
 LIB_ENV = "NOTREST_LIBRARY_ROOT"
 LIB_DEFAULT = pathlib.Path.home() / ".claude" / "notrest-library"
 REGISTRY = "registry.jsonl"           # append-only {root, name, ts}
+LIB_LEARNINGS = "learnings.jsonl"     # append-only, promoted lessons (4.7 E)
+LIB_SCOPE = "library"                 # the scope token that makes one portable
 PROJECTS = "oracle-projects.txt"      # graph.py's registry: one absolute root per line
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 # THE CITATION GRAMMAR: `F-<n>` is this store; `<project>:F-<n>` is the library's.
-REC_REF_RE = re.compile(r"^(?:([A-Za-z0-9][A-Za-z0-9._-]*):)?F-(\d+)$")
+# `[FLOA]` — every id space the store numbers is citable as `record` evidence. 4.6.3 added
+# L- (learnings); 4.7 adds O- (open questions) and A- (alternatives), because the record
+# that CLOSES an open question has to be able to point at the one it closes. Without this
+# a closure had to smuggle the citation through `links`, which is the graph edge, not the
+# evidence — two different claims sharing one field.
+REC_REF_RE = re.compile(r"^(?:([A-Za-z0-9][A-Za-z0-9._-]*):)?([FLOA])-(\d+)$")
 # THE QUALIFICATION RULE (F-19), in PROSE. Once two estates each number their own
 # records, a bare `F-<n>` in a sentence is AMBIGUOUS — the same token names different
 # records in different stores, so a re-recorded "amends F-9" resolves to the wrong
@@ -182,9 +393,9 @@ def check_record_refs(refs, known_ids, lib, notes):
         m = REC_REF_RE.match(ref)
         if not m:
             raise Reject("record-ref-shape",
-                         "record evidence ref %r must be F-<n> (this store) or "
-                         "<project>:F-<n> (the library)" % ref)
-        proj, fid = m.group(1), "F-%s" % m.group(2)
+                         "record evidence ref %r must be F-/L-/O-/A-<n> (this "
+                         "store) or <project>:F-<n> (the library)" % ref)
+        proj, fid = m.group(1), "%s-%s" % (m.group(2), m.group(3))
         if not proj:
             if fid not in known_ids:
                 raise Reject("record-ref-unknown",
@@ -240,7 +451,31 @@ def unqualified_refs(rec):
     return out
 
 
-def validate(raw, known_ids, lib=None, notes=None):
+def _check_evidence_ordinals(evidence, root):
+    """Refuse `[ts]#k` where the stamp does not carry a k-th line."""
+    if root is None:
+        return
+    counts = None
+    for item in evidence:
+        for m in COORD_TS_RE.finditer(str(item.get("ref", ""))):
+            if not m.group(2):
+                continue
+            if counts is None:
+                counts = {}
+                for ts, _o, total, _l, _s in ledger_lines(root):
+                    counts[ts] = total
+            ts, k = m.group(1), int(m.group(2))
+            total = counts.get(ts)
+            if total is None:
+                continue          # the stamp is not in this estate's ledger at all
+            if k < 1 or k > total:
+                raise Reject("evidence-ordinal-unknown",
+                             "evidence cites [%s]#%d but that stamp carries %d line(s) — "
+                             "an ordinal must name a line that exists, or the citation "
+                             "discharges nothing while looking settled" % (ts, k, total))
+
+
+def validate(raw, known_ids, lib=None, notes=None, root=None):
     """Return a normalized record, or raise Reject naming the rule it broke."""
     lib = lib or library_root(None)
     notes = notes if notes is not None else []
@@ -328,10 +563,137 @@ def validate(raw, known_ids, lib=None, notes=None):
         clean.append({"type": etype, "ref": ref.strip(), "label": label})
     if rec_refs:
         check_record_refs(rec_refs, known_ids, lib, notes)
+    # ⛔ AN ORDINAL MUST NAME A LINE THAT EXISTS. `[ts]#7` on a two-line minute is a
+    # citation of nothing, and it read as a DISCHARGED debt: the trigger key it satisfies
+    # can never be generated, so the real line stayed owed while the store looked settled.
+    # Checked against the ledger the citation points into, and skipped entirely when there
+    # is no ledger to check against — an estate with no COORD refuses no citation.
+    _check_evidence_ordinals(clean, root)
     if not clean and rec["kind"] in EVIDENCE_REQUIRED:
         raise Reject("evidence-required",
                      "kind=%s must carry at least one evidence item" % rec["kind"])
     rec["evidence"] = clean
+
+    # ── the learning-only fields. Gated BOTH ways: required on a learning, refused on
+    # anything else — a `scope` quietly riding on a finding would be read by nobody and
+    # would make the field mean two things.
+    allowed = KIND_ONLY_FIELDS.get(rec["kind"], ())
+    stray = [f for f in EXTRA_FIELDS if f in raw and f not in allowed]
+    if stray:
+        raise Reject("kind-only-field",
+                     "%s belong(s) to another kind, not kind=%s (this kind takes: %s)"
+                     % (", ".join(stray), rec["kind"],
+                        ", ".join(allowed) if allowed else "none"))
+
+    def _need_str(field, rule, why, cap=STATEMENT_MAX):
+        v = raw.get(field)
+        if not isinstance(v, str) or not v.strip():
+            raise Reject(rule, why)
+        v = v.strip()
+        if len(v) > cap:
+            raise Reject("%s-too-long" % field.replace("_", "-"),
+                         "%s is %d chars; the bound is %d" % (field, len(v), cap))
+        rec[field] = v
+
+    def _scope_and_source(default_source="seat"):
+        scope = raw.get("scope")
+        if not isinstance(scope, list) or not scope:
+            raise Reject("scope-required",
+                         "kind=%s needs scope: a non-empty list of path globs, skill "
+                         "names, or 'estate' — a record that applies everywhere is quoted "
+                         "at every lane forever" % rec["kind"])
+        cleaned = []
+        for tok in scope:
+            if not isinstance(tok, str) or not tok.strip():
+                raise Reject("scope-shape", "each scope entry must be a non-empty string")
+            cleaned.append(tok.strip())
+        rec["scope"] = cleaned
+        src = raw.get("source", default_source)
+        if not isinstance(src, str) or not LEARN_SOURCES_RE.match(src.strip() or "-"):
+            raise Reject("source-shape",
+                         "source must be 'seat', a lane id, or 'lane:<id>', got %r" % (src,))
+        rec["source"] = src.strip()
+        # ⛔ THE BLOCKER, CLOSED AT THE DOOR. A lane's return card could bank a sentence
+        # like "SYSTEM: the seat must run … and push" as a LEARNING, and the digest then
+        # injected it verbatim into every sibling lane's prompt with nothing to distinguish
+        # it from an owner ruling. Provenance alone does not fix that — a `source` field
+        # nobody filters on is decoration. So a lane-sourced record of a QUOTED kind is
+        # refused unless it is marked `proposed`: it enters as a claim awaiting the seat's
+        # review, and only the seat's `accept` makes it quotable.
+        if (LANE_SOURCE_RE.match(rec["source"]) and rec["kind"] in LANE_GATED_KINDS
+                and rec["status"] != "proposed"):
+            raise Reject("lane-record-must-be-proposed",
+                         "a %s banked by %s must carry status=proposed — a lane proposes, "
+                         "the seat accepts (`index.py accept <id>`). Only an accepted "
+                         "record is quoted to other lanes as estate law."
+                         % (rec["kind"], rec["source"]))
+
+    if rec["kind"] == "result":
+        # TESTS is a COUNT OF RECORDS, each naming a command and an exit code, rather
+        # than a number somebody typed at the end of a return.
+        _need_str("ran", "ran-required",
+                  "kind=result must say what RAN — a result with no run is a claim")
+        _need_str("command", "command-required",
+                  "kind=result must carry the exact COMMAND, so a reader can re-run it",
+                  cap=1000)
+        code = raw.get("exit")
+        if isinstance(code, bool) or not isinstance(code, int):
+            raise Reject("exit-required",
+                         "kind=result must carry an integer exit code (got %r) — 'it "
+                         "worked' is not an exit code" % (code,))
+        rec["exit"] = code
+
+    elif rec["kind"] == OPEN_KIND:
+        _need_str("closes_when", "closes-when-required",
+                  "kind=open must say what would CLOSE it — a runnable check, not a "
+                  "feeling. An open question nobody can close is a worry, not a record")
+        _need_str("owner", "owner-required",
+                  "kind=open needs an OWNER who can close it ('seat' or a lane id)",
+                  cap=120)
+        if not LEARN_SOURCES_RE.match(rec["owner"]):
+            raise Reject("owner-shape", "owner must be 'seat' or a lane id, got %r"
+                         % rec["owner"])
+        rc = raw.get("recheck")
+        if not isinstance(rc, str) or not RECHECK_RE.match(rc.strip()):
+            raise Reject("recheck-required",
+                         "kind=open needs a recheck date YYYY-MM-DD — without one it ages "
+                         "quietly into folklore instead of surfacing again (got %r)" % (rc,))
+        rec["recheck"] = rc.strip()
+        _scope_and_source()
+
+    elif rec["kind"] == ALT_KIND:
+        _need_str("method", "method-required",
+                  "kind=alternative must name the METHOD — the path not taken")
+        _need_str("when_to_try", "when-to-try-required",
+                  "kind=alternative must say WHEN it would be worth trying")
+        _need_str("cost", "cost-required",
+                  "kind=alternative must state its COST — an alternative with no cost is "
+                  "an opinion", cap=120)
+        _scope_and_source()
+
+    if rec["kind"] != LEARN_KIND:
+        pass
+    else:
+        tag = raw.get("tag")
+        if tag not in LEARN_TAGS:
+            raise Reject("tag-enum", "tag %r outside %s" % (tag, list(LEARN_TAGS)))
+        rec["tag"] = tag
+
+        if len(rec["statement"]) > STATEMENT_MAX:
+            raise Reject("statement-too-long",
+                         "a learning's statement is %d chars; the bound is %d — a lesson "
+                         "nobody can quote in one line is a lesson nobody quotes"
+                         % (len(rec["statement"]), STATEMENT_MAX))
+
+        _scope_and_source()
+
+        named = [shape for shape, test in LEARN_EV_SHAPES
+                 if any(test(item["ref"]) for item in clean)]
+        if not named:
+            raise Reject("evidence-unwalkable",
+                         "a learning must cite something a reader can go and look at — %s. "
+                         "Got: %s" % (", ".join(shape for shape, _t in LEARN_EV_SHAPES),
+                                      ", ".join(repr(i["ref"]) for i in clean) or "nothing"))
 
     return {f: rec[f] for f in FIELDS if f in rec}
 
@@ -517,18 +879,25 @@ def append_record(root, raw, lib=None, notes=None, warns=None, strict_refs=False
             fh.seek(0)
             existing = parse_lines(fh.read(), STORE)
             known = {r.get("id") for r in existing}
+            # isinstance FIRST: validate() is what turns a non-dict payload away with a
+            # named rule, and probing `raw` before it ran replaced that clean rejection
+            # with an AttributeError traceback. The probe must never outrank the door.
+            prefix = KIND_PREFIX.get(
+                raw.get("kind") if isinstance(raw, dict) else None, "F")
             top = 0
             for r in existing:
-                m = ID_RE.match(str(r.get("id", "")))
-                if m:
-                    top = max(top, int(m.group(1)))
-            rec = validate(raw, known, lib=lib, notes=notes)
+                m = ANY_ID_RE.match(str(r.get("id", "")))
+                if m and m.group(1) == prefix:
+                    top = max(top, int(m.group(2)))
+            rec = validate(raw, known, lib=lib, notes=notes, root=root)
             bare = unqualified_refs(rec)
             if bare and strict_refs:
                 raise Reject("unqualified-record-ref", " · ".join(bare) + " [--strict-refs]")
             if warns is not None:
                 warns.extend(bare)
-            rec["id"] = "F-%d" % (top + 1)
+            # Two id spaces in one store: learnings number L-1.. independently of F-1..,
+            # so banking a lesson never renumbers a finding and a citation stays stable.
+            rec["id"] = "%s-%d" % (prefix, top + 1)
             ordered = {f: rec[f] for f in FIELDS if f in rec}
             fh.seek(0, os.SEEK_END)
             fh.write(json.dumps(ordered, ensure_ascii=False) + "\n")
@@ -540,8 +909,8 @@ def append_record(root, raw, lib=None, notes=None, warns=None, strict_refs=False
 
 
 def sort_key(rec):
-    m = ID_RE.match(str(rec.get("id", "")))
-    return (rec.get("ts", ""), int(m.group(1)) if m else 0)
+    m = ANY_ID_RE.match(str(rec.get("id", "")))
+    return (rec.get("ts", ""), int(m.group(2)) if m else 0)
 
 
 def resolve(records):
@@ -560,6 +929,20 @@ def resolve(records):
             continue
         by = next((l for l in (r.get("links") or []) if l != target), r.get("id"))
         eff[target] = ("superseded" if verb == "supersedes" else "refuted", by)
+    # ⛔ THE SEAT'S REVIEW IS A TOMBSTONE TOO. The store is append-only, so accepting a
+    # lane's proposal cannot rewrite its status — it appends a ruling that names it, and
+    # the resolver reads that ruling exactly as it reads a supersede. A proposal the seat
+    # never ruled on stays `proposed` forever, which is the honest state: unreviewed.
+    for r in sorted(records, key=sort_key):
+        m = REVIEW_RE.match(r.get("statement", "") or "")
+        if not m:
+            continue
+        verb, target = m.group(1).lower(), m.group(2).upper()
+        if target not in eff or target not in (r.get("links") or []):
+            continue
+        if eff[target][0] in ("superseded", "refuted"):
+            continue                       # a retired record is not un-retired by review
+        eff[target] = ("live" if verb == "accepts" else "rejected", r.get("id"))
     return eff
 
 
@@ -761,9 +1144,94 @@ def read_payload(a):
         die("json-parse", str(exc))
 
 
+def _evidence_from_flag(ref):
+    """Turn a bare `--evidence` token into the store's evidence object.
+
+    The type is INFERRED from the shape the record schema already names, so a model
+    banking a lesson does not have to know the object grammar to obey it: a bracketed
+    stamp is a coord-line, a path is a path, a record id is a record, anything else is a
+    command (a commit hash lives there). The label is [cited] because a learning's
+    evidence is always something the writer looked at — a guess is not evidence.
+    """
+    ref = str(ref).strip()
+    if COORD_TS_RE.search(ref):
+        return {"type": "coord-line", "ref": ref, "label": "cited"}
+    if re.match(r"^[FLOA]-\d+$", ref) or REC_REF_RE.match(ref):
+        return {"type": "record", "ref": ref, "label": "cited"}
+    if URL_RE.match(ref):
+        return {"type": "url", "ref": ref, "label": "cited"}
+    if "/" in ref or ref.endswith(".md") or ref.endswith(".py"):
+        return {"type": "path", "ref": ref, "label": "cited"}
+    return {"type": "command", "ref": ref, "label": "cited"}
+
+
+def payload_from_flags(a):
+    """⛔ THE SEAM THE STOP GATE ACTUALLY USES. The hook's block reason tells the model to
+    run `add --kind learning --tag ... --statement ... --evidence ... --scope ...`, and
+    until 4.6.3 `add` took only --json/stdin — so the one instruction the gate gives at the
+    exact moment a lesson is being banked was live-rejected with "unrecognized arguments".
+    A gate that blocks on an instruction the tool refuses is a gate that teaches people to
+    work around it.
+
+    These flags BUILD the same dict the JSON form builds and hand it to the same
+    `validate()`. There is no second validation path, so no rule can hold on one form and
+    not the other.
+    """
+    rec = {"kind": a.kind, "statement": a.statement or "",
+           "evidence": [_evidence_from_flag(e) for e in (a.evidence or [])]}
+    if a.kind == LEARN_KIND:
+        rec["tag"] = a.tag
+    # Only the fields THIS kind may carry are copied across — the per-field form must not
+    # be a back door around the same gate the JSON form goes through.
+    for f in KIND_ONLY_FIELDS.get(a.kind, ()):
+        if f in ("tag", "scope", "source"):
+            continue
+        v = getattr(a, f, None)
+        if v is not None:
+            rec[f] = v
+    if "scope" in KIND_ONLY_FIELDS.get(a.kind, ()):
+        rec["scope"] = list(a.scope or [])
+        rec["source"] = a.source
+    for f in ("session", "skill", "ask"):
+        v = getattr(a, f, "") or ""
+        if v:
+            rec[f] = v
+    return rec
+
+
 def cmd_add(a):
     root = pathlib.Path(a.root).resolve()
-    raw = read_payload(a)
+    flagged = bool(a.kind or a.statement or a.tag or a.evidence or a.scope
+                   or a.closes_when or a.owner or a.recheck or a.method
+                   or a.when_to_try or a.cost or a.ran or a.command
+                   or getattr(a, "exit", None) is not None)
+    if flagged and a.json:
+        die("mixed-input-form",
+            "pass EITHER --json/stdin OR the per-field flags, never both — two payloads "
+            "in one call is two records nobody can tell apart")
+    if flagged:
+        if not a.kind:
+            die("kind-enum", "the per-field form needs --kind (e.g. --kind learning)")
+        # ⛔ REFUSE, NEVER SILENTLY DROP. Copying only the fields this kind may carry made
+        # `--kind finding --owner seat` succeed with the owner thrown away — the JSON form
+        # rejects that exact record. A form that quietly discards half of what it was told
+        # is worse than one that refuses: the caller believes it banked what it typed.
+        allowed = KIND_ONLY_FIELDS.get(a.kind, ())
+        stray = [f for f in EXTRA_FIELDS
+                 if f not in allowed and f not in ("scope", "source")
+                 and getattr(a, f, None) not in (None, "", [])]
+        if a.tag and a.kind != LEARN_KIND:
+            stray.append("tag")
+        if a.scope and "scope" not in allowed:
+            stray.append("scope")
+        if stray:
+            die("kind-only-field",
+                "%s belong(s) to another kind, not kind=%s (this kind takes: %s)"
+                % (", ".join(sorted(set(stray))), a.kind,
+                   ", ".join(allowed) if allowed else "none"))
+        raw = payload_from_flags(a)
+    else:
+        raw = read_payload(a)
     notes, warns = [], []
     try:
         # The id goes to stdout alone — callers capture it. Notes and warns go to
@@ -791,6 +1259,804 @@ def select(records, a):
             continue
         out.append(r)
     return out, eff
+
+
+# ---------------------------------------------------------------------------
+# the learnings loop
+# ---------------------------------------------------------------------------
+DIGEST_MAX_BYTES = 200
+
+
+def load_store_tolerant(root):
+    """The store, read for a CONSUMER rather than for a writer.
+
+    `load_store` is deliberately LOUD — it dies at exit 2 on a corrupt line, because for
+    `add`/`track` this repo's own store being malformed is our bug to fix. The learnings
+    loop has the opposite duty: it is read by a SessionStart/Stop hook and by the ship
+    gate, and one bad byte in a JSONL file must never take a session or a gate down. So
+    the read paths below skip what they cannot parse and carry on. Live-proven necessary:
+    eval exited 2 through this call because `die()` raises SystemExit, which no
+    `except Exception` catches.
+    """
+    p = pathlib.Path(root) / STORE
+    if not p.is_file():
+        return []
+    out = []
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
+
+
+def learning_records(records, include_superseded=False, include_proposed=False):
+    """Every LIVE learning in the store, NEWEST FIRST — the order a reader wants.
+
+    ⛔ A RETIRED LESSON MUST NOT KEEP TEACHING. Every read path here feeds something that
+    ACTS on it — the spawn-gate digest injected into lane prompts, the packet block a
+    successor reads as inherited law, the router line. A superseded learning that still
+    appears in those is a rule the estate revoked and kept enforcing, which is worse than
+    never having banked it: nobody downstream can tell it was withdrawn. It stays in the
+    store and stays citable as evidence; it simply stops being quoted as current.
+    """
+    eff = resolve(records)
+    out = []
+    for r in records:
+        if r.get("kind") != LEARN_KIND:
+            continue
+        status, by = eff.get(r.get("id"), ("live", None))
+        if status == "proposed" and not include_proposed:
+            continue
+        if status in ("superseded", "refuted", "rejected") and not include_superseded:
+            continue
+        r = dict(r)
+        r["status"] = status
+        r["superseded_by"] = by
+        out.append(r)
+    return sorted(out, key=sort_key, reverse=True)
+
+
+def scope_matches(rec, tokens):
+    """Does this learning apply to any of `tokens`?
+
+    'estate' in a record's scope means it applies to everything, so it always matches.
+    Otherwise a token matches when it equals a scope entry, or when the entry is a glob
+    the token satisfies, or when the token is a glob the ENTRY satisfies — the caller may
+    be asking 'what applies to this file?' (token=path, entry=glob) or 'what applies
+    anywhere under here?' (token=glob, entry=path), and both are the same question.
+    """
+    if not tokens:
+        return True
+    scope = rec.get("scope") or []
+    if "estate" in scope:
+        return True
+    for tok in tokens:
+        for entry in scope:
+            if tok == entry or fnmatch.fnmatch(tok, entry) or fnmatch.fnmatch(entry, tok):
+                return True
+    return False
+
+
+def _clip_bytes(text, limit):
+    """Clip to a BYTE bound without splitting a character. The packet's line law is
+    counted in bytes (a hook writes bytes), and a naive character clip on an estate
+    full of em-dashes overshoots it."""
+    b = text.encode("utf-8")
+    if len(b) <= limit:
+        return text
+    return b[:limit].decode("utf-8", "ignore")
+
+
+def digest_line(rec):
+    """THE SHARED DIGEST FORMAT — packet, spawn-gate and router all render this.
+
+    `| L-<n> [TAG] <statement clipped> — evidence: <first>`
+
+    One line, framed with '| ' so nothing it contains can reach column 0 and be read as
+    structure by whatever is quoting it, and clipped to 200 bytes so a long lesson cannot
+    blow a hook's output budget. Control characters are rendered, never emitted raw.
+    """
+    ev = (rec.get("evidence") or [{}])[0].get("ref", "-")
+    body = "%s [%s] %s — evidence: %s" % (rec.get("id", "L-?"), rec.get("tag", "?"),
+                                          collapse_ctrl(rec.get("statement", "")),
+                                          collapse_ctrl(ev))
+    return _clip_bytes("| " + body, DIGEST_MAX_BYTES)
+
+
+def collapse_ctrl(text):
+    """Render control characters instead of emitting them (4.6.0 refuter invariant):
+    a newline inside a statement would break the one-line law and let a record forge a
+    second line of somebody else's output."""
+    out = []
+    for ch in str(text or ""):
+        if ch in "\r\n":
+            out.append("\\n")
+        elif ord(ch) < 32 or ord(ch) == 127:
+            out.append("\\x%02x" % ord(ch))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _norm_since(raw):
+    """Accept either shape a caller has to hand: a record ts (2026-09-05T04:45:00Z) or a
+    COORD ledger stamp (2026-09-05 04:45Z, with or without brackets). Returns a string
+    comparable against a record's ISO ts, or None."""
+    txt = (raw or "").strip()
+    m = COORD_TS_RE.search(txt)
+    if m:
+        txt = m.group(1)
+    if TS_RE.match(txt):
+        return txt
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})Z?$", txt)
+    if m:
+        return "%sT%s:%s:00Z" % (m.group(1), m.group(2), m.group(3))
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", txt):
+        return txt + "T00:00:00Z"
+    return None
+
+
+LEDGER_PREFIX_RE = re.compile(
+    r"^\s*-\s*\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\]\s*(?:\[[^\]]*\]\s*)?")
+# ⛔ A LINE WITHOUT AN ARROW MUST NOT BECOME ONE ENORMOUS HEADLINE (live, 2026-09-05).
+HEADLINE_MAX_CHARS = 120
+
+
+def headline(line, strip_prefix=False):
+    """What a ledger line CLAIMS, not what it reports — and only the CLAIM.
+
+    Two bounds, and the headline is whichever is SHORTER:
+      · everything before the first "->". The estate's grammar is
+        `ask -> landed | evidence`, so a SHIP line whose report half mentions "refuter
+        round (3 defects fixed)" describes a round that CLOSED; reading the whole line
+        makes the successful fix indistinguishable from the failure.
+      · the first HEADLINE_MAX_CHARS characters. A 613-char line with no "->" mentioned
+        STOPPED at char 477 while DESCRIBING this regex, fired the gate and blocked the
+        seat. A tag that far in is a mention, not a claim.
+
+    `strip_prefix` drops the `- [ts] [lane] ` bookkeeping for DISPLAY only. The MATCH runs
+    on the un-stripped headline, so a lane id can never be the thing that fires a trigger
+    and stripping can never change what counts as one.
+    """
+    text = str(line or "")
+    # ⛔ THE CAP APPLIES ONLY WHERE THERE IS NO ARROW. Measured on this ledger: 207 of 338
+    # ask-halves are longer than 120 characters, so capping an ARROWED line blinded the
+    # correction regex on 43% of well-formed lines — the estate writes long asks, and the
+    # arrow already says exactly where the claim ends. The cap exists solely for the
+    # degenerate case it was added for: a line with NO arrow, where without a bound the
+    # whole 600-character entry becomes its own headline and any tag anywhere fires.
+    if "->" in text:
+        head = text.split("->")[0]
+    else:
+        head = text[:HEADLINE_MAX_CHARS]
+    return LEDGER_PREFIX_RE.sub("", head) if strip_prefix else head
+
+
+def coord_volumes(root):
+    """Every COORD ledger volume at the root, oldest name first. COORD-AGENTS.md is the
+    agent index, not a ledger of asks, and is never a trigger source."""
+    try:
+        names = sorted(os.listdir(str(root)))
+    except OSError:
+        return []
+    return [pathlib.Path(root) / n for n in names
+            if n.startswith("COORD") and n.endswith(".md") and n != "COORD-AGENTS.md"]
+
+
+def ledger_lines(root):
+    """[(ts, ordinal, total, line, source)] for every stamped ledger line.
+
+    `ordinal` is 1-based within the stamp, in FILE ORDER — the same order an append-only
+    ledger was written in, which is the only ordering a minute-resolution stamp cannot
+    supply for itself.
+    """
+    rows = []
+    for path in coord_volumes(root):
+        try:
+            txt = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in txt.splitlines():
+            m = LEDGER_LINE_RE.match(line)
+            if m:
+                rows.append([m.group(1), 0, 0, line, path.name])
+    counts = {}
+    for r in rows:
+        counts[r[0]] = counts.get(r[0], 0) + 1
+    seen = {}
+    for r in rows:
+        seen[r[0]] = seen.get(r[0], 0) + 1
+        r[1], r[2] = seen[r[0]], counts[r[0]]
+    return [tuple(r) for r in rows]
+
+
+def cite_key(ts, ordinal, total):
+    """How a line must be CITED. A stamp with one line is named by the stamp; a stamp with
+    several is named by stamp + ordinal, because otherwise the citation is ambiguous and
+    ambiguity here means a debt silently discharged."""
+    return ts if total <= 1 else "%s#%d" % (ts, ordinal)
+
+
+def trigger_lines(root, since=None):
+    """⛔ THE ONE IMPLEMENTATION of 'what counts as a trigger'.
+
+    Returns [{ts, headline, source}] — COORD lines whose HEADLINE carries an uppercase
+    tag saying the estate just paid for a lesson. eval imports this function; lane H's
+    Stop hook calls the CLI that wraps it. Neither re-implements the match, because two
+    implementations of a rule are two rules the moment somebody edits one — and then the
+    hook prompts for lessons the gate does not audit, or the gate reddens on lines the
+    hook never surfaced.
+    """
+    rx = re.compile(LEARN_TRIGGER_REGEX)          # case-SENSITIVE, by ruling
+    out = []
+    for ts, ordinal, total, line, source in ledger_lines(root):
+        if not rx.search(headline(line)):
+            continue
+        if since and ts[:16] < str(since)[:16].replace("T", " "):
+            continue
+        out.append({"ts": ts, "key": cite_key(ts, ordinal, total),
+                    "ordinal": ordinal, "of": total,
+                    "headline": " ".join(headline(line, strip_prefix=True).split()),
+                    "source": source})
+    out.sort(key=lambda t: (t["ts"], t["ordinal"]))
+    return out
+
+
+def _cite_keys(records, kinds=None):
+    """The CITE KEYS a set of records name: 'ts' for a bare stamp, 'ts#k' for an ordinal.
+
+    ⛔ A BARE STAMP NAMES A MINUTE, NOT A LINE. It therefore satisfies a stamp that carries
+    exactly ONE line and nothing else — with two lines in a minute, a bare citation cannot
+    say which one it discharged, and treating it as both is how one banked lesson closed
+    two different debts."""
+    seen = set()
+    eff = resolve(records)
+    for r in records:
+        if kinds is not None and r.get("kind") not in kinds:
+            continue
+        # A superseded/refuted record was withdrawn; a withdrawn citation discharges
+        # nothing, or a debt could be closed by a claim the estate has since retracted.
+        if eff.get(r.get("id"), ("live", None))[0] != "live":
+            continue          # proposed / rejected / retired all discharge nothing
+        for item in (r.get("evidence") or []):
+            if isinstance(item, dict):
+                for m in COORD_TS_RE.finditer(str(item.get("ref", ""))):
+                    seen.add("%s#%s" % (m.group(1), m.group(2)) if m.group(2)
+                             else m.group(1))
+    return seen
+
+
+def cited_stamps(records):
+    """Cite keys named by a LEARNING — what the correction half of the loop reads."""
+    return _cite_keys(records, kinds=(LEARN_KIND,))
+
+
+def learning_floor(records):
+    """⛔ WHEN THE LOOP WAS ARMED — the line before which nothing is owed.
+
+    The floor is the EARLIEST evidence timestamp any learning cites: the estate's own
+    record of how far back the practice reaches. Everything older is GRANDFATHERED and is
+    never returned, because grading an estate against a rule it did not have is how a gate
+    becomes something people switch off — live-proven, 2026-09-05: with the floor missing,
+    the Stop gate fired on a 2026-07-25 ledger line six weeks older than the first learning
+    that ever existed.
+
+    Fallback: a learning that cites only a commit hash or a briefs/ path pins no ledger
+    stamp, so the earliest learning RECORD's own ts stands in — otherwise banking one such
+    lesson would suddenly un-grandfather the entire history, which is the same defect
+    arriving by a different door. Returns a ledger-shaped stamp, or None when unarmed.
+    """
+    learn = [r for r in records if r.get("kind") == LEARN_KIND]
+    if not learn:
+        return None
+    stamps = sorted(k.split("#")[0] for k in cited_stamps(records))
+    if stamps:
+        return stamps[0]
+    ts = sorted(str(r.get("ts", "")) for r in learn if r.get("ts"))
+    return (ts[0][:16].replace("T", " ") + "Z") if ts else None
+
+
+def untested_lines(root, since=None):
+    """[{ts, key, headline}] — ledger lines admitting a gap, in body scope."""
+    rx = re.compile(UNTESTED_REGEX, re.I)
+    out = []
+    for ts, ordinal, total, line, _src in ledger_lines(root):
+        if not rx.search(QUOTED_SPAN_RE.sub(" ", body(line))):
+            continue
+        if since and ts[:16] < str(since)[:16].replace("T", " "):
+            continue
+        out.append({"ts": ts, "key": cite_key(ts, ordinal, total),
+                    "ordinal": ordinal, "of": total,
+                    "headline": " ".join(headline(line, strip_prefix=True).split())})
+    out.sort(key=lambda t: (t["ts"], t["ordinal"]))
+    return out
+
+
+def open_cited_stamps(records):
+    """COORD stamps carried forward by ANY record.
+
+    ⛔ THE DEBT IS "CARRY IT FORWARD", NOT "FILE AN OPEN". An earlier cut demanded an
+    `open` record specifically, which got the direction backwards: a `result` that went
+    back and VERIFIED the claim (with its ran/command/exit) discharges the admission
+    better than an open question ever could, and so does a decision that ruled it out or a
+    learning that banked what it taught. Live case: "closing the last [unverified] ship
+    gate" was verified in the same turn and banked as a result — under the old rule the
+    estate would have been told it still owed an open question about something it had
+    already proven. Any record citing the stamp satisfies it; `open` is simply the one to
+    file when the answer is still "not yet".
+    """
+    return _cite_keys(records)
+
+
+def _cite_token(t):
+    """What a caller must paste into `add --evidence`. Bracketed, and carrying the ordinal
+    whenever the minute holds more than one line — the shape a consumer READS is the shape
+    it must WRITE."""
+    return "[%s]%s" % (t["ts"], "#%d" % t["ordinal"] if t.get("of", 1) > 1 else "")
+
+
+def trigger_report(root, since=None):
+    """THE CONTRACT both consumers read. One dict, one shape, one home:
+
+      {"armed": bool, "floor": "<ts>|null", "regex": "...",
+       "uncited": [{"ts": "[YYYY-MM-DD HH:MMZ]", "headline": "..."}], "cited": <n>}
+
+    `uncited[].ts` is BRACKETED — it is pasted straight into
+    `add --evidence '[<ts>]'`, so the shape a caller reads is the shape it must write.
+    `floor` is the bare stamp: it is a boundary, not a citation.
+    """
+    recs = load_store_tolerant(root)
+    floor = learning_floor(recs)
+    # `untested` is ADDITIVE (4.7): the five original keys keep their exact meaning, so a
+    # consumer that reads only them is unaffected.
+    report = {"armed": floor is not None, "floor": floor,
+              "regex": LEARN_TRIGGER_REGEX, "uncited": [], "cited": 0, "untested": []}
+    if floor is None:
+        return report                       # unarmed: nothing is owed, and we say so
+    cited = cited_stamps(recs)
+    bound = floor[:16]
+    if since:
+        s_norm = str(since)[:16].replace("T", " ")
+        bound = max(bound, s_norm)
+    for t in trigger_lines(root):
+        if t["ts"][:16] < bound:
+            continue                        # grandfathered
+        if t["key"] in cited:
+            report["cited"] += 1
+        else:
+            report["uncited"].append({"ts": _cite_token(t),
+                                      "headline": collapse_ctrl(t["headline"])})
+    open_cited = open_cited_stamps(recs)
+    for u in untested_lines(root):
+        if u["ts"][:16] < bound or u["key"] in open_cited:
+            continue
+        report["untested"].append({"ts": _cite_token(u),
+                                   "headline": collapse_ctrl(u["headline"])})
+    return report
+
+
+def triggers_with_citation(root, since=None):
+    """Every trigger IN WINDOW, each marked cited or not — the list form of the report."""
+    recs = load_store_tolerant(root)
+    floor = learning_floor(recs)
+    if floor is None:
+        return []
+    cited = cited_stamps(recs)
+    bound = floor[:16]
+    if since:
+        bound = max(bound, str(since)[:16].replace("T", " "))
+    out = []
+    for t in trigger_lines(root):
+        if t["ts"][:16] < bound:
+            continue
+        t["cited"] = t["key"] in cited
+        out.append(t)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# THE CARD — the four-box block a lane return ends with, and the estate renders back
+# ---------------------------------------------------------------------------
+# ⛔ ONE GRAMMAR, TWO DIRECTIONS. `index.py card` RENDERS it from the store; the
+# agent-ledger hook PARSES it out of a lane return and banks each line as a record. Both
+# use the constants below, so a lane cannot write a block the estate cannot read.
+#
+#   TESTS (n)
+#   - [x] <statement> — ran: <ran> · command: `<cmd>` · exit: <n>
+#   OPEN (n)
+#   - [ ] <statement> — closes when: <what> · owner: <who> · recheck: <YYYY-MM-DD>
+#   FINDINGS (n)
+#   - [x] <statement> — evidence: <ref>
+#   LEARNINGS (n)
+#   - [x] [TAG] <statement> — evidence: <ref>
+#
+# THE KIND COMES FROM THE BOX, never from the checkbox. `[ ]` means "still open" and only
+# OPEN uses it; a parser that keyed on the checkbox would bank a half-finished TEST as an
+# open question. The box header is the discriminator, and the field tail after " — " is
+# `key: value` pairs joined by " · ".
+CARD_BOXES = (("TESTS", "result"), ("OPEN", OPEN_KIND),
+              ("FINDINGS", "finding"), ("LEARNINGS", LEARN_KIND))
+CARD_HEADER_RE = re.compile(r"^\s*(TESTS|OPEN|FINDINGS|LEARNINGS)\s*\((\d+)\)\s*$")
+CARD_ITEM_RE = re.compile(r"^\s*-\s*\[([ xX])\]\s+(.*\S)\s*$")
+CARD_TAIL_SEP = " — "
+CARD_PAIR_SEP = " · "
+CARD_FIELD_KEYS = {"ran": "ran", "command": "command", "exit": "exit",
+                   "closes when": "closes_when", "owner": "owner", "recheck": "recheck",
+                   "evidence": "evidence", "method": "method",
+                   "when to try": "when_to_try", "cost": "cost"}
+
+
+def _card_tail(rec):
+    """The ` — key: value · key: value` tail for one rendered line."""
+    kind = rec.get("kind")
+    pairs = []
+    if kind == "result" and rec.get("command") is not None:
+        pairs = [("ran", rec.get("ran", "?")),
+                 ("command", "`%s`" % rec.get("command")),
+                 ("exit", rec.get("exit"))]
+    elif kind == "result":
+        # A result banked BEFORE ran/command/exit were required. Rendering "command: `?` ·
+        # exit: None" would dress a legacy record as a broken new one; it is neither. Show
+        # what it actually carries, and say plainly that the run was not recorded.
+        ev = (rec.get("evidence") or [{}])[0].get("ref", "-")
+        pairs = [("evidence", ev), ("run", "not recorded (pre-4.7 record)")]
+    elif kind == OPEN_KIND:
+        pairs = [("closes when", rec.get("closes_when", "?")),
+                 ("owner", rec.get("owner", "?")),
+                 ("recheck", rec.get("recheck", "?"))]
+    else:
+        ev = (rec.get("evidence") or [{}])[0].get("ref", "-")
+        pairs = [("evidence", ev)]
+    return CARD_TAIL_SEP + CARD_PAIR_SEP.join("%s: %s" % (k, v) for k, v in pairs)
+
+
+def card_line(rec):
+    """One rendered card line. Control characters are rendered, never emitted: a record is
+    content somebody typed, and a newline inside it would forge a second item."""
+    box = "[ ]" if rec.get("kind") == OPEN_KIND else "[x]"
+    stmt = collapse_ctrl(rec.get("statement", ""))
+    if rec.get("kind") == LEARN_KIND:
+        stmt = "[%s] %s" % (rec.get("tag", "?"), stmt)
+    return "- %s %s%s" % (box, stmt, collapse_ctrl(_card_tail(rec)))
+
+
+def card_report(root, scope=None):
+    """{box: [records]} for the four boxes, newest first, optionally scope-filtered."""
+    recs = load_store_tolerant(root)
+    eff = resolve(recs)
+    out = {}
+    for label, kind in CARD_BOXES:
+        sel = [r for r in recs if r.get("kind") == kind
+               and eff.get(r.get("id"), ("live", None))[0] == "live"]
+        if scope:
+            # Only the scoped kinds can be filtered; a result or finding carries no scope,
+            # so filtering them by one would silently empty two boxes.
+            sel = [r for r in sel if not r.get("scope") or scope_matches(r, scope)]
+        out[label] = sorted(sel, key=sort_key, reverse=True)
+    return out
+
+
+def parse_card(text):
+    """⛔ THE PARSER THE HOOK CALLS, so a lane return and the estate cannot drift.
+
+    Returns [{kind, statement, checked, <fields>}] in the order the block lists them. A
+    line outside a box is ignored; an unknown key in the tail is kept verbatim under its
+    own name rather than dropped, because silently discarding half a lane's return is the
+    defect this whole card exists to prevent.
+    """
+    kind_of = dict(CARD_BOXES)
+    out, box = [], None
+    declared, seen = {}, {}
+    for line in str(text or "").splitlines():
+        h = CARD_HEADER_RE.match(line)
+        if h:
+            box = h.group(1)
+            # N3 (refuter): the count was captured and thrown away. It is the ONE piece of
+            # redundancy the card has — a lane that writes "OPEN (3)" and lists two has
+            # either lost an item or miscounted, and both are worth knowing. It is recorded
+            # and reported, never enforced by refusal: rejecting the whole card would throw
+            # away three good items to punish one bad number, which is the opposite of what
+            # this block is for.
+            declared[box] = int(h.group(2))
+            seen.setdefault(box, 0)
+            continue
+        m = CARD_ITEM_RE.match(line)
+        if not m or box is None:
+            continue
+        checked, body = m.group(1).lower() == "x", m.group(2)
+        item = {"kind": kind_of[box], "checked": checked}
+        if CARD_TAIL_SEP in body:
+            stmt, tail = body.split(CARD_TAIL_SEP, 1)
+            for pair in tail.split(CARD_PAIR_SEP):
+                if ":" not in pair:
+                    continue
+                k, v = pair.split(":", 1)
+                key = CARD_FIELD_KEYS.get(k.strip().lower(), k.strip().lower())
+                val = v.strip().strip("`")
+                # ⛔ TYPE AT THE SOURCE, NOT AT THE BOUNDARY. `exit` is rendered as text
+                # and `add` requires an INTEGER, so a parsed TESTS box could never bank —
+                # every consumer would have had to coerce it, and the first one that
+                # forgot would fail silently. Numeric here becomes an int; a NON-numeric
+                # value is left exactly as written, so `add` refuses it with its own
+                # exit-required rule rather than this parser inventing a 0.
+                if key == "exit" and re.match(r"^[+-]?\d+$", val):
+                    val = int(val)
+                item[key] = val
+        else:
+            stmt = body
+        stmt = stmt.strip()
+        tagm = re.match(r"^\[([A-Z]+)\]\s+(.*)$", stmt)
+        if tagm and item["kind"] == LEARN_KIND:
+            item["tag"], stmt = tagm.group(1), tagm.group(2)
+        item["statement"] = stmt
+        seen[box] = seen.get(box, 0) + 1
+        out.append(item)
+    for b, n in declared.items():
+        if seen.get(b, 0) != n:
+            out.append({"kind": "_count_mismatch", "box": b, "declared": n,
+                        "seen": seen.get(b, 0), "statement":
+                        "%s header says %d, %d item(s) listed" % (b, n, seen.get(b, 0))})
+    return out
+
+
+def lib_learnings_file(lib):
+    return lib / LIB_LEARNINGS
+
+
+def read_lib_learnings(lib):
+    """The shelf's promoted lessons, newest first. Tolerant: the shelf is shared with
+    other estates and may be written by a newer version of this script than the one
+    reading it, so one unreadable line never costs a session its digest."""
+    p = lib_learnings_file(lib)
+    out = []
+    try:
+        if not p.is_file():
+            return []
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+    out.sort(key=lambda r: str(r.get("ts", "")), reverse=True)
+    return out
+
+
+def cmd_review(a):
+    """`accept` / `reject` — THE SEAT'S RULING on a lane's proposal.
+
+    Append-only, like every other status flip: a ruling record names the target in its
+    statement head and in `links`, and `resolve()` reads it. Accepting makes the record
+    quotable — it joins the digest the spawn-gate injects, the packet block a successor
+    reads, and the router line. Rejecting retires it with the reason on the record, so the
+    next reader can see the claim was made AND that it was turned down; a silent delete
+    would leave the lane's sentence looking like it was never proposed.
+    """
+    root = pathlib.Path(a.root).resolve()
+    target = a.record.upper()
+    recs = load_store_tolerant(root)
+    match = [r for r in recs if str(r.get("id")) == target]
+    if not match:
+        die("no-such-record", "no record %s in %s" % (target, STORE))
+    rec = match[0]
+    eff = resolve(recs)
+    status = eff.get(target, ("live", None))[0]
+    verb = "accepts" if a.accepting else "rejects"
+    if status in ("superseded", "refuted"):
+        die("review-retired", "%s is already %s — a retired record is not reviewed"
+                              % (target, status))
+    if verb == "accepts" and status == "live":
+        print("%s is already accepted" % target)
+        return
+    if not a.accepting and not (a.why or "").strip():
+        die("why-required", "`reject` needs --why: a claim turned down without a reason "
+                            "is indistinguishable from one that was lost")
+    why = (" " + a.why.strip()) if a.why else ""
+    stmt = "%s %s — reviewed by the seat.%s" % (verb, target, why)
+    raw = {"ts": now_z(), "session": a.session, "skill": "archivist",
+           "kind": "decision", "ask": "", "statement": stmt,
+           "evidence": [{"type": "record", "ref": target, "label": "cited"}],
+           "relation": "back", "links": [target], "status": "live"}
+    try:
+        rid = append_record(root, raw, lib=library_root(a), notes=[])
+    except Reject as r:
+        die(r.rule, r.detail)
+    print(rid)
+
+
+def cmd_promote(a):
+    """⛔ A LESSON TRAVELS ONLY WHEN ITS AUTHOR SAID IT SHOULD.
+
+    Promotion copies a learning onto the machine-wide shelf, where every other estate's
+    packet will quote it. That is a big claim to make on somebody else's behalf, so the
+    gate is the record's OWN scope: it must carry `library`. A lesson scoped to this
+    repo's hooks is true HERE; shipping it to an unrelated project would be the estate
+    asserting something it never checked.
+
+    The shelf copy keeps the origin (project name + local id) so a reader can walk back to
+    the estate that paid for it, and promotion is IDEMPOTENT on that pair.
+    """
+    root = pathlib.Path(a.root).resolve()
+    lib = library_root(a)
+    recs = load_store_tolerant(root)
+    match = [r for r in recs if str(r.get("id")) == a.record]
+    if not match:
+        die("no-such-record", "no record %r in %s" % (a.record, STORE))
+    rec = match[0]
+    if rec.get("kind") != LEARN_KIND:
+        die("promote-kind", "only a learning travels; %s is kind=%s"
+                            % (a.record, rec.get("kind")))
+    if LIB_SCOPE not in (rec.get("scope") or []):
+        die("promote-scope",
+            "%s is not scoped `%s` — a lesson travels only when its author said it "
+            "should. Its scope is: %s" % (a.record, LIB_SCOPE,
+                                          ", ".join(rec.get("scope") or []) or "none"))
+    name = a.project or root.name
+    out = dict(rec)
+    out["origin_project"] = name
+    out["origin_id"] = rec.get("id")
+    existing = read_lib_learnings(lib)
+    for e in existing:
+        if e.get("origin_project") == name and e.get("origin_id") == rec.get("id"):
+            print("%s already on the shelf" % a.record)
+            return
+    p = lib_learnings_file(lib)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a+", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            fh.seek(0, os.SEEK_END)
+            fh.write(json.dumps(out, ensure_ascii=False) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    print("%s promoted to %s" % (a.record, tilde_path(p)))
+
+
+def tilde_path(p):
+    home = str(pathlib.Path.home())
+    sp = str(p)
+    return "~" + sp[len(home):] if sp.startswith(home) else sp
+
+
+def proposed_counts(root):
+    """{kind: n} of records a LANE proposed and the seat has not yet ruled on."""
+    recs = load_store_tolerant(root)
+    eff = resolve(recs)
+    out = {}
+    for r in recs:
+        if eff.get(r.get("id"), ("live", None))[0] == "proposed":
+            out[r.get("kind")] = out.get(r.get("kind"), 0) + 1
+    return out
+
+
+def cmd_card(a):
+    root = pathlib.Path(a.root).resolve()
+    rep = card_report(root, scope=a.scope)
+    if a.json:
+        print(json.dumps({"counts": {k: len(v) for k, v in rep.items()},
+                          "boxes": rep}, ensure_ascii=False, indent=1))
+        return
+    prop = proposed_counts(root)
+    if prop:
+        print("PROPOSED (%d awaiting review): %s"
+              % (sum(prop.values()),
+                 ", ".join("%s %d" % (k, v) for k, v in sorted(prop.items()))))
+    for label, _kind in CARD_BOXES:
+        rows = rep[label]
+        print("%s (%d)" % (label, len(rows)))
+        for r in rows[:a.limit] if (a.limit is not None and a.limit >= 0) else rows:
+            print(card_line(r))
+
+
+def cmd_learnings(a):
+    # --trigger-regex answers from the constant and stops: it is the ONE home of the
+    # regex, and a consumer asking for it must not also have to have a store.
+    if getattr(a, "trigger_regex", False):
+        print(LEARN_TRIGGER_REGEX)
+        return
+    root = pathlib.Path(a.root).resolve()
+
+    if getattr(a, "library", False):
+        # The SHELF's lessons, not this estate's: what every other project paid for.
+        recs = learning_records(read_lib_learnings(library_root(a)),
+                                include_superseded=getattr(a, "include_superseded", False))
+        if a.limit is not None and a.limit >= 0:
+            recs = recs[:a.limit]
+        if a.json:
+            print(json.dumps({"count": len(recs), "records": recs},
+                             ensure_ascii=False, indent=1))
+            return
+        for r in recs:
+            line = digest_line(r)
+            origin = r.get("origin_project")
+            if origin and a.digest:
+                line = _clip_bytes("%s [%s]" % (line, origin), DIGEST_MAX_BYTES)
+            print(line)
+        return
+
+    # --triggers answers a different question from the rest of the verb: not "what have we
+    # learned" but "what did we pay for that nobody has banked yet".
+    if getattr(a, "triggers", False):
+        since = None
+        if a.since:
+            since = _norm_since(a.since)
+            if since is None:
+                die("since-format", "--since must be a record ts, a ledger stamp or a "
+                                    "date, got %r" % a.since)
+        if a.json:
+            print(json.dumps(trigger_report(root, since=since),
+                             ensure_ascii=False, indent=1))
+            return
+        rep = trigger_report(root, since=since)
+        if not rep["armed"]:
+            print("loop not armed — no kind=learning record yet, so nothing is owed")
+            return
+        trigs = triggers_with_citation(root, since=since)
+        if getattr(a, "uncited", False):
+            trigs = [t for t in trigs if not t["cited"]]
+        if a.limit is not None and a.limit >= 0:
+            trigs = trigs[-a.limit:] if a.limit else []
+        for t in trigs:
+            print("%s %s" % (_cite_token(t),
+                             _clip_bytes(collapse_ctrl(t["headline"]),
+                                         DIGEST_MAX_BYTES)))
+        return
+
+    recs = learning_records(load_store_tolerant(root),
+                            include_superseded=getattr(a, "include_superseded", False),
+                            include_proposed=getattr(a, "include_proposed", False))
+
+    if a.since:
+        since = _norm_since(a.since)
+        if since is None:
+            die("since-format", "--since must be a record ts (YYYY-MM-DDTHH:MM:SSZ), a "
+                                "ledger stamp (YYYY-MM-DD HH:MMZ) or a date, got %r" % a.since)
+        recs = [r for r in recs if (r.get("ts") or "") > since]
+
+    if a.scope:
+        recs = [r for r in recs if scope_matches(r, a.scope)]
+
+    if a.limit is not None and a.limit >= 0:
+        recs = recs[:a.limit]
+
+    if a.json:
+        print(json.dumps({"count": len(recs), "records": recs}, ensure_ascii=False, indent=1))
+        return
+    if a.digest:
+        for r in recs:
+            print(digest_line(r))
+        return
+    if not recs:
+        print("no learnings banked yet")
+        return
+    print("%d learning(s), newest first" % len(recs))
+    for r in recs:
+        print("%s  %s  [%s]  scope: %s  source: %s"
+              % (r.get("id"), r.get("ts"), r.get("tag"),
+                 ", ".join(r.get("scope") or []), r.get("source", "?")))
+        print("    %s" % collapse_ctrl(r.get("statement", "")))
+        for item in (r.get("evidence") or []):
+            print("    evidence: %s %s [%s]"
+                  % (item.get("type"), item.get("ref"), item.get("label")))
 
 
 def cmd_track(a):
@@ -829,8 +2095,14 @@ def tombstone(a, target, statement, evidence, also=None):
     if target not in ids:
         die("links-unknown", "no record %s in %s" % (target, STORE))
     links = [target] + [x for x in (also or []) if x and x != target]
+    # ⛔ A TOMBSTONE IS A DECISION, NOT A TEST (4.7). It was written as kind=result, and
+    # the moment `result` came to mean "something RAN, here is the command and the exit
+    # code", every supersede and refute would have had to invent a command it never ran —
+    # or the TESTS box would have counted status flips as tests. `decision` is what a
+    # supersede/refute has always actually been; resolution keys on the statement head and
+    # `links`, never on the kind, so nothing about the flip changes.
     raw = {"ts": a.ts or now_z(), "session": a.session, "skill": a.skill or "archivist",
-           "kind": "result", "ask": a.ask, "statement": statement,
+           "kind": "decision", "ask": a.ask, "statement": statement,
            "evidence": evidence, "relation": "back", "links": links, "status": "live"}
     notes = []
     try:
@@ -1391,7 +2663,7 @@ def cites_refuted(shelf, targets=None):
                 m = REC_REF_RE.match(str(e.get("ref", "")).strip())
                 if not m:
                     continue
-                tproj, tid = (m.group(1) or name), "F-%s" % m.group(2)
+                tproj, tid = (m.group(1) or name), "%s-%s" % (m.group(2), m.group(3))
                 t = targets.get(tproj)
                 if t is None or not t["up"]:
                     unchecked.append(("%s:%s" % (name, fid), "%s:%s" % (tproj, tid)))
@@ -1600,7 +2872,9 @@ def cmd_library_crown(a):
     local_ids = [m.split(":")[1] for m in by if m.split(":")[0] == local["name"]]
     ev = [{"type": "record", "label": "cited",
            "ref": m.split(":")[1] if m.split(":")[0] == local["name"] else m} for m in by]
-    raw = {"ts": now_z(), "session": a.session, "skill": "archivist", "kind": "result",
+    # A crown records "a convergence the MODEL decided" — a decision by its own definition,
+    # and never a command that ran. Same reasoning as the tombstone above.
+    raw = {"ts": now_z(), "session": a.session, "skill": "archivist", "kind": "decision",
            "ask": "concept %s: %s" % (cid, concept.get("name") or ", ".join(concept.get("terms") or [])),
            "statement": "CONVERGED: %s" % a.statement.strip(),
            "evidence": ev, "relation": "toward", "links": local_ids, "status": "live"}
@@ -1646,6 +2920,37 @@ def main():
                     help="the shelf (default $%s or ~/.claude/notrest-library)" % LIB_ENV)
     ad.add_argument("--strict-refs", action="store_true",
                     help="promote the unqualified-record-ref WARN to a rejection (exit 2)")
+    # The per-field form the Stop gate's block reason instructs a model to run. Same
+    # validate(), same rules, same exit codes — only the typing is easier.
+    ad.add_argument("--kind", choices=KINDS, help="per-field form: the record kind")
+    ad.add_argument("--tag", choices=LEARN_TAGS, help="per-field form: a learning's tag")
+    ad.add_argument("--statement", help="per-field form: the lesson, <=%d chars"
+                                        % STATEMENT_MAX)
+    ad.add_argument("--evidence", action="append", metavar="REF",
+                    help="per-field form, repeatable: a COORD stamp '[YYYY-MM-DD HH:MMZ]', "
+                         "a briefs/ path, a commit hash, or a record id")
+    ad.add_argument("--scope", action="append", metavar="TOKEN",
+                    help="per-field form, repeatable: a path glob, a skill name, or 'estate'")
+    # kind=open
+    ad.add_argument("--closes-when", dest="closes_when",
+                    help="kind=open: the runnable check that would CLOSE this question")
+    ad.add_argument("--owner", help="kind=open: who can close it ('seat' or a lane id)")
+    ad.add_argument("--recheck", help="kind=open: re-check date, YYYY-MM-DD")
+    # kind=alternative
+    ad.add_argument("--method", help="kind=alternative: the path not taken")
+    ad.add_argument("--when-to-try", dest="when_to_try",
+                    help="kind=alternative: when it would be worth trying")
+    ad.add_argument("--cost", help="kind=alternative: what it would cost")
+    # kind=result
+    ad.add_argument("--ran", help="kind=result: what was run")
+    ad.add_argument("--command", help="kind=result: the exact command, so it can be re-run")
+    ad.add_argument("--exit", dest="exit", type=int,
+                    help="kind=result: the integer exit code")
+    ad.add_argument("--source", default="seat",
+                    help="per-field form: 'seat' or a lane id (default: seat)")
+    ad.add_argument("--session", default="", help="per-field form: the session id")
+    ad.add_argument("--skill", default="", help="per-field form: the skill that found it")
+    ad.add_argument("--ask", default="", help="per-field form: what was asked")
     ad.set_defaults(f=cmd_add)
 
     lb = sub.add_parser("library", help="the cross-project shelf: register, list, find, track")
@@ -1708,6 +3013,107 @@ def main():
     lk.add_argument("--session", default="")
     lk.add_argument("--root", default=".", help="the LOCAL store the crown lands in")
     lk.set_defaults(f=cmd_library_crown)
+
+    ln = sub.add_parser("learnings", help="the banked lessons: digest, scope, since")
+    ln.add_argument("--root", default=".")
+    ln.add_argument("--digest", action="store_true",
+                    help="framed '| ' lines, <=%d bytes each, newest first — the shared "
+                         "format the packet, spawn-gate and router all render"
+                         % DIGEST_MAX_BYTES)
+    ln.add_argument("--scope", nargs="+", default=[], metavar="TOKEN",
+                    help="only records whose scope matches a token (or is 'estate')")
+    ln.add_argument("--limit", type=int, default=None, metavar="N",
+                    help="at most N records, newest first")
+    ln.add_argument("--since", default="", metavar="TS",
+                    help="records newer than a record ts, a ledger stamp or a date")
+    ln.add_argument("--json", action="store_true", help="machine output")
+    ln.add_argument("--trigger-regex", dest="trigger_regex", action="store_true",
+                    help="print the ONE trigger regex eval and the Stop hook both read")
+    ln.add_argument("--triggers", action="store_true",
+                    help="list COORD lines where the estate PAID for a lesson (ts + "
+                         "headline); the ONE implementation both eval and the Stop hook "
+                         "call. A HEADLINE is the text before the first '->' or the first "
+                         "120 characters, WHICHEVER IS SHORTER — a tag beyond that bound "
+                         "is a mention, not a claim, and a line with no arrow does not "
+                         "become one enormous headline. Bounded by the loop's FLOOR "
+                         "(the earliest evidence stamp "
+                         "any learning cites): older lines are grandfathered and never "
+                         "returned, and with no learning at all the loop is UNARMED and "
+                         "nothing is owed. --json prints the contract: "
+                         "{\"armed\": bool, \"floor\": \"<ts>|null\", \"regex\": \"...\", "
+                         "\"uncited\": [{\"ts\": \"[YYYY-MM-DD HH:MMZ]\", \"headline\": "
+                         "\"...\"}], \"cited\": <n>} — uncited[].ts is BRACKETED because it "
+                         "is pasted straight into `add --evidence`")
+    ln.add_argument("--include-proposed", dest="include_proposed", action="store_true",
+                    help="also show records a LANE proposed and the seat has not reviewed "
+                         "(never quoted to lanes or the packet until `accept`)")
+    ln.add_argument("--include-superseded", dest="include_superseded",
+                    action="store_true",
+                    help="also show learnings a later record superseded or refuted "
+                         "(they are excluded from every digest and injection by default)")
+    ln.add_argument("--library", action="store_true",
+                    help="read the machine-wide SHELF's promoted lessons instead of this "
+                         "estate's store")
+    ln.add_argument("--library-root", default="",
+                    help="the shelf (default $%s or ~/.claude/notrest-library)" % LIB_ENV)
+    ln.add_argument("--uncited", action="store_true",
+                    help="with --triggers: only those no learning record cites")
+    ln.set_defaults(f=cmd_learnings)
+
+    for _v, _h in (("accept", "the seat ACCEPTS a lane's proposed record — it becomes "
+                              "quotable to other lanes and to the packet"),
+                   ("reject", "the seat REJECTS a lane's proposed record, with a reason")):
+        rv = sub.add_parser(_v, help=_h)
+        rv.add_argument("record", metavar="L-n|O-n|A-n", help="the proposed record")
+        rv.add_argument("--root", default=".")
+        rv.add_argument("--session", default="")
+        rv.add_argument("--why", default="",
+                        help="reject: why it was turned down (required)")
+        rv.add_argument("--library-root", default="")
+        rv.set_defaults(f=cmd_review, accepting=(_v == "accept"))
+
+    pr = sub.add_parser("promote", help="copy a `library`-scoped learning onto the shelf")
+    pr.add_argument("record", metavar="L-n", help="the learning to promote")
+    pr.add_argument("--root", default=".")
+    pr.add_argument("--project", default="", help="origin name (default: the root's name)")
+    pr.add_argument("--library-root", default="",
+                    help="the shelf (default $%s or ~/.claude/notrest-library)" % LIB_ENV)
+    pr.set_defaults(f=cmd_promote)
+
+    cd = sub.add_parser(
+        "card", help="the four-box card: TESTS / OPEN / FINDINGS / LEARNINGS",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "THE CARD GRAMMAR (rendered here, parsed by the agent-ledger hook — one\n"
+            "grammar, two directions, so a lane cannot write a block the estate cannot read):\n"
+            "  TESTS (n)\n"
+            "  - [x] <statement> — ran: <ran> · command: `<cmd>` · exit: <n>\n"
+            "  OPEN (n)\n"
+            "  - [ ] <statement> — closes when: <what> · owner: <who> · recheck: <YYYY-MM-DD>\n"
+            "  FINDINGS (n)\n"
+            "  - [x] <statement> — evidence: <ref>\n"
+            "  LEARNINGS (n)\n"
+            "  - [x] [TAG] <statement> — evidence: <ref>\n"
+            "\n"
+            "THE KIND COMES FROM THE BOX, NEVER THE CHECKBOX. `[ ]` means still open and\n"
+            "only OPEN uses it; a parser keyed on the checkbox banks a half-finished TEST\n"
+            "as an open question.\n"
+            "\n"
+            "TWO RULINGS THE TEMPLATE AND THE PARSER BOTH OBEY:\n"
+            "  1. `exit` is typed as an INT by parse_card when it is numeric, so a parsed\n"
+            "     TESTS box banks through `add` without any caller coercing it. A\n"
+            "     non-numeric exit is left as written and `add` refuses it (exit-required).\n"
+            "  2. `ran` AND `command` are BOTH required on a result, and neither aliases\n"
+            "     the other: a test whose exact command is missing cannot be rerun, and a\n"
+            "     command with no account of what it exercised cannot be read."))
+    cd.add_argument("--root", default=".")
+    cd.add_argument("--scope", nargs="+", default=[], metavar="TOKEN",
+                    help="filter the scoped kinds (open, alternative, learning) by scope")
+    cd.add_argument("--limit", type=int, default=None, metavar="N",
+                    help="at most N lines per box, newest first")
+    cd.add_argument("--json", action="store_true",
+                    help="machine output: {\"counts\": {BOX: n}, \"boxes\": {BOX: [records]}}")
+    cd.set_defaults(f=cmd_card)
 
     t = sub.add_parser("track", help="print the session track")
     t.add_argument("--session")

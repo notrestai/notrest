@@ -95,12 +95,104 @@ case "$NORM" in
   *" watch this"*|*" recheck"*|*" on a cadence"*)
       SKILL=watch;            SHAPE=recheck ;;
 esac
-[ -n "$SKILL" ] || exit 0
+
+# ── THE LEARNINGS LINE (4.6.3) — at most ONE, and only when the prompt names something a
+# banked lesson is scoped to. The routing nudge outranks it: this hook's law is one line
+# per prompt, so a prompt that routes never also carries a lesson (the lane it routes to
+# gets the digest from spawn-gate instead).
+#
+# THE MISS PATH STAYS FORK-FREE. Everything before the index.py call is builtin: a `case`
+# for a path-like word, bash's own word splitting to collect those words, and a GLOB over
+# skills/*/ for the suite's verb names — a glob is pathname expansion, not a subprocess,
+# and reading the roster off disk beats a hardcoded list that rots the day a skill lands.
+# $0's directory is taken with parameter expansion for the same reason: $(dirname "$0")
+# would be a fork on every prompt. Only a prompt that actually names a path or a verb
+# pays for estate-root and the indexer.
+nr_learnings_line() {
+  NR_TOKS=""
+  case "$LOW" in
+    */*)
+      set -- $RAW
+      for NR_W in "$@"; do
+        case "$NR_W" in
+          # A SYSTEM NOTIFICATION IS NOT A PATH (live defect, 2026-09-05): the seat was
+          # shown a lesson because "<task-id>ad1b941f…</task-id>" contains a slash and
+          # was taken for a path. Angle brackets, quotes and square brackets never occur
+          # in a scope token, so a word carrying one is rejected outright.
+          *[\<\>\"\'\[\]]*) : ;;
+          */*) NR_W="${NR_W%,}"; NR_W="${NR_W%.}"
+               NR_TOKS="$NR_TOKS $NR_W" ;;
+        esac
+      done ;;
+  esac
+  for NR_D in "${0%/*}"/../skills/*/; do
+    [ -d "$NR_D" ] || continue
+    NR_N="${NR_D%/}"; NR_N="${NR_N##*/}"
+    case " $NORM " in *" $NR_N "*) NR_TOKS="$NR_TOKS $NR_N" ;; esac
+  done
+  [ -n "$NR_TOKS" ] || return 0
+
+  . "${0%/*}/estate-root.sh" 2>/dev/null || true
+  NR_ROOT="${NR_ESTATE_ROOT:-}"
+  [ -n "$NR_ROOT" ] || return 0
+  [ -f "$NR_ROOT/archive/findings.jsonl" ] || return 0
+  NR_IDX="${0%/*}/../skills/archivist/scripts/index.py"
+  [ -f "$NR_IDX" ] || return 0
+
+  # SPECIFIC SCOPE ONLY (seat ruling, 2026-09-05). An 'estate'-scoped learning matches
+  # every prompt ever typed, so routing it here would make this line permanent furniture;
+  # those lessons ride the packet and the lane digest instead. The estate-scoped set is
+  # obtained by ASKING for it — a token that cannot match any real scope returns exactly
+  # those records — and subtracted. No scope semantics are reimplemented here: index.py
+  # still does every match, and the line printed is still the one it framed.
+  NR_LINE="$(NR_IDX="$NR_IDX" NR_ROOT="$NR_ROOT" NR_TOKS="$NR_TOKS" python3 <<'NRPY' 2>/dev/null
+import os, subprocess, sys, json
+
+idx, root = os.environ["NR_IDX"], os.environ["NR_ROOT"]
+toks = os.environ.get("NR_TOKS", "").split()
+
+
+def ask(args):
+    p = subprocess.run([sys.executable, idx, "learnings", "--root", root] + args,
+                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+    return p.stdout.decode("utf-8", "replace") if p.returncode == 0 else ""
+
+
+try:
+    if not toks:
+        raise SystemExit(0)
+    wide = ask(["--json", "--scope", "__nr_no_specific_match__"])
+    estate_ids = set()
+    for r in (json.loads(wide or '{"records": []}').get("records") or []):
+        if r.get("id"):
+            estate_ids.add(str(r["id"]))
+    for line in ask(["--digest", "--limit", "5", "--scope"] + toks).splitlines():
+        parts = line.split()
+        rid = parts[1] if len(parts) > 1 and parts[0] == "|" else ""
+        if rid and rid not in estate_ids:
+            sys.stdout.write(line)
+            break
+except Exception:
+    raise SystemExit(0)
+NRPY
+)"
+  [ -n "$NR_LINE" ] || return 0
+  NR_FIRST="${NR_TOKS# }"; NR_FIRST="${NR_FIRST%% *}"
+  echo "[notrest] a banked lesson applies: ${NR_LINE#| } (all of them: /notrest:archivist learnings --scope $NR_FIRST)"
+  return 0
+}
+
+# No route matched — the one place a banked lesson may speak instead (4.6.3).
+[ -n "$SKILL" ] || { nr_learnings_line; exit 0; }
 
 # The prompt already named the verb — nudging it would be noise. Exempt: an arm
 # whose own trigger phrase IS the verb's name ("project graph", "spend report") —
 # there the word is the task shape, not the user naming the skill, and applying the
 # guard would leave the arm permanently dead.
+# DELIBERATE SILENCE, and it stays silent (arm-proven 2026-09-05): the prompt has already
+# named the verb, so there is nothing to route AND nothing to add — a lesson line here
+# would break the one-nudge law on the very path the estate chose to keep quiet. The
+# banked lesson speaks only where nothing else does.
 if [ -z "$SELFNAMED" ]; then
   case "$NORM" in *" $SKILL "*) exit 0 ;; esac
 fi

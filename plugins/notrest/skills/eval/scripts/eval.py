@@ -10,6 +10,7 @@ Exit: 0 all pass · 5 warnings only · 6 any FAIL · 2 usage error.
 
 import argparse
 import glob
+import importlib.util
 import json
 import os
 import py_compile
@@ -928,9 +929,22 @@ def check_release_surface(root, _plug, _skills):
         rc = 1
     if rc == 0:
         RELEASE_SHAPED = ("CHANGELOG.md", "README.md", ".claude-plugin/", "docs/")
+        # ⛔ A DELETION IS NOT AN UNAGREED SURFACE. `git diff --name-only HEAD` lists
+        # removed paths too, so RETIRING a golden-surface file could never be green before
+        # the commit: drop it from the list and this half calls it an unagreed surface;
+        # keep it in the list and the existence half above calls it a missing file. The
+        # workshop rebuild hit exactly that vice — 10 module files deleted and delisted in
+        # one change, with no ordering that passed. A touched path that no longer exists on
+        # disk is a removal, and removal is what delisting MEANS. The other direction still
+        # has its guard: a path left in the golden list but deleted is caught by `missing`.
         extra = [f for f in (l.strip() for l in changed.splitlines())
-                 if f and f not in want and any(f.startswith(m) or f == m
-                                                for m in RELEASE_SHAPED)]
+                 if f and f not in want
+                 # lexists, not exists: exists() FOLLOWS the link, so a DANGLING symlink
+                 # at a touched unlisted path reads as "removed" and slips the check while
+                 # the index still carries a blob. A truly removed path is lexists-False;
+                 # a broken link is lexists-True and stays an unagreed surface.
+                 and os.path.lexists(os.path.join(root, f))
+                 and any(f.startswith(m) or f == m for m in RELEASE_SHAPED)]
         if extra:
             out.append(R(ID, "FAIL", law,
                          "%s  (release touched %d surface(s) not in the golden list: %s)"
@@ -942,7 +956,125 @@ def check_release_surface(root, _plug, _skills):
     return [R(ID, "PASS", law, "%d release surface(s) all present" % len(want))]
 
 
-CHECKS = [check_network, check_kernel, check_release_surface,
+# ---------------------------------------------------------------------------
+# THE LEARNINGS LOOP (4.6.3)
+# ---------------------------------------------------------------------------
+LEARN_STORE = os.path.join("archive", "findings.jsonl")
+
+
+def archivist_index(plug):
+    """⛔ ONE HOME, AND ONE IMPLEMENTATION. The trigger REGEX and the code that APPLIES it
+    both live in archivist's index.py, and BOTH consumers — this check and lane H's Stop
+    hook — go there for them. The hook calls `index.py learnings --triggers`; this check
+    imports the module and calls the same function that CLI wraps. Neither re-implements
+    the match: a second copy of the rule is a second rule the moment somebody edits one,
+    and then the hook prompts for lessons the gate does not audit, or the gate reddens on
+    lines the hook never surfaced. Returns None when it cannot be read, and the check
+    SKIPs rather than substituting a guess."""
+    path = os.path.join(plug, "skills", "archivist", "scripts", "index.py")
+    if not os.path.isfile(path):
+        return None, path
+    try:
+        spec = importlib.util.spec_from_file_location("_notrest_archivist_index", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        if not hasattr(mod, "triggers_with_citation"):
+            return None, path
+        return mod, path
+    except Exception:
+        return None, path
+
+
+def learning_trigger_regex(plug):
+    """The regex itself, for the parity arm and for anyone reporting what is audited."""
+    mod, path = archivist_index(plug)
+    rx = getattr(mod, "LEARN_TRIGGER_REGEX", None) if mod else None
+    return (rx if isinstance(rx, str) and rx else None), path
+
+
+def _learnings(root):
+    """(records, first_ts) — every kind=learning in the store, and the ts of the oldest.
+    A corrupt line is skipped: the audit is about lessons, not about JSON hygiene."""
+    txt = read(os.path.join(root, LEARN_STORE))
+    if txt is None:
+        return [], None
+    recs = []
+    for line in txt.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(r, dict) and r.get("kind") == "learning":
+            recs.append(r)
+    stamps = sorted(str(r.get("ts", "")) for r in recs if r.get("ts"))
+    return recs, (stamps[0] if stamps else None)
+
+
+def check_learning_loop(root, plug, _skills):
+    """Did the estate BANK the lessons it paid for?
+
+    A trigger is a COORD line whose HEADLINE carries an uppercase tag saying the estate
+    just bought a lesson — a correction, a refuter round that came back dirty, a red gate,
+    a halt. The loop is closed when a learning record CITES that line's timestamp.
+
+    ⛔ THIS CHECK DOES NOT DECIDE WHAT A TRIGGER IS. It calls
+    `index.py`'s `triggers_with_citation()` — the same code path the Stop hook reaches
+    through `learnings --triggers` — so the gate and the prompt can never disagree about
+    which lines matter.
+
+    ⛔ AND THE AUDIT IS BOUNDED BY WHEN THE LOOP WAS ARMED. Triggers older than the FIRST
+    learning record predate the practice, and grading an estate against a rule it did not
+    have is how a gate becomes something people switch off. With no learning at all the
+    loop is not armed and this SKIPs — it never invents a debt.
+    """
+    ID = "LEARNING-LOOP"
+    law = ("every COORD line where the estate PAID for a lesson (an owner correction, a "
+           "refuter round that came back dirty, a red gate, a halt) is cited by a banked "
+           "learning record")
+    mod, idx_path = archivist_index(plug)
+    if mod is None:
+        return [R(ID, "SKIP", law,
+                  "cannot load %s — the trigger rule has ONE home and this check will not "
+                  "re-implement it" % rel(root, idx_path))]
+    try:
+        rep = mod.trigger_report(root)
+    except BaseException as exc:      # SystemExit included: index.py's die() raises it,
+                                      # and the SHIP GATE must never exit through a
+                                      # dependency's error path
+        if isinstance(exc, KeyboardInterrupt):
+            raise
+        return [R(ID, "SKIP", law, "index.py could not read the triggers (%s: %s)"
+                  % (type(exc).__name__, exc))]
+    if not rep.get("armed"):
+        return [R(ID, "SKIP", law,
+                  "loop not armed — no kind=learning record in %s yet, so nothing is owed"
+                  % LEARN_STORE)]
+    uncited = rep.get("uncited") or []
+    total = len(uncited) + int(rep.get("cited") or 0)
+    if uncited:
+        return [R(ID, "FAIL", law,
+                  "%d of %d trigger line(s) since the loop was armed (floor %s) are cited "
+                  "by no learning: %s"
+                  % (len(uncited), total, rep.get("floor"),
+                     " · ".join("%s %s" % (t["ts"], clip_line(t["headline"], 90))
+                                for t in uncited[:3])),
+                  "bank the lesson: `index.py add --kind learning --tag LEARNED "
+                  "--statement '...' --evidence '<that bracketed timestamp>' "
+                  "--scope '...'`, or say in the ledger why the line taught nothing")]
+    return [R(ID, "PASS", law,
+              "loop armed at %s; %d trigger line(s) since, all cited"
+              % (rep.get("floor"), total))]
+
+
+def clip_line(text, n):
+    t = " ".join(str(text or "").split())
+    return t if len(t) <= n else t[:n - 1] + "\u2026"
+
+
+CHECKS = [check_network, check_kernel, check_release_surface, check_learning_loop,
           check_offload, check_labels, check_scripts, check_references,
           check_estate, check_selfcheck, check_triggers, check_safety,
           check_hooks, check_router, check_route_parity, check_route_conformance]
