@@ -655,6 +655,8 @@ cat > "$FAKE" <<'FAKEEOF'
 # script can play every arm: a clean build, an auth failure, a crash, a defect, silence.
 P="$(cat)"                      # the prompt arrives on stdin, like the real runner's
 TOK="${FAKE_TOKENS:-1000}"
+# the argv it was handed, so an arm can assert the in-flight budget bound was passed
+[ -n "${FAKE_ARG_LOG:-}" ] && echo "$*" >> "$FAKE_ARG_LOG"
 echo "${NOTREST_UNATTENDED:-unset}" >> "$FAKE_ENV_LOG"
 # the env the child actually got: the scrub is asserted from the child's own side
 { echo "CLAUDECODE=${CLAUDECODE:-ABSENT}"
@@ -679,6 +681,10 @@ case "$P" in
       printf '{"type":"result","subtype":"success","is_error":true,"result":"the model refused the prompt","usage":{"input_tokens":50,"output_tokens":0}}'
       exit 0; }
     [ "${FAKE_BUILD:-ok}" = "crash" ] && { echo "boom: could not open the contract" >&2; exit 9; }
+    # the CLI ending a call at its own --max-budget-usd bound: in flight, exit 0, is_error
+    [ "${FAKE_BUILD:-ok}" = "budget" ] && {
+      printf '{"type":"result","subtype":"error_max_budget","is_error":true,"result":"Reached max budget of $7.50 for this session","total_cost_usd":7.5012,"usage":{"input_tokens":300000,"output_tokens":9000}}'
+      exit 0; }
     printf '#!/usr/bin/env python3\nimport sys\nprint("compiled")\nsys.exit(0)\n' > runner.py
     printf '#!/bin/bash\necho "  PASS  real logic exercised"\nexit %s\n' \
       "${FAKE_FIXTURE_RC:-0}" > fixture.sh
@@ -689,7 +695,7 @@ case "$P" in
     # arm about cap accounting is not quietly measuring a red benchmark instead.
     [ "${FAKE_BUILD:-ok}" = "nousage" ] && {
       printf '{"type":"result","is_error":false,"result":"BUILD: DONE"}'; exit 0; }
-    printf '{"type":"result","is_error":false,"result":"BUILD: DONE","usage":{"input_tokens":%s,"output_tokens":0}}' "$TOK"
+    printf '{"type":"result","is_error":false,"result":"BUILD: DONE","total_cost_usd":0.03,"usage":{"input_tokens":%s,"output_tokens":0}}' "$TOK"
     ;;
   *REFUTER*)
     echo "refute" >> "$FAKE_STEP_LOG"
@@ -700,7 +706,7 @@ case "$P" in
       nousage) printf 'attacked five ways, nothing held\nREFUTER: CLEAN\n' > REFUTER.md
               printf '{"type":"result","is_error":false,"result":"REFUTER: CLEAN"}' ;;
       *)      printf 'attacked five ways, nothing held\nREFUTER: CLEAN\n' > REFUTER.md
-              printf '{"type":"result","is_error":false,"result":"REFUTER: CLEAN","usage":{"input_tokens":%s,"output_tokens":0}}' "$TOK" ;;
+              printf '{"type":"result","is_error":false,"result":"REFUTER: CLEAN","total_cost_usd":0.03,"usage":{"input_tokens":%s,"output_tokens":0}}' "$TOK" ;;
     esac
     ;;
 esac
@@ -716,6 +722,7 @@ mkcred(){ mkdir -p "$CREDDIR"; chmod "${2:-700}" "$CREDDIR"
           printf 'fixture-token-never-a-real-one\n' > "$CRED"; chmod "${1:-600}" "$CRED"; }
 mkcred
 export FAKE_ENV_LOG="$W/fake-env.log" FAKE_STEP_LOG="$W/fake-steps.log"
+export FAKE_ARG_LOG="$W/fake-args.log"; : > "$FAKE_ARG_LOG"
 : > "$FAKE_ENV_LOG"; : > "$FAKE_STEP_LOG"
 TODAY="$(date -u +%F)"
 AR(){ python3 "$CP" auto-run --root "$RA" --runner "$FAKE" --today "$TODAY" "$@"; }
@@ -1907,6 +1914,96 @@ has "…and banking it with the override" "re-rule with decide --status DRAFTED"
   "$RW3/compile/decisions.md"
 t "…while still deleting nothing" \
   "$([ -d "$RW3/compile/narration-slug" ] && echo kept)" "kept"
+
+echo "── X · the run cap becomes an IN-FLIGHT bound, not a post-hoc count (live 4.7.1)"
+# LIVE, first unattended day: decisions.md 10:00Z, doctor-refuter-tre — "CAPPED after build:
+# this invocation spent 1,409,130 tokens against a run cap of 400,000". The cap noticed
+# 3.5x over budget AFTER the money was gone, because a token count only exists once the
+# call has finished. The CLI bounds a call WHILE it runs: --max-budget-usd.
+RX="$W/inflight"; cp -R "$R" "$RX"; rm -rf "$RX/compile"
+( cd "$RX" && git init -q ) >/dev/null 2>&1
+python3 "$CP" scan --root "$RX" >/dev/null 2>&1
+python3 "$CP" draft --root "$RX" --all-ripe >/dev/null 2>&1
+SX="$(python3 -c "
+import json;print(json.load(open('$RX/compile/candidates.json'))['candidates'][0]['slug'])")"
+ARX(){ python3 "$CP" auto-run --root "$RX" --runner "$FAKE" --today "$TODAY" "$@"; }
+ARMX(){ python3 "$CP" decide --root "$RX" --slug "$SX" --status DRAFTED \
+          --note "re-armed" >/dev/null 2>&1; }
+STATX="$RX/pulse/auto-run.status"
+
+# ── the default: the run cap in dollars, at $25 per million ──
+python3 "$CP" auto --root "$RX" --on --unattended --daily-cap 90000000 --run-cap 400000 \
+  > "$W/x-auto.txt" 2>&1
+t "auto --on with a 400,000-token run cap exits 0" "$?" "0"
+has "…and states the dollar bound it derives" "\$10.00 handed to the CLI" "$W/x-auto.txt"
+has "…naming it as an IN-FLIGHT bound, not a count" "stops the call IN FLIGHT" "$W/x-auto.txt"
+t "…and the marker carries it" "$(python3 -c '
+import json,sys;print(json.load(open(sys.argv[1])).get("run_cap_usd"))' "$(mk "$RX")")" "10.0"
+: > "$FAKE_ARG_LOG"
+ARX --next >/dev/null 2>&1
+t "a green run exits 0" "$?" "0"
+t "EVERY runner call carried --max-budget-usd 10.00" \
+  "$(grep -c -- '--max-budget-usd 10.00' "$FAKE_ARG_LOG" | tr -d ' ')" "2"
+t "…and no call went out without it" \
+  "$(grep -cv -- '--max-budget-usd' "$FAKE_ARG_LOG" | tr -d ' ')" "0"
+has "…the receipt carries the CLI's own dollar figure beside the tokens" \
+  "cost=\$0.0300 (total_cost_usd, as the CLI reported it)" "$RX/spend/ledger.md"
+has "…and the dry-run plan states the bound before anything runs" \
+  "an IN-FLIGHT bound, not a post-hoc count" \
+  "$(ARX --dry-run > "$W/x-dry.txt" 2>&1; echo "$W/x-dry.txt")"
+
+# ── the owner's own number wins ──
+ARMX
+python3 "$CP" auto --root "$RX" --on --unattended --daily-cap 90000000 --run-cap 400000 \
+  --run-cap-usd 7.50 > "$W/x-auto2.txt" 2>&1
+t "auto --run-cap-usd exits 0" "$?" "0"
+has "…and prints the owner's figure, not the derived one" "\$7.50 handed to the CLI" \
+  "$W/x-auto2.txt"
+: > "$FAKE_ARG_LOG"
+ARX --next >/dev/null 2>&1
+t "…which is what every call then carries" \
+  "$(grep -c -- '--max-budget-usd 7.50' "$FAKE_ARG_LOG" | tr -d ' ')" "2"
+python3 "$CP" auto --root "$RX" --run-cap-usd 5 >/dev/null 2>&1
+t "…and a dollar cap without --on is refused (2)" "$?" "2"
+
+# ── the stop the post-hoc cap could not catch ──
+ARMX
+: > "$FAKE_STEP_LOG"
+FAKE_BUILD=budget ARX --next > "$W/x-budget.txt" 2>&1
+t "a call the CLI stopped on budget is a red gate (exit 3)" "$?" "3"
+has "…recorded as CAPPED-IN-FLIGHT, not as a post-hoc CAPPED" "CAPPED-IN-FLIGHT on build" \
+  "$W/x-budget.txt"
+has "…with the bound and the spend, both in dollars" "the CLI stopped at \$7.50 (spent \$" \
+  "$W/x-budget.txt"
+has "…counted as a strike, like any red" "strike 1/2" "$W/x-budget.txt"
+has "…and banked as one" "CAPPED-IN-FLIGHT (strike 1/2)" "$RX/compile/decisions.md"
+has "…saying plainly what changed" "bounded WHILE it ran, not counted afterwards" \
+  "$RX/compile/decisions.md"
+t "…the refuter was never reached" "$(grep -c refute "$FAKE_STEP_LOG" | tr -d ' ')" "0"
+has "…and the status line uses the CAPPED-IN-FLIGHT word with the cost" \
+  "CAPPED-IN-FLIGHT $SX \$" "$STATX"
+# a second one parks the slug, exactly as two reds do
+FAKE_BUILD=budget ARX --next > "$W/x-budget2.txt" 2>&1
+has "a second in-flight cap parks the slug" "slug PARKED" "$W/x-budget2.txt"
+
+# ── the status grammar: "OK ... capped" was a contradiction ──
+RY="$W/statuswords"; cp -R "$R" "$RY"; rm -rf "$RY/compile"
+( cd "$RY" && git init -q ) >/dev/null 2>&1
+python3 "$CP" scan --root "$RY" >/dev/null 2>&1
+python3 "$CP" draft --root "$RY" --all-ripe >/dev/null 2>&1
+SY="$(python3 -c "
+import json;print(json.load(open('$RY/compile/candidates.json'))['candidates'][0]['slug'])")"
+python3 "$CP" auto --root "$RY" --on --unattended --daily-cap 1 --run-cap 400000 >/dev/null 2>&1
+python3 "$CP" auto-run --root "$RY" --runner "$FAKE" --today "$TODAY" --next >/dev/null 2>&1
+printf '[2026-09-05 09:00Z] lane=daemon model=opus tokens=99999999 grade=observed purpose="x"\n' \
+  >> "$RY/spend/ledger.md"
+python3 "$CP" decide --root "$RY" --slug "$SY" --status DRAFTED --note "re-armed" >/dev/null 2>&1
+python3 "$CP" auto-run --root "$RY" --runner "$FAKE" --today "$TODAY" --next >/dev/null 2>&1
+t "a daily-cap refusal exits 6" "$?" "6"
+has "…and the status says CAPPED, never OK" "CAPPED $SY daily cap reached" \
+  "$RY/pulse/auto-run.status"
+hasnt "…because 'OK ... capped' is a contradiction" "OK $SY capped" \
+  "$RY/pulse/auto-run.status"
 
 echo
 echo "compile fixture: $PASS passed, $FAIL failed"

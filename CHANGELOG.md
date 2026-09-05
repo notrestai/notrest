@@ -1,5 +1,15 @@
 # Changelog — the notrest harness
 
+## 4.7.1 — 2026-09-05
+
+**The run cap acts inside the run.** The first unattended day showed the per-run token cap was
+checked when the run ended: one build spent 1,409,130 tokens against a 400,000 cap and was marked
+CAPPED after the fact; only the daily cap refused the next run. Every headless runner call now
+carries the CLI's `--max-budget-usd`, derived from the run cap (`run_cap_usd`, default 10.00 for a
+400k cap, owner-settable), the run's `total_cost_usd` is receipted beside its tokens, a run the CLI
+stops on budget is recorded CAPPED-IN-FLIGHT and counts as a strike, and the status line no longer
+says OK about a capped run. Banked as L-8: a cap checked at run end is accounting, not a limit.
+
 ## 4.7.0 — 2026-09-05
 
 **Everything the estate learns is banked, delivered and audited; everything it repeats is drafted, built, refuted and adopted — automatically.**

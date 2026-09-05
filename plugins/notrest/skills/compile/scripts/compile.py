@@ -1402,6 +1402,11 @@ def auto_config(root):
             "run_cap_tokens": _int("run_cap_tokens", DEFAULT_RUN_CAP),
             "max_turns": _int("max_turns", DEFAULT_MAX_TURNS),
             "stop_cooldown_hours": _int("stop_cooldown_hours", DEFAULT_STOP_COOLDOWN_H),
+            "run_cap_usd": (d.get("run_cap_usd")
+                            if isinstance(d.get("run_cap_usd"), (int, float))
+                            and not isinstance(d.get("run_cap_usd"), bool)
+                            and d.get("run_cap_usd") > 0
+                            else run_cap_usd_for(_int("run_cap_tokens", DEFAULT_RUN_CAP))),
             "path": p}
 
 
@@ -1419,8 +1424,9 @@ def print_rails(cfg):
               "with unattended off they bound nothing, because nothing runs)")
     print("auto-build:   daily cap  : %s tokens/day (sum of today's lane=daemon receipts "
           "in spend/ledger.md)" % f"{cfg['daily_cap_tokens']:,}")
-    print("auto-build:   run cap    : %s tokens per auto-run invocation"
-          % f"{cfg['run_cap_tokens']:,}")
+    print("auto-build:   run cap    : %s tokens per auto-run invocation — and $%.2f handed "
+          "to the CLI as --max-budget-usd, which stops the call IN FLIGHT rather than "
+          "noticing afterwards" % (f"{cfg['run_cap_tokens']:,}", cfg["run_cap_usd"]))
     print("auto-build:   max turns  : %d per headless runner call" % cfg["max_turns"])
     print("auto-build:   stop cooldown: %gh before a slug that quietly stopped is "
           "retried; %d consecutive stops count as one strike"
@@ -1454,7 +1460,8 @@ def print_rails(cfg):
 
 def cmd_auto(a):
     if not a.on and (a.unattended or a.daily_cap is not None or a.run_cap is not None
-                     or a.max_turns is not None or a.stop_cooldown is not None):
+                     or a.max_turns is not None or a.stop_cooldown is not None
+                     or a.run_cap_usd is not None):
         sys.stderr.write("auto-build: --unattended and the cap flags WRITE the marker, so "
                          "they need --on. Bare `auto` reports; `auto --off` revokes.\n")
         return 2
@@ -1500,7 +1507,8 @@ def cmd_auto(a):
     if a.on:
         for flag, val in (("--daily-cap", a.daily_cap), ("--run-cap", a.run_cap),
                           ("--max-turns", a.max_turns),
-                          ("--stop-cooldown", a.stop_cooldown)):
+                          ("--stop-cooldown", a.stop_cooldown),
+                          ("--run-cap-usd", a.run_cap_usd)):
             if val is not None and not a.unattended:
                 sys.stderr.write("auto-build: %s is an UNATTENDED rail — it bounds what "
                                  "the daemon may spend, and without --unattended the "
@@ -1523,6 +1531,8 @@ def cmd_auto(a):
             mark["run_cap_tokens"] = a.run_cap or DEFAULT_RUN_CAP
             mark["max_turns"] = a.max_turns or DEFAULT_MAX_TURNS
             mark["stop_cooldown_hours"] = a.stop_cooldown or DEFAULT_STOP_COOLDOWN_H
+            mark["run_cap_usd"] = (a.run_cap_usd if a.run_cap_usd
+                                   else run_cap_usd_for(mark["run_cap_tokens"]))
         # tmp + replace: a half-written marker must never be readable as an opt-in.
         tmp = p.with_name(p.name + ".tmp")
         tmp.write_text(json.dumps(mark) + "\n", encoding="utf-8")
@@ -2452,6 +2462,18 @@ CAP_MARK = "auto-run CAPPED"
 STOP_MARK = "auto-run STOPPED"
 STOPS_PER_STRIKE = 3
 DEFAULT_STOP_COOLDOWN_H = 6
+# ⛔ THE RUN CAP WAS POST HOC, and the first unattended day proved it: decisions.md 10:00Z,
+# `doctor-refuter-tre` — "CAPPED after build: this invocation spent 1,409,130 tokens against
+# a run cap of 400,000". The cap noticed 3.5x over budget AFTER the money was gone, because
+# a token count only exists once the call has finished. The CLI offers a bound that applies
+# WHILE the call runs — `--max-budget-usd` — so the ceiling is handed to the runner instead
+# of being checked behind it. Dollars, not tokens, because that is the unit the CLI enforces
+# in; $25 per million is the conversion this estate uses to state one in the other.
+USD_PER_MTOK = 25.0
+
+
+def run_cap_usd_for(run_cap_tokens):
+    return round(run_cap_tokens * USD_PER_MTOK / 1000000.0, 2)
 # The runner is exec'd by a pulse daemon that hooks spawned from inside a LIVE Claude
 # session, so it inherits that session's own environment. A headless `claude -p` starting up
 # inside another Claude's env is at best confusing to debug and at worst refused outright —
@@ -2593,7 +2615,7 @@ def daemon_spend_today(root, day, unknown_as=DEFAULT_RUN_CAP):
 
 
 def parse_runner_json(stdout_text):
-    """(tokens, model, text, is_error) from a headless CLI result.
+    """(tokens, model, text, is_error, cost_usd) from a headless CLI result.
 
     ⛔ NOTHING IS INVENTED. A result whose JSON carries no usage yields tokens=None, and
     the receipt says `tokens=unknown` — a plausible-looking number in a spend ledger is
@@ -2603,12 +2625,12 @@ def parse_runner_json(stdout_text):
     try:
         obj = json.loads(text)
     except Exception:
-        return None, None, text, False
+        return None, None, text, False, None
     if isinstance(obj, list):
         obj = next((x for x in reversed(obj)
                     if isinstance(x, dict) and ("usage" in x or "result" in x)), None)
     if not isinstance(obj, dict):
-        return None, None, text, False
+        return None, None, text, False, None
     tokens, usage = None, obj.get("usage")
     if isinstance(usage, dict):
         got = [usage[k] for k in USAGE_KEYS
@@ -2624,11 +2646,14 @@ def parse_runner_json(stdout_text):
     # session with {"subtype":"success","is_error":true,...} and can exit 0 doing it. A
     # runner judged on its exit code alone would have read that as a completed build and
     # walked on to the refuter, paying for a second call against the same dead session.
+    cost = obj.get("total_cost_usd")
+    if not isinstance(cost, (int, float)) or isinstance(cost, bool):
+        cost = None
     return (tokens, (model or None), (result if isinstance(result, str) else text),
-            obj.get("is_error") is True)
+            obj.get("is_error") is True, cost)
 
 
-def receipt(root, model, tokens, purpose, counted_as=DEFAULT_RUN_CAP):
+def receipt(root, model, tokens, purpose, counted_as=DEFAULT_RUN_CAP, cost=None):
     """One `spend.py log` line per headless call. Returns the exit code of that call.
 
     lane=daemon, model explicit — the same ledger and the same routing gate as any other
@@ -2637,6 +2662,10 @@ def receipt(root, model, tokens, purpose, counted_as=DEFAULT_RUN_CAP):
     uncounted call (`tokens=unknown grade=estimate`, as agent-ledger.sh and gpt.sh already
     write it) and SAYS in the purpose that the figure is unverifiable.
     """
+    # The CLI's own dollar figure, beside the token count and graded the same way: it is
+    # the only number in the receipt the runner actually measured about cost.
+    if cost is not None:
+        purpose = "%s · cost=$%.4f (total_cost_usd, as the CLI reported it)" % (purpose, cost)
     cmd = [sys.executable, str(spend_script()), "log", "--root", str(root),
            "--lane", DAEMON_LANE, "--model", model]
     if tokens is None:
@@ -2698,6 +2727,22 @@ def tail_err(*texts):
     if not blob:
         return "(the runner said nothing on stdout or stderr)"
     return ("…" + blob[-STDERR_TAIL:]) if len(blob) > STDERR_TAIL else blob
+
+
+BUDGET_FLAG = "--max-budget-usd"
+
+
+def with_budget(cmd, usd):
+    """The runner command with the in-flight budget bound appended.
+
+    ⛔ APPENDED TO WHATEVER THE RUNNER IS, not only to the built-in default. The bound is a
+    property of the RUN, not of one particular command line, and a fixture driving an
+    injected runner has to be able to see the same argument the real CLI would get — an
+    unarmed rail is one nobody has watched fire.
+    """
+    if not usd or usd <= 0 or BUDGET_FLAG in (cmd or ""):
+        return cmd
+    return "%s %s %.2f" % (cmd, BUDGET_FLAG, usd)
 
 
 def run_runner(cmd, prompt, cwd, timeout, token=None):
@@ -2968,7 +3013,9 @@ def cmd_auto_run(a):
               % (f"{spent_day:,}", f"{cfg['daily_cap_tokens']:,}",
                  " — includes %d unknown-usage run(s) charged at the %s run ceiling"
                  % (unknown, f"{cfg['run_cap_tokens']:,}") if unknown else ""))
-        print("  run cap       : %s tokens for this invocation" % f"{cfg['run_cap_tokens']:,}")
+        print("  run cap       : %s tokens for this invocation, and $%.2f handed to the "
+              "CLI as %s (an IN-FLIGHT bound, not a post-hoc count)"
+              % (f"{cfg['run_cap_tokens']:,}", cfg["run_cap_usd"], BUDGET_FLAG))
         print("  steps         : BUILD (tokens) → fixture.sh (free) → REFUTE (tokens) "
               "→ benchmark.sh (free) → decide --status ADOPTED")
         print("  adopt needs   : %s — all three, or the status stays put"
@@ -3077,6 +3124,7 @@ def _auto_run_locked(a, root, out, cfg, runner, day):
             "of %s — pipeline stopped, status unchanged, no adoption. Nothing is wrong "
             "with the candidate; it ran out of budget"
             % (step, f"{spent_run[0]:,}", f"{cfg['run_cap_tokens']:,}")))
+        write_status(root, "CAPPED %s run cap reached" % slug)
         pulse_line(root, "CAPPED after %s on %s — %s tokens spent against a run cap of "
                          "%s. Stopped; retried on the next run."
                    % (step, slug, f"{spent_run[0]:,}", f"{cfg['run_cap_tokens']:,}"))
@@ -3122,6 +3170,25 @@ def _auto_run_locked(a, root, out, cfg, runner, day):
         else:
             write_status(root, "COOLDOWN %s until +%gh — %s" % (slug, cool, why))
 
+    def budget_stop(step, cost):
+        """The CLI ended the call on its own budget bound. A strike, with the cost."""
+        usd = cost if isinstance(cost, (int, float)) else 0.0
+        k = strikes(out, slug) + 1
+        status = "PARKED" if k >= STRIKES_MAX else "DRAFTED"
+        record_decision(out, slug, status, note=(
+            "%s %s CAPPED-IN-FLIGHT (strike %d/%d): the CLI stopped the call at its "
+            "--max-budget-usd bound of $%.2f after $%.4f — bounded WHILE it ran, not "
+            "counted afterwards%s"
+            % (RED_MARK, step, k, STRIKES_MAX, cfg["run_cap_usd"], usd,
+               " — PARKED: never retried unattended. Re-arm with decide --slug %s "
+               "--status DRAFTED" % slug if status == "PARKED" else "")))
+        pulse_line(root, "CAPPED-IN-FLIGHT on %s for %s — the CLI stopped at $%.2f "
+                         "(spent $%.4f), strike %d/%d%s"
+                   % (step, slug, cfg["run_cap_usd"], usd, k, STRIKES_MAX,
+                      ", slug PARKED" if status == "PARKED" else ""))
+        write_status(root, "CAPPED-IN-FLIGHT %s $%.4f" % (slug, usd))
+        return 3
+
     def red(step, why):
         """A gate came back red. The status is UNCHANGED — the reason is what is new."""
         k = strikes(out, slug) + 1
@@ -3148,10 +3215,11 @@ def _auto_run_locked(a, root, out, cfg, runner, day):
         if why:
             pulse_line(root, "REFUSED to start %s on %s — %s. Nothing spent."
                        % (step, slug, why))
-            write_status(root, "OK %s capped before %s" % (slug, step))
+            write_status(root, "CAPPED %s daily cap reached" % slug)
             return "cap", ""
-        rc, sout, serr = run_runner(runner, prompt, d, a.timeout, token)
-        tokens, model, text, is_error = parse_runner_json(sout)
+        rc, sout, serr = run_runner(with_budget(runner, cfg["run_cap_usd"]), prompt, d,
+                                    a.timeout, token)
+        tokens, model, text, is_error, cost = parse_runner_json(sout)
         model = model or a.model
         # Diagnosability: whatever the child said, kept. The live report was three
         # identical "runner exited 1" lines carrying no cause at all.
@@ -3171,8 +3239,14 @@ def _auto_run_locked(a, root, out, cfg, runner, day):
         receipt(root, model, tokens,
                 "compile auto-run %s: candidate %s (unattended, no session watching)%s"
                 % (step, slug, (" — STOPPED: %s" % why) if why else ""),
-                counted_as=cfg["run_cap_tokens"])
+                counted_as=cfg["run_cap_tokens"], cost=cost)
         spent_run[0] += tokens or 0
+        # ⛔ THE CLI STOPPED IT ON BUDGET. This is the case the post-hoc cap could not
+        # catch: `--max-budget-usd` ends the call IN FLIGHT, so the money is bounded
+        # instead of merely counted afterwards. It is a strike like any red — a candidate
+        # that cannot be built inside its budget is a candidate that needs a person.
+        if is_error and "budget" in str(text or "").lower():
+            return "budget", (cost if cost is not None else 0.0)
         if why:
             # ⛔ QUIET, NO RETRY THIS RUN, AND A BACK-OFF BEFORE THE NEXT ONE. `is_error`
             # is checked regardless of the exit code: the CLI answers an expired OAuth
@@ -3187,6 +3261,8 @@ def _auto_run_locked(a, root, out, cfg, runner, day):
     verdict, _text = token_step("build", BUILD_PROMPT.format(slug=slug, d=d))
     if verdict == "stop":
         return 0
+    if verdict == "budget":
+        return budget_stop("build", _text)
     if verdict == "cap" or capped("build"):
         return 6
 
@@ -3208,6 +3284,8 @@ def _auto_run_locked(a, root, out, cfg, runner, day):
     verdict, text = token_step("refute", REFUTE_PROMPT.format(slug=slug, d=d))
     if verdict == "stop":
         return 0
+    if verdict == "budget":
+        return budget_stop("refute", text)
     if verdict == "cap" or capped("refute"):
         return 6
     ref_md = _read(d / "REFUTER.md") or ""
@@ -3338,7 +3416,7 @@ def verify_credential(token):
         return False, "%s running the probe" % exc.__class__.__name__
     sout = r.stdout.decode("utf-8", "replace")
     serr = r.stderr.decode("utf-8", "replace")
-    _tok, _model, text, is_error = parse_runner_json(sout)
+    _tok, _model, text, is_error, _cost = parse_runner_json(sout)
     if r.returncode != 0 or is_error or looks_unauthenticated(sout, serr, text):
         detail = " ".join((text or serr or sout or "the CLI said nothing").split())
         return False, detail[:120]
@@ -3602,6 +3680,10 @@ def main():
     au.add_argument("--max-turns", dest="max_turns", type=int, default=None, metavar="T",
                     help="turn limit passed to each headless runner call (default %d)"
                          % DEFAULT_MAX_TURNS)
+    au.add_argument("--run-cap-usd", dest="run_cap_usd", type=float, default=None,
+                    metavar="N",
+                    help="dollars per runner call, handed to the CLI as --max-budget-usd "
+                         "(default: the run cap at $%g per million tokens)" % USD_PER_MTOK)
     au.add_argument("--stop-cooldown", dest="stop_cooldown", type=int, default=None,
                     metavar="H",
                     help="hours a slug waits after a quiet stop before it is retried "

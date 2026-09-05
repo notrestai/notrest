@@ -123,7 +123,7 @@ on a runner that failed or was not logged in · **2** usage/refused before anyth
 **5** not authorized for unattended spending (no marker, or a dispatch-only one) ·
 **6** a cap stopped it; nothing further was spent.
 
-The skill's own contract test is `scripts/fixture.sh` — 554 assertions over a synthetic estate,
+The skill's own contract test is `scripts/fixture.sh` — 579 assertions over a synthetic estate,
 including the whole unattended pipeline driven by a FAKE runner that spends nothing;
 run it after any change to `compile.py`.
 
@@ -308,6 +308,23 @@ mattered is kept in a different place — **in the gates**, not in a human click
      (The owner's rule names build and refute; fixture and benchmark reds count too, because
      a slug that fails its own fixture every night is the same bill.) An unattended loop that
      retries forever is a bill with a heartbeat.
+   - **The run cap is an IN-FLIGHT bound, not a post-hoc count.** *Live, first unattended
+     day:* `decisions.md` 10:00Z recorded `doctor-refuter-tre` — *"CAPPED after build: this
+     invocation spent 1,409,130 tokens against a run cap of 400,000"*. The cap noticed 3.5x
+     over budget **after the money was gone**, because a token count only exists once the
+     call has finished. So the ceiling is now handed to the CLI, which bounds the call while
+     it runs: every runner invocation carries **`--max-budget-usd`**, derived from the
+     marker's `run_cap_usd` (default = the run cap at $25/million — 400,000 tokens → $10.00;
+     owner-settable with `auto --on --unattended --run-cap-usd N`, and `auto` prints it).
+     The flag is appended to **whatever** the runner is, not only the built-in default, so
+     the rail can be armed. The result's `total_cost_usd` is written into the receipt beside
+     the token count, and a call the CLI stopped on budget is recorded as
+     **`CAPPED-IN-FLIGHT`** with its cost — a **strike**, like any red, because a candidate
+     that cannot be built inside its budget is one that needs a person. The token run cap
+     stays as the backstop for a runner that ignores the flag.
+   - **The status line never calls a stop `OK`.** `OK <slug> capped before build` was a
+     contradiction in four words. The grammar is `CAPPED <slug> daily cap reached` ·
+     `CAPPED <slug> run cap reached` · `CAPPED-IN-FLIGHT <slug> <usd>`.
    - **An unreported run is charged at the run ceiling.** The daily cap summed only the
      *numeric* receipts, so a runner whose result carried no `usage` cost **zero** against
      it — the cap was bypassed entirely by a CLI that simply stopped reporting, while the
