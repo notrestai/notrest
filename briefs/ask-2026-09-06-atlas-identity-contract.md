@@ -68,3 +68,22 @@ piece behind a red-first fixture arm and the eval law suite, refuter round on th
 
 Reply to: oracle-suite-plugin-e4 [8be8a4]. Durable copy of this ask: this file, in the plugin
 repo at briefs/ask-2026-09-06-atlas-identity-contract.md.
+
+## Addendum — owner ruling, same day: the hub hosts the plugin's git
+
+Point 4 above is decided: **the hub serves the plugin repo itself** (git smart-HTTP, read-only for
+consumers, authenticated by the same Atlas token). The GitHub-invite v1 is dropped; the private
+GitHub repo stops being the consumer's source. Consequences sent to the Atlas seat as a follow-up:
+
+- the hub must serve the repo with version tags visible (the marketplace entry pins a version)
+  and state the auth form (basic auth with the token as password, or bearer);
+- **bootstrap order:** a consumer has no plugin when they start, so the Atlas MCP server is the
+  installer: after Claude Code's native OAuth login, one tool returns the token plus the
+  bootstrap — token file 0600, a git credential helper scoped to the hub host reading that file
+  (never a token in a URL), THEN the marketplace-add of the hub's git URL and the plugin install.
+  Claude Code clones marketplaces with the system git, so the helper must exist first;
+- self-update (`git pull --ff-only` at SessionStart on skills-dir clones) now carries identity;
+- the device flow remains the headless path (NAS, containers).
+
+Plugin side (4.9): the login command installs the host-scoped credential helper; the marketplace
+manifest points at the hub; the bootstrap text is co-authored so it matches what the plugin expects.
