@@ -20,3 +20,5 @@
 # That store is resolved identically by atlas.py and by the hooks — one gate, one answer.
 # No key line below this header = no machine is admitted yet; the owner mints the first.
 30ac25e1e7ca404c6b30f30621480cefd1732928770911b69eb5aa5050bd3d0e:owner-mac:2026-09-06
+8d9e2e9bcc3f162e9718e5c25fcd921ed6d0dd50a014046976a9e757fed45ffe:nas-notrest:2026-09-06
+844b67b00b034ee21879a854f57b47b2bf0c6e597bebb98a28ab01f09d134bf4:atlas-hub:2026-09-06
