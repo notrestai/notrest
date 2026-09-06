@@ -1,0 +1,31 @@
+{
+ "bound": "proved in a scratch git repo seeded with its own map \u2014 never this estate's history or working tree",
+ "estate": "oracle-suite-plugin",
+ "generator": "atlas.py 1.0.0",
+ "schema": "notrest.atlas.bornred/1",
+ "steps": [
+  {
+   "commit": "8e39ad56c2c52dcc22eca12257cda25d2beab6bb",
+   "status_exit": 0,
+   "step": 1,
+   "want": 0,
+   "what": "commit with the hook LIVE"
+  },
+  {
+   "commit": "bbcd8f3a3faf430a51b8f20708904cee7dbe101b",
+   "status_exit": 6,
+   "step": 2,
+   "want": 6,
+   "what": "commit with the hook DISABLED"
+  },
+  {
+   "commit": "e7e10fea5d85579b16c462e30a8f12b28d391a5c",
+   "status_exit": 0,
+   "step": 3,
+   "want": 0,
+   "what": "commit with the hook RESTORED"
+  }
+ ],
+ "ts": "2026-09-06T09:59:36Z",
+ "verdict": "PASS"
+}

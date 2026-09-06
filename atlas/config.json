@@ -1,0 +1,10 @@
+{
+ "adapter": "none",
+ "credential": "/Users/ethanabot/.notrest/credentials/atlas-token",
+ "estate": "oracle-suite-plugin",
+ "gates": "gates/ACTIVE.md",
+ "hub": "",
+ "hub_url": "",
+ "map": "atlas/map.md",
+ "schema": "notrest.atlas.config/1"
+}
