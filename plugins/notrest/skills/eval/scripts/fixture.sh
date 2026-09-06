@@ -637,6 +637,89 @@ passcase "a word-shaped placeholder is not a key literal" \
 passcase "a lawful Atlas surface: one door, one destination, secrets by path" \
   'seed_atlas "$P"'
 
+# ══ 4.9 · DOC-ROSTER-PARITY — the suite's own document is a fingerprint ══════════════
+# This check exists because THIS suite's SKILL.md said "The sixteen checks" over a
+# seventeen-check roster for two releases, three lines above the roster it described. The
+# arms run against a MINIATURE eval skill seeded into the sandbox — a two-check suite with
+# its own table — so the parity law is proved on a document the fixture owns rather than
+# on the one being edited.
+seed_eval() {   # seed_eval <plugin dir> — a tiny, INTERNALLY CONSISTENT law suite
+  E="$1/skills/eval"
+  mkdir -p "$E/scripts"
+  cat > "$E/SKILL.md" <<'EOF'
+---
+name: eval
+description: "The law-conformance suite for this harness. Use on /eval."
+---
+# eval
+The scanner is `scripts/eval.py` — it reads the files so the model never has to.
+
+## The two checks
+
+| Check | The law |
+|---|---|
+| `ALPHA-LAW` | the first law leaves a fingerprint in the shipped files |
+| `BETA-LAW` | so does the second |
+
+## Self-check before finishing
+- every check named the file and the line it judged.
+EOF
+  cat > "$E/scripts/eval.py" <<'EOF'
+"""a miniature law suite: two checks, and a table that names them."""
+
+
+def check_alpha(root, plug, skills):
+    ID = "ALPHA-LAW"
+    return [(ID, "PASS")]
+
+
+def check_beta(root, plug, skills):
+    ID = "BETA-LAW"
+    return [(ID, "PASS")]
+
+
+CHECKS = [check_alpha, check_beta]
+EOF
+}
+doc_drops_a_row() {      # a shipped check the table forgot
+  grep -v '^| `BETA-LAW`' "$1/skills/eval/SKILL.md" > "$1/skills/eval/SKILL.md.new"
+  mv "$1/skills/eval/SKILL.md.new" "$1/skills/eval/SKILL.md"
+}
+doc_invents_a_row() {    # a row for a check that does not exist
+  printf '| `GAMMA-LAW` | a law nobody wrote |\n' >> "$1/skills/eval/SKILL.md"
+}
+doc_registers_nothing() {   # written, documented, and never registered in CHECKS
+  printf '\n\ndef check_gamma(root, plug, skills):\n    ID = "GAMMA-LAW"\n    return []\n' \
+    >> "$1/skills/eval/scripts/eval.py"
+  printf '| `GAMMA-LAW` | a law that is written down and never run |\n' \
+    >> "$1/skills/eval/SKILL.md"
+}
+doc_miscounts() {        # the roster grew; the prose did not
+  sed 's/^## The two checks$/## The three checks/' "$1/skills/eval/SKILL.md" > "$1/e.tmp"
+  mv "$1/e.tmp" "$1/skills/eval/SKILL.md"
+}
+
+inject "a shipped check the table never names" DOC-ROSTER-PARITY \
+  'seed_eval "$P"; doc_drops_a_row "$P"'
+inject "a table row for a check that does not exist" DOC-ROSTER-PARITY \
+  'seed_eval "$P"; doc_invents_a_row "$P"'
+# ⛔ THE ARM THAT DECIDES THE DESIGN. A naive check greps every `ID = "…"` in the file and
+# would call this tree consistent — the row and the constant agree. But the check is never
+# REGISTERED, so it never runs: the document promises a law the suite does not enforce.
+# Parity is against the CHECKS roster for exactly this reason.
+inject "a check written, documented, and never registered in CHECKS" DOC-ROSTER-PARITY \
+  'seed_eval "$P"; doc_registers_nothing "$P"'
+inject "a spelled count that disagrees with the roster" DOC-ROSTER-PARITY \
+  'seed_eval "$P"; doc_miscounts "$P"'
+passcase "a table that names exactly the shipped roster, count and all" \
+  'seed_eval "$P"'
+# …and a document that states no number cannot be wrong about one. The ruling made the
+# count optional; this arm holds the suite to that rather than to a habit.
+passcase "a table with no spelled count at all stays lawful" \
+  'seed_eval "$P";
+   sed "s/^## The two checks$/## The checks/" "$P/skills/eval/SKILL.md" > "$P/e.tmp";
+   mv "$P/e.tmp" "$P/skills/eval/SKILL.md"'
+
 # ── RELEASE-SURFACE · a DELETION is not an unagreed surface ───────────────────────────
 # `git diff --name-only HEAD` lists REMOVED paths as well as changed ones, so retiring a
 # golden-surface file could never be green before the commit: delist it and the "touched

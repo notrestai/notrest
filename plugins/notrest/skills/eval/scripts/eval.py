@@ -1937,6 +1937,118 @@ def check_access_gate(root, plug, _skills):
     return out
 
 
+# ---------------------------------------------------------------------------
+# DOC-ROSTER-PARITY (4.9). The suite's own SKILL.md carries a table of the checks. It
+# said "The sixteen checks" over a seventeen-check roster for two releases, three lines
+# above the roster it described, and nobody caught it until a lane counted by hand — the
+# exact failure this suite exists to prevent, committed by this suite's own document.
+# The doctrine answers it: a claim with no fingerprint drifts. So the table IS the
+# fingerprint, and this check reads both halves out of the shipped files.
+#
+# ⛔ WHAT IT COMPARES, AND WHY THAT AND NOT SOMETHING EASIER: the doc's rows against the
+# REGISTERED roster — the `ID` constant inside each function named in `CHECKS` — not
+# against every `ID = "…"` in the file. The difference is the whole point: a check that
+# is written, documented and never registered would pass a naive id-scan while running
+# never once. Documented-but-not-running is the drift that flatters hardest.
+#
+# ⛔ WHAT IT DOES NOT SEE: whether a row's PROSE describes its check. A row can name the
+# right id and lie about the law underneath it; that is a reader's job and a refuter's,
+# and no static test replaces it. It judges the SET of names, and the spelled count.
+DOC_ROW_RE = re.compile(r"^\|\s*`([A-Z0-9][A-Z0-9-]*)`\s*\|", re.M)
+DOC_HEADING_RE = re.compile(r"^#+\s+The\s+([A-Za-z-]+|\d+)\s+checks\s*$", re.M)
+DOC_SUBTITLE_RE = re.compile(r"^\*([A-Za-z-]+|\d+)\s+as of\b", re.M)
+_ONES = ("zero one two three four five six seven eight nine ten eleven twelve thirteen "
+         "fourteen fifteen sixteen seventeen eighteen nineteen").split()
+_TENS = ("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+
+
+def _spell(n):
+    """20 -> 'twenty' · 22 -> 'twenty-two'. Bounded to 0..99; a roster past that has a
+    bigger problem than its heading."""
+    if n < 0 or n > 99:
+        return str(n)
+    if n < 20:
+        return _ONES[n]
+    tens, ones = divmod(n, 10)
+    return _TENS[tens] + ("-" + _ONES[ones] if ones else "")
+
+
+def _registered_check_ids(src):
+    """The ids of the checks that actually RUN, in roster order. None if unparseable."""
+    m = re.search(r"^CHECKS = \[(.*?)\]", src, re.M | re.S)
+    if not m:
+        return None
+    ids = []
+    for name in re.findall(r"\bcheck_[a-z_]+", m.group(1)):
+        fn = re.search(r"^def %s\(.*?(?=^def |\Z)" % re.escape(name), src, re.M | re.S)
+        if not fn:
+            continue
+        im = re.search(r'^\s*ID = "([A-Z0-9][A-Z0-9-]*)"', fn.group(0), re.M)
+        if im:
+            ids.append(im.group(1))
+    return ids or None
+
+
+def check_doc_roster(root, plug, skills):
+    ID = "DOC-ROSTER-PARITY"
+    law = ("the suite's own SKILL.md names exactly the checks it ships — every registered "
+           "check has a table row, every row is a check that runs, and a spelled count "
+           "matches the roster")
+    if "eval" not in skills:
+        return [R(ID, "SKIP", law, "no eval skill in this tree — no roster to document")]
+    d, doc = skills["eval"]
+    src_path = os.path.join(d, "scripts", "eval.py")
+    src = read(src_path)
+    if not src:
+        return [R(ID, "SKIP", law, "%s is absent or unreadable" % rel_p(root, src_path))]
+    shipped = _registered_check_ids(src)
+    if shipped is None:
+        return [R(ID, "SKIP", law, "%s ships no parseable CHECKS roster" % rel_p(root, src_path))]
+    rows = DOC_ROW_RE.findall(doc)
+    f = rel_p(root, os.path.join(d, "SKILL.md"))
+    if not rows:
+        return [R(ID, "SKIP", law, "%s carries no check table" % f)]
+    out = []
+    missing = [i for i in shipped if i not in rows]
+    extra = [i for i in rows if i not in shipped]
+    if missing:
+        out.append(R(ID, "FAIL", law,
+                     "%s  (ships %d check(s) the table never names: %s)"
+                     % (f, len(missing), ", ".join(missing)),
+                     "add a row per missing check, in the table's existing shape"))
+    if extra:
+        out.append(R(ID, "FAIL", law,
+                     "%s  (names %d check(s) that do not run: %s)"
+                     % (f, len(extra), ", ".join(extra)),
+                     "delete the row, or register the check in CHECKS — a documented "
+                     "check that never runs is worse than an undocumented one"))
+    dupes = sorted({i for i in rows if rows.count(i) > 1})
+    if dupes:
+        out.append(R(ID, "FAIL", law, "%s  (row(s) listed twice: %s)" % (f, ", ".join(dupes)),
+                     "one row per check"))
+    # the spelled count, wherever the document states one. Optional by ruling — a table
+    # with no number stated cannot be wrong about it.
+    want, counted = len(shipped), []
+    for label, rx in (("heading", DOC_HEADING_RE), ("subtitle", DOC_SUBTITLE_RE)):
+        m = rx.search(doc)
+        if not m:
+            continue
+        said = m.group(1).lower()
+        counted.append(label)
+        if said not in (_spell(want), str(want)):
+            out.append(R(ID, "FAIL", law,
+                         "%s:%d  the %s says %r; %d check(s) ship"
+                         % (f, lineno(doc, m.start()), label, m.group(1), want),
+                         "say %r (or %d) — or drop the number, which cannot go stale"
+                         % (_spell(want), want)))
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law,
+                        "%s names exactly the %d shipped check(s); %s"
+                        % (f, want, ("count agreed in the " + " and ".join(counted))
+                           if counted else "no count stated, so none can drift")))
+    return out
+
+
 CHECKS = [check_network, check_kernel, check_release_surface, check_learning_loop,
           check_access_gate,
           # 4.9 — the Atlas secret-handling laws: the mode the token is written with, the
@@ -1946,7 +2058,8 @@ CHECKS = [check_network, check_kernel, check_release_surface, check_learning_loo
           check_no_token_literal,
           check_offload, check_labels, check_scripts, check_references,
           check_estate, check_selfcheck, check_triggers, check_safety,
-          check_hooks, check_router, check_route_parity, check_route_conformance]
+          check_hooks, check_router, check_route_parity, check_route_conformance,
+          check_doc_roster]
 
 
 # ---------------------------------------------------------------------------

@@ -40,9 +40,9 @@ model-last — the model is the *last* instrument you reach for, not the first.
 Every check names the law it guards, cites the **file and line** it judged, and carries
 a fix hint. A finding you cannot act on is a bug in this skill.
 
-## The twenty-one checks
+## The twenty-two checks
 
-*Twenty-one as of v4.9 — the roster grows with the laws, so the live count is whatever
+*Twenty-two as of v4.9 — the roster grows with the laws, so the live count is whatever
 `python3 scripts/eval.py check` prints in its `SUMMARY` line, and that is the number to
 quote.*
 
@@ -69,6 +69,7 @@ quote.*
 | `HELPER-SCOPE` | the only git credential helper the plugin configures is **host-scoped to the hub** (`credential.<hub url>.helper`). A **bare** `credential.helper` offers the token to every host git is ever pointed at — the same secret, to a stranger, on the first `clone`. A computed scope is re-proved: the file must take the host from `$ATLAS_HUB_BASE` or name the hub. Comment lines are skipped, so a fixture may *explain* the danger |
 | `VERIFIER-VENDORED` | the file that decides **who may use this plugin** is Atlas's own: `skills/atlas/scripts/vendor/verify_token.py` exists, carries its licence line verbatim at line 1, and is **byte-exact** (`sha256`) with `briefs/atlas-contract/kit/verify-token.py`. Never edited — an edit, however helpful, forks the admission rule. A consumer install ships no `briefs/`, so the byte-equality half emits a SKIP there **saying it was not proved**, rather than a PASS that quietly skipped its own test |
 | `NO-TOKEN-LITERAL` | **no signed token and no ring key is committed anywhere under the plugin** — secrets travel by path, never by value. Two shapes: three base64url segments whose header decodes to JSON naming an `alg`, and `nrk_` + key material. A hand-written placeholder in lower-case words is *not* key material and stays quiet; give it a digit or a capital and it is called a key. This check takes **no file exemptions** — a secret scan that exempts a file has a hiding place, so the fixtures mint their decoys at run time instead |
+| `DOC-ROSTER-PARITY` | **this table is a fingerprint, not a promise.** It names exactly the checks that RUN — every check registered in `CHECKS` has a row, every row is a check that runs (a documented-but-unregistered check is a FAIL, because documented-and-never-running is the drift that flatters hardest), no id is listed twice, and a spelled count in the heading or subtitle equals the roster. Stating no number is lawful — a number that is not there cannot go stale. It judges the SET of names and the count, never whether a row's prose describes its check; that is a reader's job. Written because this very table said "sixteen" over a seventeen-check roster for two releases |
 
 A line that names sonnet, haiku or `fork` **alongside a negation** is the law being
 stated, not a breach of it; the checker reads the line before judging it.
