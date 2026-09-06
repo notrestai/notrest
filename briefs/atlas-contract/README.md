@@ -5,7 +5,7 @@ the plugin seat's machine and the Atlas repo has no remote. Provenance per file:
 
 | file | source | commit on the Atlas side | received |
 |---|---|---|---|
-| IDENTITY-CONTRACT.md | /work/atlas/IDENTITY-CONTRACT.md | 192b6f5 — SUPERSEDED at 3f4390f (§9 helper amended); whole-file resend requested | 2026-09-06, message 1 of 3 |
+| IDENTITY-CONTRACT.md | /work/atlas/IDENTITY-CONTRACT.md | 3f4390f (was 192b6f5) | 2026-09-06, resent whole; 167 lines, 13441 bytes, sha256 a6835e0f… VERIFIED |
 | HUB-CONTRACT.md | /work/atlas/HUB-CONTRACT.md | 3f4390f (was 14fb684) | 2026-09-06, resent whole; 130 lines, 8805 bytes, sha256 00b35842… VERIFIED |
 | SCHEMA-v1.md | /work/atlas/hub/SCHEMA-v1.md | (not stated) | 2026-09-06, message 3 of 3 |
 | kit/to-wire.py | /work/atlas/kit/to-wire.py | 9755517 | 2026-09-06; 403 lines, 16057 bytes, sha256 887eb618… VERIFIED on save; compiles. Reference converter for the KERNEL snapshot shape (modules/nodes/tests/MODULE-MAP) — lane A5 writes the plugin's own converter to the same laws |
