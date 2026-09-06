@@ -77,7 +77,23 @@ fi
 #     (A3 has not landed / an older install) and nothing runs at all.
 #   · a SYMLINKED client is refused, never followed — estate-root.sh refuses a symlinked
 #     atlas.py for the same reason, and this one is EXECUTED.
+#   · ONE HOME FOR THE HOOK AND THE MODULE (COMMON amendment, "HOME (A2 defect)").
+#     atlas.py resolves the store as `expanduser(NOTREST_HOME or "~/.notrest")` — it
+#     expands the ENV VALUE too — and the shell does not: a literal `~/alt` in the
+#     environment had this hook testing `./~/alt/atlas-token` against whatever cwd the
+#     session opened in, so it looked at one store while the client it launches used
+#     another, and the refresh silently never happened. Expanded HERE, into the hook's
+#     OWN variable: `$NOTREST_HOME` came from the environment and is therefore exported,
+#     so assigning to it would rewrite the store for every child this session spawns.
+#     Only the two forms a shell can expand without `eval` — `~` and `~/…`. A `~user`
+#     form is left alone rather than run through `eval`, which would execute whatever an
+#     environment variable happened to contain; the `-f` test then fails and the hook is
+#     silent, which is the same fail-open it owes every other way of not knowing.
 NR_ATLAS_HOME="${NOTREST_HOME:-$HOME/.notrest}"
+case "$NR_ATLAS_HOME" in
+  "~")   NR_ATLAS_HOME="$HOME" ;;
+  "~/"*) NR_ATLAS_HOME="$HOME/${NR_ATLAS_HOME#\~/}" ;;
+esac
 NR_ATLAS_AUTH="$NR_HOOKDIR/../skills/atlas/scripts/atlas_auth.py"
 if [ -n "$NR_HOOKDIR" ] && [ -f "$NR_ATLAS_HOME/atlas-token" ] \
    && [ -f "$NR_ATLAS_AUTH" ] && [ ! -L "$NR_ATLAS_AUTH" ] && [ -x /usr/bin/python3 ]; then

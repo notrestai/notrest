@@ -1587,6 +1587,32 @@ if [ "$A9ARGV" = "sessionstart --budget-ms 2000" ]; then
   ok "4.9: with a token the hook fires 'atlas_auth.py sessionstart --budget-ms 2000' (§2 refresh + §4 revoked)"
 else no "4.9: the hook fires the sessionstart call" "argv=${A9ARGV:-<never fired>}"; fi
 
+# ── ONE HOME FOR THE HOOK AND THE MODULE (COMMON amendment, "HOME (A2 defect)"). atlas.py
+# resolves the store as expanduser(NOTREST_HOME or "~/.notrest") — it expands the ENV
+# VALUE — and the shell does not. With a literal `~/alt` in the environment the hook was
+# testing `./~/alt/atlas-token` against whatever cwd the session opened in: it looked at
+# one store while the client it launches used another, and the refresh silently never
+# happened. Silently is the whole problem — the hook fails open, so nothing ever said so.
+# The token here lives ONLY under the tilde home, so this arm can only pass by expanding.
+A9TH="$WORK/a9tildehome"; mkdir -p "$A9TH/alt"
+printf 'fake.token.value' > "$A9TH/alt/atlas-token"
+rm -f "$A9MARK"
+run_bounded "$CAP" "$A9EST" "$WORK/a9-empty" "$A9P/hooks/session-start.sh" \
+  "NOTREST_ACCESS_KEY=$FIXKEY" "HOME=$A9TH" "NOTREST_HOME=~/alt" "A9_MARK=$A9MARK"
+A9_W=0
+while [ ! -e "$A9MARK" ] && [ "$A9_W" -lt 40 ]; do sleep 0.1; A9_W=$((A9_W + 1)); done
+if [ "$RB_RC" = "0" ] && [ -e "$A9MARK" ]; then
+  ok "4.9: a LITERAL ~ in NOTREST_HOME is expanded — the hook and atlas.py read the SAME store"
+else
+  no "4.9: NOTREST_HOME='~/alt' resolves the way expanduser does" \
+     "rc=$RB_RC $([ -e "$A9MARK" ] && echo fired || echo '<never fired — the ~ went unexpanded, so the hook looked under the cwd>')"
+fi
+# and the expansion is scoped to the hook: NOTREST_HOME itself must reach the child intact,
+# or the hook would be rewriting the store for every process the session goes on to spawn.
+if grep -q "NOTREST_HOME=" "$A9P/hooks/session-start.sh"; then
+  no "4.9: the hook never assigns NOTREST_HOME (it is exported — a write would leak)" "an assignment is present"
+else ok "4.9: the tilde is expanded into the hook's OWN variable — \$NOTREST_HOME is never written back"; fi
+
 # ── AND NEVER WAITS FOR IT. The stub now hangs for a minute; the hook must cost the same
 # as the dormant case (a fork), not a minute. Best-of-3 each way — a single sample on a
 # loaded box measures the box, not the hook.

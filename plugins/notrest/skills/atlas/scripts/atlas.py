@@ -1120,8 +1120,7 @@ ADAPTERS = {"file": push_file, "http": push_http, "none": push_none}
 def default_config(root):
     return {"schema": CONFIG_SCHEMA, "estate": estate_name(root), "adapter": "none",
             "hub": "", "hub_url": "",
-            "credential": os.path.join(notrest_home(), "credentials",
-                                       "atlas-ingest-" + estate_name(root)),
+            "credential": os.path.join(notrest_home(), "credentials", "atlas-token"),
             "map": "atlas/map.md", "gates": "gates/ACTIVE.md"}
 
 
