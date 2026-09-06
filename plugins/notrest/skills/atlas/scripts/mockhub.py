@@ -14,7 +14,8 @@ briefs/atlas-contract/kit/test-verify-token.sh's fixture generator does
 Never logs or prints a bearer value, a token, or a private key.
 
 Usage:
-    mockhub.py --port 8901 [--auto-approve-after 2] [--mode ok|expired|denied|slow] [--print-port]
+    mockhub.py --port 8901 [--auto-approve-after 2] [--mode ok|expired|denied|slow]
+               [--token-ttl-days 30] [--print-port]
     mockhub.py --selftest
 """
 
@@ -38,6 +39,7 @@ EXIT_NODE_REQUIRED = 6
 
 ISS = "https://atlas.not.rest"
 AUD = "notrest-plugin"
+DEFAULT_TOKEN_TTL_DAYS = 30  # IDENTITY-CONTRACT.md section 2: exp = iat + 30 days
 
 SNAPSHOT_LIMIT = 2 * 1024 * 1024   # 2 MiB, IDENTITY-CONTRACT.md section 3
 BOARD_LIMIT = 4 * 1024 * 1024      # 4 MB, IDENTITY-CONTRACT.md section 3
@@ -147,11 +149,13 @@ class MockHub(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, server_address, handler_cls, mode="ok", auto_approve_after=None):
+    def __init__(self, server_address, handler_cls, mode="ok", auto_approve_after=None,
+                 token_ttl_days=DEFAULT_TOKEN_TTL_DAYS):
         super().__init__(server_address, handler_cls)
         self.lock = threading.Lock()
         self.mode = mode
         self.auto_approve_after = auto_approve_after
+        self.token_ttl_days = token_ttl_days
         self.devices = {}          # device_code -> {mid, seat, approved, poll_count, slowed, token}
         self.revoked_jti = set()
         self.revoked_sub = set()
@@ -164,8 +168,9 @@ class MockHub(http.server.ThreadingHTTPServer):
         self.kid = "mock-" + secrets.token_hex(4)
 
     def build_claims(self, mid, seat="mock-seat", sub="mock@atlas.test",
-                      prj=None, scp=None, jti=None):
+                      prj=None, scp=None, jti=None, ttl_days=None):
         now = int(time.time())
+        ttl = self.token_ttl_days if ttl_days is None else ttl_days
         return {
             "iss": ISS,
             "aud": AUD,
@@ -176,7 +181,7 @@ class MockHub(http.server.ThreadingHTTPServer):
             "scp": scp if scp is not None else ["harness", "push", "view"],
             "jti": jti or str(uuid.uuid4()),
             "iat": now,
-            "exp": now + 30 * 86400,
+            "exp": now + ttl * 86400,
         }
 
     def mint_token(self, claims):
@@ -373,9 +378,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if claims is None:
                 result = None
             else:
+                # A refresh always grants the full default TTL (IDENTITY-CONTRACT.md
+                # section 2), regardless of --token-ttl-days used to mint the original
+                # (short-TTL) token — that flag exists only to make the "exp - now <
+                # 7 days" refresh condition reachable in fixtures.
                 new_claims = srv.build_claims(
                     claims["mid"], seat=claims["seat"], sub=claims["sub"],
                     prj=claims.get("prj"), scp=claims.get("scp"),
+                    ttl_days=DEFAULT_TOKEN_TTL_DAYS,
                 )
                 new_token = srv.mint_token(new_claims)
                 srv.issued_tokens[new_token] = new_claims
@@ -508,8 +518,9 @@ def _http(method, url, body=None, headers=None):
     return code, parsed
 
 
-def _start(mode="ok", auto_approve_after=None):
-    httpd = MockHub(("127.0.0.1", 0), _Handler, mode=mode, auto_approve_after=auto_approve_after)
+def _start(mode="ok", auto_approve_after=None, token_ttl_days=DEFAULT_TOKEN_TTL_DAYS):
+    httpd = MockHub(("127.0.0.1", 0), _Handler, mode=mode, auto_approve_after=auto_approve_after,
+                     token_ttl_days=token_ttl_days)
     port = httpd.server_address[1]
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
@@ -701,6 +712,37 @@ def _run_selftest():
     finally:
         _stop(httpd)
 
+    # -- --token-ttl-days: minted exp respects the flag; refresh always ----
+    # restores the full default TTL (this is what makes the contract's
+    # "refresh when exp - now < 7 days" true-branch reachable against the
+    # mock at all: every token minted at the default 30-day TTL never gets
+    # within 7 days of expiry inside a test run).
+    httpd, base = _start(mode="ok", token_ttl_days=3)
+    try:
+        _, sobj = _http("POST", base + "/v1/auth/device/start", {
+            "client": "notrest-plugin", "version": "4.9.0",
+            "machine": {"name": "s", "fp": "f"},
+        })
+        device_code = sobj.get("device_code")
+        _http("POST", base + "/_mock/approve", {"device_code": device_code})
+        code, robj = _http("POST", base + "/v1/auth/device/poll", {"device_code": device_code})
+        now = int(time.time())
+        expected = now + 3 * 86400
+        exp = robj.get("expires_at")
+        close = code == 200 and exp is not None and abs(exp - expected) <= 30
+        check("--token-ttl-days 3 mints exp ~= now+3d", close, str((code, exp, expected)))
+
+        token = robj.get("token")
+        rcode, rrobj = _http("POST", base + "/v1/auth/refresh", body=b"",
+                              headers={"Authorization": "Bearer " + (token or "")})
+        rexp = rrobj.get("expires_at")
+        rexpected = int(time.time()) + DEFAULT_TOKEN_TTL_DAYS * 86400
+        rclose = rcode == 200 and rexp is not None and abs(rexp - rexpected) <= 30
+        check("refresh always grants the full default TTL, not the short one", rclose,
+              str((rcode, rexp, rexpected)))
+    finally:
+        _stop(httpd)
+
     passed = sum(1 for _, ok, _ in results if ok)
     failed = [r for r in results if not r[1]]
     for name, ok, detail in results:
@@ -721,6 +763,9 @@ def main(argv=None):
     ap.add_argument("--port", type=int, default=None)
     ap.add_argument("--auto-approve-after", type=int, default=None)
     ap.add_argument("--mode", choices=["ok", "expired", "denied", "slow"], default="ok")
+    ap.add_argument("--token-ttl-days", type=int, default=DEFAULT_TOKEN_TTL_DAYS,
+                     help="TTL for a freshly minted (device-flow) token; a refresh always "
+                          "grants the full default (%d) days regardless of this flag" % DEFAULT_TOKEN_TTL_DAYS)
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--print-port", action="store_true")
     args = ap.parse_args(argv)
@@ -732,7 +777,8 @@ def main(argv=None):
 
     port = args.port if args.port is not None else 0
     httpd = MockHub(("127.0.0.1", port), _Handler, mode=args.mode,
-                     auto_approve_after=args.auto_approve_after)
+                     auto_approve_after=args.auto_approve_after,
+                     token_ttl_days=args.token_ttl_days)
     if args.print_port:
         print(httpd.server_address[1])
         sys.stdout.flush()
