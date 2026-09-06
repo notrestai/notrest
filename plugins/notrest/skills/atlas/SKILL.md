@@ -215,17 +215,26 @@ One adapter contract: `push(snapshot, board, credential) -> (ok, hub_commit, rea
   `<hub>/<estate>/snapshots/<commit>.json` (immutable there too), the board and `HEAD`, then
   **reads `HEAD` back** — "the hub has it" is a fact read from the hub, not an assumption
   made after a write.
-- **`http`** — the **ONE egress destination in the entire plugin**: the Atlas hub at
-  `$ATLAS_HUB_BASE`, default `https://atlas.not.rest`, and nothing else, ever. The wire
-  (schema `atlas-hub` v1, per `briefs/atlas-contract/SCHEMA-v1.md`) and the POST live in
-  `plugins/notrest/skills/atlas/scripts/atlas_wire.py`, which with
-  `plugins/notrest/skills/atlas/scripts/atlas_auth.py` is one of exactly **two** files
-  allowed to open a socket — eval's NETWORK-EGRESS re-proves that list on every run, and no
-  hook ever waits on the network. Redirects are refused (a 3xx would resend the bearer to
-  whatever host it named) and plain http is refused for anything but loopback. Run it
-  directly with the wire module's own `push` verb; the bank's own `--adapter http` is the seat's
-  integration seam, and probed here on 2026-09-06 it still answers `hub contract unverified
-  — awaiting ATLAS-PLAYBOOK/WIRING` and sends nothing. `[cited — probed 2026-09-06]`
+- **`http`** — real, and the **ONE egress destination in the entire plugin**: the Atlas hub
+  at `$ATLAS_HUB_BASE`, default `https://atlas.not.rest`, and nothing else, ever. It sends
+  **by delegation**: the wire (schema `atlas-hub` v1, per
+  `briefs/atlas-contract/SCHEMA-v1.md`) and the POST live in
+  `plugins/notrest/skills/atlas/scripts/atlas_wire.py`, so the bank hands over exactly once
+  and the bank script itself still imports no network module. eval's NETWORK-EGRESS names
+  every doorway to that base on every run — the auth client, the wire module, the bank's own
+  push, and the MCP read server, each re-proved to take its base from the environment — and
+  **no hook ever waits on the network**. What goes up is the **banked** snapshot whenever the
+  commit already has one, never today's re-derivation, so a replay of one commit is not new
+  news. The bearer is the ingest secret read **by path** from
+  `${NOTREST_HOME:-~/.notrest}/credentials/atlas-ingest-<project>` (the 4.8
+  `${NOTREST_HOME:-~/.notrest}/credentials/atlas-token` is still read, with one warning to
+  stderr). Redirects are refused — a 3xx would resend the bearer to whatever host it named —
+  and plain http is refused for anything but loopback. A 201 is receipted 0600 at
+  `${NOTREST_HOME:-~/.notrest}/atlas-push-<project>.json`, and `status` reads **that receipt,
+  never the hub**: it can therefore say what this machine sent without a view secret, and it
+  names the hub's ~2 min edge-cache window instead of calling a cache RED. With no secret on
+  the box the push refuses by PATH and the bank still exits 0 on a green board —
+  `http — no ingest secret at <path>`. `[cited — probed 2026-09-06, after I2]`
 - **`none`** — the default. "No hub configured" is a *state*, not a failure: the bank still
   exits 0 on a green board.
 
