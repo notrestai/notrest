@@ -1,5 +1,14 @@
 # STATE — decisions, code, changes (newest on top)
 
+> **Banked 2026-09-06 15:25Z at commit `4d072ea` (v4.8.1) — the plugin is part of Atlas; repo PRIVATE.**
+> Resume: read this file, then `python3 plugins/notrest/skills/notrest/scripts/establish.py continuation --brief --root .`
+> (needs the access key at ~/.notrest/access-key; `atlas.py key --check` exits 0). Gates: `doctor.py check` exit 5 / 0 fail,
+> `eval.py check` exit 0 (17 checks), `gate-check.py gates/ACTIVE.md --cwd .` 0 red, `atlas.py status --root .` GREEN.
+> Open for the owner: LICENSE counsel review · carry ~/.notrest/credentials/keys/{nas-notrest,atlas-hub}.key to the NAS ·
+> ATLAS-PLAYBOOK.md + WIRING.md for the hub push adapter (stub until then). Docketed 4.8.2: docs/DOCKET-4.8.md "Bounds stated at ship".
+> Owner-owned untracked files at the root: NOTREST-ON-THE-NAS.md, WORKSHOP-SLIDES.md, WORKSHOP-SLIDES-live.js.
+
+
 ## Session 2026-09-01 — Director session 3: the 4.6.1 audit, and the 4.6.2 build
 
 ### Decisions
