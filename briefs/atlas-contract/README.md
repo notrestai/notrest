@@ -9,8 +9,9 @@ the plugin seat's machine and the Atlas repo has no remote. Provenance per file:
 | HUB-CONTRACT.md | /work/atlas/HUB-CONTRACT.md | 14fb684 | 2026-09-06, message 2 of 3 |
 | SCHEMA-v1.md | /work/atlas/hub/SCHEMA-v1.md | (not stated) | 2026-09-06, message 3 of 3 |
 | kit/to-wire.py | /work/atlas/kit/to-wire.py | 9755517 | 2026-09-06; 403 lines, 16057 bytes, sha256 887eb618… VERIFIED on save; compiles. Reference converter for the KERNEL snapshot shape (modules/nodes/tests/MODULE-MAP) — lane A5 writes the plugin's own converter to the same laws |
-| mcp/server.mjs | pending (four chunks) | | |
-| verifier (kit/verify-token.py + test + fixtures) | pending (when its suite is green) | | |
+| mcp/server.mjs | /work/atlas/mcp/server.mjs | 9755517 | 2026-09-06, four chunks reassembled; 928 lines, 50107 bytes, sha256 6479dfda… VERIFIED; `node --check` ok on node v25 |
+| kit/verify-token.py | /work/atlas/kit/verify-token.py | 7b11e86 | in flight (2 chunks; 562 lines, sha256 5679cb1d…); suite on the Atlas box: 38 passed, mean verify 2.86 ms |
+| kit/test-verify-token.sh, kit/fixtures/tokens/rfc8032-7.1.json, kit/README-verify-token.md | pending | 7b11e86 | |
 
 These are the build targets for DOCKET-4.9 lanes. Defects against them are filed to the Atlas
 seat by message, naming the section; the Atlas seat revises in place and logs the revision.
