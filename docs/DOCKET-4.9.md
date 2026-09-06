@@ -110,6 +110,12 @@ laws catching up with a deliberate change, fixed by B2 and B3; the ship gate req
   (I-A); the seat fills the pin at the ship. Measured on this Mac: import 7.6 ms, fingerprint 15.3 ms (one
   `ioreg`), verdict 0.1 ms with no token — inside the 100 ms hook budget.
 
+- A9: `.mcp.json` at the plugin root is PROVEN to load on skills-dir at personal scope (`claude mcp list`:
+  plugin:notrest:atlas Connected) — but it is not live-reloaded like SKILL.md: a running session needs
+  /reload-plugins or a restart. The 11 tool schemas cost ~1k tokens always-on that doctor's TOKEN BUDGET does not
+  count (measured as JSON bytes, not host tokens) — re-read the figure from a connected session before release.
+  The ship stamp (A8) must add `plugins/notrest/.mcp.json` and `skills/atlas/mcp/*` to `evals/golden-release-surface.txt`.
+
 ## Bounds stated now
 
 - Built against the mock until I-A is live; the transport base URL and the signing key are the

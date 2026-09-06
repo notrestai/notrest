@@ -1752,6 +1752,69 @@ def check_access_key(t):
     return status, detail, fix
 
 
+ATLAS_MCP_REL = os.path.join("skills", "atlas", "mcp", "server.mjs")
+NODE_MIN_MAJOR = 22          # RULINGS 2026-09-06 §4 — the MCP server's ONE dependency
+
+
+def check_atlas_mcp(t):
+    """Can this machine run the Atlas MCP read server (node >= 22)?
+
+    ⛔ THIS CHECK NEVER FAILS THE HARNESS. RULINGS 2026-09-06 §4 rules node a SOFT
+    dependency: "doctor names a missing node in one line, never fails the harness on it."
+    Every other surface of this plugin runs on /usr/bin/python3, so an old or absent node
+    costs exactly the eleven atlas_* read tools and nothing else — that is a WARN, not
+    breakage. The line exists because the failure mode is INVISIBLE: a declared MCP server
+    that never starts looks exactly like a server nobody asked for, and the session that
+    quietly lost its read tools is the one that goes back to reading a hundred files.
+    """
+    server = os.path.join(t.primary, ATLAS_MCP_REL) if t.primary else None
+    if not (server and os.path.isfile(server)):
+        return SKIP, ["no atlas MCP server in this tree (%s) — nothing to run"
+                      % (t.rel(server) if server else "no plugin dir")], None
+
+    detail = ["server: %s" % t.rel(server)]
+    # The declaration is what makes the host start it. Reported, never graded: a tree that
+    # ships the server without declaring it is a seat decision, not a machine defect.
+    decl = os.path.join(t.primary, ".mcp.json")
+    if os.path.isfile(decl):
+        obj, err = jload(decl)
+        names = sorted((obj or {}).get("mcpServers", {}) or {}) if isinstance(obj, dict) else []
+        detail.append("declared in %s: %s"
+                      % (t.rel(decl), ", ".join(names) if names else (err or "no mcpServers entry")))
+    else:
+        detail.append("declared in %s: absent — the host starts no server from this tree"
+                      % t.rel(decl))
+
+    # Read node the same way the wrapper does ($NODE wins), so doctor cannot report a
+    # different binary than atlas-mcp.sh will actually exec.
+    name = os.environ.get("NODE") or "node"
+    path = shutil.which(name)
+    if not path:
+        return WARN, detail + [
+            "node: NOT ON PATH (looked for %r) — the server cannot start, so the eleven "
+            "atlas_* read tools are absent from every session on this machine" % name], \
+            "install node >= %d; nothing else in the harness needs it" % NODE_MIN_MAJOR
+
+    rc, out = run([path, "--version"], timeout=10)
+    ver = ((out or "").strip().splitlines() or [""])[0].strip()
+    m = re.match(r"v?(\d+)", ver)
+    if rc is None or not m:
+        return WARN, detail + [
+            "node: %s could not report a version (%s) — cannot say whether the server will "
+            "start" % (tilde(path), ver or "no output")], \
+            "check `node --version` by hand; the server needs >= %d" % NODE_MIN_MAJOR
+    if int(m.group(1)) < NODE_MIN_MAJOR:
+        return WARN, detail + [
+            "node: %s at %s — the server needs >= %d, so the atlas_* read tools will be "
+            "absent (nothing else in the harness is affected)"
+            % (ver, tilde(path), NODE_MIN_MAJOR)], \
+            "upgrade node to >= %d, or ignore this if you do not use the atlas map" \
+            % NODE_MIN_MAJOR
+    detail.append("node: %s at %s (>= %d) — the read server can start"
+                  % (ver, tilde(path), NODE_MIN_MAJOR))
+    return PASS, detail, None
+
+
 CHECKS = [
     ("FRONTMATTER", check_frontmatter),
     ("MANIFESTS", check_manifests),
@@ -1764,6 +1827,7 @@ CHECKS = [
     ("SHADOW-APPSIDE", check_shadow_appside),
     ("TOKEN BUDGET", check_token_budget),
     ("ACCESS KEY", check_access_key),
+    ("ATLAS MCP", check_atlas_mcp),
     ("LOOP HEALTH", check_loop_health),
     ("GITIGNORE", check_gitignore),
     ("RENDER SURFACES", check_render_surfaces),

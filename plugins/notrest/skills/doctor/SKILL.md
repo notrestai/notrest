@@ -16,7 +16,7 @@ SKIP on Codex—not PASS—because Codex v4.3 does not expose those surfaces. Re
 python3 <plugin-root>/skills/doctor/scripts/doctor.py check --surface auto --root .
 ```
 
-That is the whole skill. Thirteen named checks — the roster grows with each scar, so the live
+That is the whole skill. Fifteen named checks — the roster grows with each scar, so the live
 count is the one in `doctor.py check`'s own summary line — one line each, a fix command on every WARN and
 FAIL — each naming **which rung of its ladder failed**, because a status says something is
 wrong and only the rung says which remedy is the right one — and one summary line at the end. `--root` defaults to the git root of the cwd, so bare

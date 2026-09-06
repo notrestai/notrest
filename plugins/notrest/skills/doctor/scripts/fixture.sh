@@ -249,7 +249,7 @@ echo '{"generated":"2026-07-24 10:03Z","candidates":[]}' > "$H/compile/candidate
 echo "── A · healthy synthetic harness"
 runjson "$H"; t "healthy harness exits 0" "$RC" "0"
 t "--json parses" "$(py 'import json,sys;print("yes" if json.load(open(sys.argv[1]))["checks"] else "no")' "$W/out.json")" "yes"
-t "fourteen checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "14"
+t "fifteen checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "15"
 t "verdict is HEALTHY" "$(py 'import json,sys;print(json.load(open(sys.argv[1]))["verdict"])' "$W/out.json")" "HEALTHY"
 t "no check fails" "$(nfail)" "0"
 t "no check warns" "$(nwarn)" "0"
@@ -685,6 +685,60 @@ t "…still exit 5, never 6" "$RC" "5"
 grep -q 'NO VALID KEY' "$W/out.json" && ok "…named plainly" || no "an invalid key is not named"
 grep -q 'exit 7' "$W/out.json" \
   && ok "…and doctor says what that means for establish (exit 7)" || no "the consequence is unstated"
+
+# ── 4.9 · ATLAS MCP · a soft dependency, named in one line, never a failure ─────────
+# ⛔ RULINGS 2026-09-06 §4: "doctor names a missing node in one line, never fails the harness
+# on it." Every arm below therefore asserts TWO things — that the state is REPORTED, and that
+# nothing FAILs. Hermetic: node comes from a shim on PATH, or from a $NODE name that cannot
+# exist on any machine, never from whatever this laptop happens to have installed.
+echo "── 4.9 · ATLAS MCP (node >= 22, soft)"
+runjson "$H"
+t "a harness shipping no atlas MCP server → an honest SKIP" "$(st 'ATLAS MCP')" "SKIP"
+t "…and the skip costs nothing" "$RC" "0"
+
+AMD="$W/atlasmcp"; rm -rf "$AMD"; cp -R "$H" "$AMD"
+mkdir -p "$AMD/plugins/fixtureplug/skills/atlas/mcp"     # no SKILL.md: not a skill, just the server
+printf '// fixture stand-in for the vendored server\n' \
+  > "$AMD/plugins/fixtureplug/skills/atlas/mcp/server.mjs"
+cat > "$AMD/plugins/fixtureplug/.mcp.json" <<'MJ'
+{ "mcpServers": { "atlas": { "command": "${CLAUDE_PLUGIN_ROOT}/skills/atlas/mcp/atlas-mcp.sh" } } }
+MJ
+nodeshim(){ mkdir -p "$1"; printf '#!/bin/bash\necho "%s"\n' "$2" > "$1/node"; chmod +x "$1/node"; }
+nodeshim "$W/node22" "v22.11.0"
+nodeshim "$W/node20" "v20.19.5"
+
+# (1) the server is here and node is new enough: PASS, and the exit code does not move
+env PATH="$W/node22:$PATH" python3 "$DOC" check --root "$AMD" --json > "$W/out.json" 2>"$W/err.txt"
+RC=$?
+t "server present + node v22 → ATLAS MCP passes" "$(st 'ATLAS MCP')" "PASS"
+t "…and doctor still exits 0" "$RC" "0"
+t "…with nothing warning" "$(nwarn)" "0"
+grep -q 'the read server can start' "$W/out.json" \
+  && ok "…saying in words that the server can start" || no "the PASS states no consequence"
+grep -q 'declared in .*mcp.json: atlas' "$W/out.json" \
+  && ok "…and naming the declaration the host starts it from" || no "the MCP declaration is unread"
+
+# (2) an OLD node: a WARN that never becomes a failure
+env PATH="$W/node20:$PATH" python3 "$DOC" check --root "$AMD" --json > "$W/out.json" 2>"$W/err.txt"
+RC=$?
+t "node v20 → ATLAS MCP warns" "$(st 'ATLAS MCP')" "WARN"
+t "…exit 5, never 6 — an old node never fails the harness" "$RC" "5"
+t "…and nothing FAILs" "$(nfail)" "0"
+grep -q 'v20.19.5' "$W/out.json" && ok "…the version it actually found is named" \
+  || no "the WARN does not say which node it found"
+grep -q 'nothing else in the harness is affected' "$W/out.json" \
+  && ok "…and the blast radius is stated, not left to fear" || no "the blast radius is unstated"
+
+# (3) NO node at all — asserted through $NODE so the arm cannot depend on this laptop
+env NODE="notrest-fixture-no-such-node" python3 "$DOC" check --root "$AMD" --json \
+  > "$W/out.json" 2>"$W/err.txt"; RC=$?
+t "no node → ATLAS MCP warns" "$(st 'ATLAS MCP')" "WARN"
+t "…still exit 5" "$RC" "5"
+t "…still nothing FAILs" "$(nfail)" "0"
+grep -q 'NOT ON PATH' "$W/out.json" && ok "…naming the absence plainly" || no "an absent node is not named"
+grep -q 'atlas_\* read tools are absent' "$W/out.json" \
+  && ok "…and saying exactly what is lost (the eleven read tools)" || no "the loss is unnamed"
+grep -q 'install node >= 22' "$W/out.json" && ok "…with the one-line fix" || no "no fix is offered"
 
 # ── B2 · the WARN classes: real findings that are not breakage ────────────────────────
 # doctor must be able to say "this is worth knowing" without saying "this is broken".
