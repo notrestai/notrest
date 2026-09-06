@@ -6,7 +6,7 @@ the plugin seat's machine and the Atlas repo has no remote. Provenance per file:
 | file | source | commit on the Atlas side | received |
 |---|---|---|---|
 | IDENTITY-CONTRACT.md | /work/atlas/IDENTITY-CONTRACT.md | 192b6f5 | 2026-09-06, message 1 of 3 |
-| HUB-CONTRACT.md | pending (message 2 of 3) | | |
+| HUB-CONTRACT.md | /work/atlas/HUB-CONTRACT.md | 14fb684 | 2026-09-06, message 2 of 3 |
 | SCHEMA-v1.md | pending (message 3 of 3) | | |
 | verifier (kit/verify-token.py + fixture) | pending (message 4, when its lane lands) | | |
 
