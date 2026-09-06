@@ -10,10 +10,10 @@ The hub serves this page verbatim and the Atlas MCP tool `atlas_connect` returns
 umask 077 && mkdir -p "${NOTREST_HOME:-$HOME/.notrest}" && printf '%s' "$(cat)" > "${NOTREST_HOME:-$HOME/.notrest}/atlas-token" && chmod 600 "${NOTREST_HOME:-$HOME/.notrest}/atlas-token"
 ```
 
-2. **Install the host-scoped credential helper** — git now answers for the hub host only, reading the token from that file, so the token never enters a URL, a config value, or the clone command.
+2. **Install the host-scoped credential helper** — git now answers for the hub host only, reading the token from that file, so the token never enters a URL, a config value, or the clone command, and it declines, printing nothing, when the token file is absent, so git never sends an empty password.
 
 ```bash
-git config --global credential.https://atlas.not.rest.helper '!f(){ echo username=atlas; echo "password=$(tr -d "\r\n" < "${NOTREST_HOME:-$HOME/.notrest}/atlas-token")"; }; f'
+git config --global credential.https://atlas.not.rest.helper '!f(){ t="${NOTREST_HOME:-$HOME/.notrest}/atlas-token"; [ -r "$t" ] || exit 0; echo username=atlas; echo "password=$(tr -d "\r\n" < "$t")"; }; f'
 ```
 
 3. **Add the hub as a plugin marketplace** — this clone is the first thing the helper authenticates; run it before step 2 and git prompts for a password and fails.
@@ -46,10 +46,10 @@ There is no login before the plugin exists, so a token pasted from the portal ca
 umask 077 && mkdir -p "${NOTREST_HOME:-$HOME/.notrest}" && printf '%s' "$(cat)" > "${NOTREST_HOME:-$HOME/.notrest}/atlas-token" && chmod 600 "${NOTREST_HOME:-$HOME/.notrest}/atlas-token"
 ```
 
-2. **Install the host-scoped credential helper** — same line, same reason, and still before the marketplace command.
+2. **Install the host-scoped credential helper** — same line, same reason, still before the marketplace command, and it declines, printing nothing, when the token file is absent, so git never sends an empty password.
 
 ```bash
-git config --global credential.https://atlas.not.rest.helper '!f(){ echo username=atlas; echo "password=$(tr -d "\r\n" < "${NOTREST_HOME:-$HOME/.notrest}/atlas-token")"; }; f'
+git config --global credential.https://atlas.not.rest.helper '!f(){ t="${NOTREST_HOME:-$HOME/.notrest}/atlas-token"; [ -r "$t" ] || exit 0; echo username=atlas; echo "password=$(tr -d "\r\n" < "$t")"; }; f'
 ```
 
 3. **Add the hub as a plugin marketplace** — the helper answers the clone with the pasted token.
@@ -67,7 +67,7 @@ claude plugin install notrest@notrest
 5. **Run the device login** from the installed plugin — it prints a URL and a code for any browser you have, waits for the approval, and rewrites the same file with a token bound to this machine's fingerprint (`mid`), which the roaming one is not.
 
 ```bash
-python3 ~/.claude/plugins/cache/notrest/notrest/*/skills/atlas/scripts/atlas_auth*.py login
+python3 ~/.claude/plugins/cache/notrest/notrest/*/skills/atlas/scripts/atlas[.]py login
 ```
 
 6. **Verify the identity offline** — expect `atlas-token: ok sub=… seat=… exp=…` and exit 0, now with this machine's own `mid`; a session opened after this prints `[notrest] v4.9.0 …` and keeps its trail in `COORD.md`.
@@ -90,5 +90,5 @@ Exit codes are the plugin's: `0` ok · `7` no valid key or token · `5` red · `
 Until a token is in place every hook is silent and a session prints this one line, carrying the absolute path of your installed copy where the glob stands here:
 
 ```
-[notrest] notrest is part of Atlas — no Atlas identity on this machine. Log in:  python3 ~/.claude/plugins/cache/notrest/notrest/*/skills/atlas/scripts/atlas_auth*.py login   (or place the owner's access key). The harness is inactive here.
+[notrest] notrest is part of Atlas — no Atlas identity on this machine. Log in:  python3 ~/.claude/plugins/cache/notrest/notrest/*/skills/atlas/scripts/atlas[.]py login   (or place the owner's access key). The harness is inactive here.
 ```
