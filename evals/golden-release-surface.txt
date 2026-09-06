@@ -68,3 +68,7 @@ plugins/notrest/skills/spend/scripts/spend.py
 docs/DOCKET-4.6.2.md
 docs/DOCKET-4.7.md
 docs/DOCKET-4.8.md
+docs/ATLAS-CONNECT.md
+plugins/notrest/.mcp.json
+plugins/notrest/skills/atlas/mcp/server.mjs
+plugins/notrest/skills/atlas/mcp/atlas-mcp.sh

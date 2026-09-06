@@ -36,13 +36,19 @@ if [ -z "${NR_ACCESS:-}" ]; then
   # 4.9: the line NAMES THE REMEDY. "ask the owner" was true and useless — an Atlas
   # identity is now something the holder mints for themselves at the portal, so the one
   # line a keyless machine gets is the command that fixes it. The absolute path is the
-  # point: a bare `atlas_auth.py login` is not runnable from wherever the session opened.
+  # point: a bare `atlas.py login` is not runnable from wherever the session opened.
   # Without an absolute hook dir there is no honest command to print, so the sentence
   # says where to look instead of printing a path that would resolve somewhere else.
+  #
+  # THE COMMAND IS atlas.py, NOT atlas_auth.py (seat ruling on this lane's defect, COMMON
+  # "Login command name"). One name reaches the owner: `atlas.py login` is the contract's
+  # canonical command and the one every doc quotes. atlas_auth.py keeps its own CLI — the
+  # background call below still uses it — but a banner is a thing a person retypes, and a
+  # person must never be handed the module's private entry point.
   if [ -n "$NR_HOOKDIR" ]; then
-    NR_ACCESS_FIX="Log in:  python3 $NR_HOOKDIR/../skills/atlas/scripts/atlas_auth.py login   (or place the owner's access key)."
+    NR_ACCESS_FIX="Log in:  python3 $NR_HOOKDIR/../skills/atlas/scripts/atlas.py login   (or place the owner's access key)."
   else
-    NR_ACCESS_FIX="Log in with skills/atlas/scripts/atlas_auth.py login in this plugin (or place the owner's access key)."
+    NR_ACCESS_FIX="Log in with skills/atlas/scripts/atlas.py login in this plugin (or place the owner's access key)."
   fi
   echo "[notrest] notrest is part of Atlas — no Atlas identity on this machine. ${NR_ACCESS_FIX} The harness is inactive here.${NR_ACCESS_TAIL}"
   exit 0

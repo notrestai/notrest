@@ -1529,7 +1529,10 @@ a9stub() {  # a9stub <seconds to hang>
 }
 
 # ── the keyless line NAMES THE REMEDY, absolutely, and is still exactly one line
-A9EXP="[notrest] notrest is part of Atlas — no Atlas identity on this machine. Log in:  python3 $A9HD/../skills/atlas/scripts/atlas_auth.py login   (or place the owner's access key). The harness is inactive here."
+# The remedy names atlas.py — the CONTRACT's canonical command (COMMON, "Login command
+# name") — while the background call below still uses atlas_auth.py. Two different scripts
+# in one hook on purpose, and this arm is what stops them being quietly swapped.
+A9EXP="[notrest] notrest is part of Atlas — no Atlas identity on this machine. Log in:  python3 $A9HD/../skills/atlas/scripts/atlas.py login   (or place the owner's access key). The harness is inactive here."
 run_bounded "$CAP" "$A9EST" "$WORK/a9-empty" "$A9P/hooks/session-start.sh" \
   -u NOTREST_ACCESS_KEY "NOTREST_HOME=$A9NOKEY"
 A9GOT="$(cat "$WORK/out")"
