@@ -1,7 +1,7 @@
 # ORACLE Suite — Codex + Claude
 
 A cross-runtime working-session toolkit by [Not Rest Inc.](https://do.not.rest) — structured
-thinking from intake to handoff. Thirty-two skills share one estate and expose native
+thinking from intake to handoff. Thirty-three skills share one estate and expose native
 Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
 
 - **oracle** — session intake + loads/scaffolds `AGENTS.md` on Codex or `CLAUDE.md` on Claude.
@@ -115,6 +115,13 @@ Codex and Claude adapters. Read `docs/CODEX.md` for the exact boundary.
   MEASURED routing gate from four benchmarked rounds: script it if compilable, flat solo
   opus by default, tier only for context overflow or wide parallel reads (`[unmeasured]`),
   sonnet workers only where the seat has judged the work bounded and declared it.
+- **atlas** — the estate-side **bank**: a tracked git hook runs the tests the map binds at
+  every commit, derives each part's status from the exit codes (a `done` with no test is demoted
+  and reported; a `done` whose test fails goes `wip + failing` and reddens the board), writes an
+  immutable `0444` snapshot under `atlas/snapshots/<commit>.json` plus the board, and pushes both
+  through an adapter (`file` reads HEAD back from the hub; `http` is stubbed and never sends;
+  `none` is the default and not a failure). An estate joins only after the **born-red proof**
+  actually watches the map go red. Also mints and checks the harness's access keys.
 - **sessionend** — writes START-HERE / HANDOFF / STATE / the runtime foundation.
 - **fable-mode** — the Fable behavioral contract: the discipline loop + hard rules (incl.
   the offload model policy — Fable never rides in a subagent; every offloaded job carries an
@@ -139,20 +146,46 @@ graders), kept only as a record of what was measured: ~13 min per pass, $4.58 pe
 run, zero fixes in 45 minutes. **Never run as a ship gate.**
 
 ## Install — Claude
+
+**Part of Atlas.** From v4.8.0 the harness ships to Atlas customers, and an install needs two
+things: **access to the private `notrestai/notrest` repository** (the marketplace command
+resolves only for a GitHub account the owner has granted), and an **owner-issued access key**
+at `~/.notrest/access-key` (or `NOTREST_ACCESS_KEY`). Installed without a valid key the harness
+stays inert — one SessionStart line saying so, and silence from every other hook.
+
 ```
 /plugin marketplace add notrestai/notrest
 /plugin install notrest@notrest
 ```
 Then invoke any skill as `/notrest:<name>` (e.g. `/notrest:researcher`), or just
 `/researcher` when unambiguous.
+Then wire the estate onto the map, once per project — this is the Atlas half:
 
-**Renaming from `oracle-suite`?** Same harness, new id — the plugin was renamed
+```bash
+python3 plugins/notrest/skills/atlas/scripts/atlas.py wire   --root .   # the commit-time bank; idempotent
+python3 plugins/notrest/skills/atlas/scripts/atlas.py wire   --prove     # the born-red proof
+python3 plugins/notrest/skills/atlas/scripts/atlas.py status --root .    # HEAD vs last banked
+```
+
+`wire` installs a tracked post-commit hook that banks every commit; re-running it says
+*already wired* and it never overwrites a post-commit hook it did not write. `--prove` runs the
+**born-red proof** in a scratch repo — hook live → green, hook disabled → the map must go RED,
+hook restored → green — and an estate joins the map only when step two actually goes red.
+
+No access yet? Ask at [do.not.rest](https://do.not.rest).
+
+**Coming from `oracle-suite`?** Same harness, new id — the plugin was renamed
 `oracle-suite` → `notrest` (the marketplace name is unchanged, hence `notrest@notrest`).
-Install `notrest` as above, then remove the old entry with `claude plugin uninstall oracle-suite`.
+Install `notrest` as above once you have access, then remove the old entry with
+`claude plugin uninstall oracle-suite`.
+
+**Holding v4.7.1 or earlier?** It stays yours: versions through v4.7.1 were released under the
+MIT License and remain under it. v4.8.0 onward is the Atlas release.
 
 ## Install — Codex local build
 
-Use this repo's `.agents/plugins/marketplace.json`, install
+Same two gates: repository access and an owner-issued key at `~/.notrest/access-key`. Then use
+this repo's `.agents/plugins/marketplace.json`, install
 `notrest@notrest-codex-local`, and start a new Codex task. The native manifest is
 `.codex-plugin/plugin.json`; it intentionally omits Claude hooks.
 

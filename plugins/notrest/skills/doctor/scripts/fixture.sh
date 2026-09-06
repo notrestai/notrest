@@ -249,7 +249,7 @@ echo '{"generated":"2026-07-24 10:03Z","candidates":[]}' > "$H/compile/candidate
 echo "── A · healthy synthetic harness"
 runjson "$H"; t "healthy harness exits 0" "$RC" "0"
 t "--json parses" "$(py 'import json,sys;print("yes" if json.load(open(sys.argv[1]))["checks"] else "no")' "$W/out.json")" "yes"
-t "thirteen checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "13"
+t "fourteen checks reported" "$(py 'import json,sys;print(len(json.load(open(sys.argv[1]))["checks"]))' "$W/out.json")" "14"
 t "verdict is HEALTHY" "$(py 'import json,sys;print(json.load(open(sys.argv[1]))["verdict"])' "$W/out.json")" "HEALTHY"
 t "no check fails" "$(nfail)" "0"
 t "no check warns" "$(nwarn)" "0"
@@ -614,6 +614,77 @@ elif grep -q 'proposed: none awaiting review' "$W/out.json"; then
 else
   no "LOOP HEALTH stopped reporting the proposed line entirely"
 fi
+
+# ── 4.8 · ACCESS KEY · doctor REPORTS the gate, it never verifies it ─────────────────
+# ⛔ THE VERDICT COMES FROM atlas.py. A second key check here would be a second policy, and
+# the copy that drifts is the one nobody watches. What doctor adds is WHY the gate is
+# quiet: an inert gate (no verifier shipped) looks exactly like a passing one, and telling
+# those apart is the whole job of this line.
+echo "── 4.8 · ACCESS KEY + ATLAS"
+AKD="$W/accesskey"; rm -rf "$AKD"; cp -R "$H" "$AKD"
+ASTUB="$W/atlasstub"; mkdir -p "$ASTUB"
+cat > "$ASTUB/atlas.py" <<'ASTUBPY'
+#!/usr/bin/env python3
+import os, sys
+mode = os.environ.get("STUB_MODE", "valid")
+if len(sys.argv) > 2 and sys.argv[1] == "key" and "--check" in sys.argv:
+    if mode == "valid":   print("valid"); sys.exit(0)
+    if mode == "empty":   print("keyring empty"); sys.exit(4)
+    print("no valid key"); sys.exit(1)
+if len(sys.argv) > 1 and sys.argv[1] == "status":
+    print("bank hook: wired · last snapshot: 0.2h · hub: none configured"); sys.exit(0)
+sys.exit(2)
+ASTUBPY
+akrun() { env NOTREST_ATLAS_PY="$ASTUB/atlas.py" STUB_MODE="$1" \
+          python3 "$DOC" check --root "$AKD" --json > "$W/out.json" 2>"$W/err.txt"; RC=$?; }
+
+# (1) no keyring and no verifier: the gate is NOT DEPLOYED, and doctor says exactly that
+env NOTREST_ATLAS_PY="$W/nope.py" PATH=/usr/bin:/bin python3 "$DOC" check --root "$AKD" \
+  --json > "$W/out.json" 2>&1; RC=$?
+t "no keyring, no verifier → ACCESS KEY passes (nothing to enforce)" "$(st 'ACCESS KEY')" "PASS"
+grep -q 'the access gate is not deployed in this tree' "$W/out.json" \
+  && ok "…saying the gate is not deployed" || no "the not-deployed state is not named"
+grep -q 'access key: NOT CHECKED' "$W/out.json" \
+  && ok "…and that no verifier means NOT CHECKED, not 'fine'" || no "an inert gate reads as passing"
+
+# (2) a keyring with keys + a valid key
+mkdir -p "$AKD/plugins/fixtureplug/.access"
+python3 -c "
+open('$AKD/plugins/fixtureplug/.access/keys.sha256','w').write(
+  '# notrest access keyring — sha256(key):label:date\n' + '0'*64 + ':fixture:2026-09-06\n')"
+akrun valid
+t "a populated keyring + valid key → PASS" "$(st 'ACCESS KEY')" "PASS"
+grep -q 'access key: present and valid' "$W/out.json" && ok "…reported present and valid" \
+  || no "a valid key was not reported"
+grep -q '1 key(s)' "$W/out.json" && ok "…and the keyring's key count is stated" \
+  || no "the key count is missing"
+# the line now leads with lane A's exit-code meaning, then whatever status said
+grep -q 'atlas: green' "$W/out.json" && grep -q 'bank hook: wired' "$W/out.json" \
+  && ok "…and the ATLAS line reads atlas.py status --json (exit 0 = green)" \
+  || no "the ATLAS line is missing"
+
+# (3) an EMPTY keyring is a WARN — no machine but this one can run the harness
+python3 -c "
+open('$AKD/plugins/fixtureplug/.access/keys.sha256','w').write(
+  '# notrest access keyring — sha256(key):label:date\n')"
+akrun empty
+t "an EMPTY keyring warns" "$(st 'ACCESS KEY')" "WARN"
+t "…exit 5, never blocking a ship" "$RC" "5"
+t "…and nothing FAILs" "$(nfail)" "0"
+grep -q 'KEYRING EMPTY' "$W/out.json" && ok "…naming the empty keyring" || no "not named"
+grep -q 'atlas.py key --mint' "$W/out.json" && ok "…with the mint command as the fix" \
+  || no "the fix does not say how to mint"
+
+# (4) a keyring with keys but NO valid key on this machine: WARN, and it names exit 7
+python3 -c "
+open('$AKD/plugins/fixtureplug/.access/keys.sha256','w').write(
+  '# ring\n' + '0'*64 + ':fixture:2026-09-06\n')"
+akrun invalid
+t "keys exist but this machine has none → WARN" "$(st 'ACCESS KEY')" "WARN"
+t "…still exit 5, never 6" "$RC" "5"
+grep -q 'NO VALID KEY' "$W/out.json" && ok "…named plainly" || no "an invalid key is not named"
+grep -q 'exit 7' "$W/out.json" \
+  && ok "…and doctor says what that means for establish (exit 7)" || no "the consequence is unstated"
 
 # ── B2 · the WARN classes: real findings that are not breakage ────────────────────────
 # doctor must be able to say "this is worth knowing" without saying "this is broken".

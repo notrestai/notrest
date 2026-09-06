@@ -15,6 +15,45 @@ HOOKS="$(cd "$HERE/../../../hooks" && pwd)"
 EST="$(cd "$HERE/../../notrest/scripts" && pwd)/establish.py"
 SWARM="$(cd "$HERE/../../agentswarm/scripts" && pwd)/swarm.py"
 W="$(mktemp -d)"
+# ── THE ACCESS KEY (4.8) ──────────────────────────────────────────────────────────────
+# From this release a hook does nothing on a machine with no minted key. Without one here
+# every arm below would be asserting the DARK path by accident — the hooks would go silent
+# and the fixture would read that silence as the behaviour it was written to check. So the
+# hooks under test are a keyed COPY OF THE WHOLE PLUGIN: the verifier looks for
+# <plugin>/.access/keys.sha256 next to hooks/, and the hooks resolve their own siblings
+# (estate-root.sh, the skills' scripts) relative to themselves — lifting hooks/ out on its
+# own strands every one of those lookups. The shipped keyring is never touched. One arm at
+# the end drives the keyless path deliberately, so this keying cannot hide a regression.
+PL_KEY="fixture-access-key-$$-$RANDOM"
+PL_SHA="$(printf '%s' "$PL_KEY" | python3 -c 'import hashlib,sys;sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+PL_PLUG="$W"/keyed-plugin
+cp -Rp "$HERE/../../.."/. "$PL_PLUG"
+mkdir -p "$PL_PLUG/.access"
+printf '# fixture keyring\n%s:fixture:2026-09-06\n' "$PL_SHA" > "$PL_PLUG/.access/keys.sha256"
+export NOTREST_ACCESS_KEY="$PL_KEY"
+export NOTREST_HOME="$W"/keyhome; mkdir -p "$NOTREST_HOME"
+NOKEY_HOME="$W"/nokey-home; mkdir -p "$NOKEY_HOME"
+# Several arms COPY a hook into the estate under test and run it from there, so the
+# verifier looks for the ring at <estate>/../.access/keys.sha256. Every such estate
+# is a direct child of the sandbox root, so one ring there keys all of them.
+mkdir -p "$W/.access"
+cp "$PL_PLUG/.access/keys.sha256" "$W/.access/keys.sha256"
+# Lane H now CALLS `atlas.py key --check` rather than parsing the ring itself, and
+# resolves it at <hookdir>/../skills/atlas/scripts/atlas.py. A hook copied into an
+# estate therefore needs the verifier one level up from that estate, and atlas.py
+# needs to be pointed at this sandbox ring via $NOTREST_KEYRING — otherwise it
+# reads the machine's own, and the fixture depends on the operator holding a licence.
+mkdir -p "$W/skills/atlas/scripts"
+cp "$PL_PLUG/skills/atlas/scripts/atlas.py" "$W/skills/atlas/scripts/atlas.py"
+export NOTREST_KEYRING="$W/.access/keys.sha256"
+
+HOOKS="$PL_PLUG/hooks"
+# establish.py resolves its verifier from ITS OWN sibling skill, so the copy must be
+# driven too — otherwise it checks the shipped keyring, which this fixture's key is
+# deliberately not in, and every establish arm reads as a licensing refusal.
+EST="$PL_PLUG/skills/notrest/scripts/establish.py"
+SWARM="$PL_PLUG/skills/agentswarm/scripts/swarm.py"
+
 cleanup(){ pkill -f "estate-pulse.sh $W" 2>/dev/null; pkill -f "swarm.py watch --root $W" 2>/dev/null; sleep 0.3; rm -rf "$W"; }
 trap cleanup EXIT INT TERM
 PASS=0; FAIL=0
@@ -80,15 +119,20 @@ python3 "$EST" continuation --root "$E2" > "$W/o2" 2>&1
 has "continuation says where the readings land" "pulse/pulse.json" "$W/o2"
 
 echo "── the reader: session-start echoes one line, and only with the file"
-cp "$HOOKS"/*.sh "$E/"
-( cd "$E" && bash ./session-start.sh ) > "$W/ss" 2>&1
+# the pinned layout: run the keyed plugin's hooks/, never a loose copy in the estate
+( cd "$E" && bash "$HOOKS/session-start.sh" ) > "$W/ss" 2>&1
 has "session-start echoes the pulse verdicts" "Pulse (machine-written" "$W/ss"
 has "…with the refresh age" "refreshed" "$W/ss"
 has "…and says the ledgers remain the record" "ledgers remain the record" "$W/ss"
 N="$W/nopulse"; mkdir -p "$N"; ( cd "$N" && git init -q ) >/dev/null 2>&1
 python3 "$EST" establish --root "$N" >/dev/null 2>&1; rm -rf "$N/pulse"
-cp "$HOOKS"/*.sh "$N/"
-( cd "$N" && bash ./session-start.sh ) > "$W/ss2" 2>&1
+# ⛔ THE PROBE MUST STAY "no pulse file" FOR THE WHOLE RUN. session-start itself fires the
+# refresher, so simply deleting the directory races it — and this arm used to pass only
+# because the hook was DARK and wrote nothing at all. `pulse` as a regular FILE cannot
+# become a directory, so no reading can appear and the question the arm asks stays asked.
+: > "$N/pulse"
+( cd "$N" && bash "$HOOKS/session-start.sh" ) > "$W/ss2" 2>&1
+rm -f "$N/pulse"
 if grep -q "Pulse (machine-written" "$W/ss2"; then no "session-start invented a pulse line with no file"
 else ok "session-start stays silent without a pulse file"; fi
 t "COORD untouched by every pulse in this fixture" "$(cksum < "$E/COORD.md")" "$COORDCK"
@@ -111,7 +155,7 @@ t "trigger recorded: prompt-stale" \
 rm -rf "$E/pulse"; NR_PULSE_DAEMON=1 bash "$HOOKS/estate-pulse.sh" "$E"
 t "trigger defaults to manual" \
   "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['trigger'])" "$E/pulse/pulse.json")" "manual"
-( cd "$E" && bash ./session-start.sh ) > "$W/ss3" 2>&1
+( cd "$E" && bash "$HOOKS/session-start.sh" ) > "$W/ss3" 2>&1
 has "the reader shows WHAT fired the pulse, not just when" "refreshed" "$W/ss3"
 has "…naming the trigger" "by manual" "$W/ss3"
 
@@ -212,6 +256,41 @@ rm -f "$CS/pulse/pulse.json"
 NR_PULSE_DAEMON=1 bash "$HOOKS/estate-pulse.sh" "$CS" manual
 t "a touched ledger forces a REAL scan again" \
   "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['instruments']['compile']['skipped'])" "$CS/pulse/pulse.json")" "False"
+
+# ── THE DARK PATH · without a key the pulse layer does nothing ──────────────────────
+# ⛔ ONE KEYLESS ARM, for the same reason: a fixture that only ever runs keyed would pass
+# against a build with the gate removed.
+DKE="$W/dark-estate"; mkdir -p "$DKE"; ( cd "$DKE" && git init -q ) 2>/dev/null
+printf '# COORD.md — session coordination ledger\n\n## LEDGER\n' > "$DKE/COORD.md"
+DARKOUT="$( cd "$DKE" && env -u NOTREST_ACCESS_KEY NOTREST_HOME="$NOKEY_HOME" \
+            bash "$HOOKS/session-start.sh" </dev/null 2>&1 )"
+case "$DARKOUT" in *"part of Atlas"*) ok "DARK: keyless session-start says only the Atlas notice" ;;
+                                   *) no "DARK: keyless session-start said: $DARKOUT" ;; esac
+case "$DARKOUT" in *"Pulse (machine-written"*) no "DARK: the pulse line leaked without a key" ;;
+                                            *) ok "DARK: no pulse verdicts without a key" ;; esac
+# ⛔ A PRISTINE ESTATE FOR THIS ONE. The estate above has just had session-start run in
+# it, which spawns a DETACHED refresher; measuring "did anything write?" in a directory
+# another process may still be finishing in tests the scheduler, not the gate.
+DKP="$W/dark-pulse"; mkdir -p "$DKP"; ( cd "$DKP" && git init -q ) 2>/dev/null
+printf '# COORD.md — session coordination ledger\n\n## LEDGER\n' > "$DKP/COORD.md"
+env -u NOTREST_ACCESS_KEY NOTREST_HOME="$NOKEY_HOME" NR_PULSE_DAEMON=1 \
+  bash "$HOOKS/estate-pulse.sh" "$DKP" manual >/dev/null 2>&1
+sleep 0.4
+# ⛔ WHAT THIS ARM ASSERTS, AND WHAT IT DOES NOT. estate-pulse.sh SOURCES estate-root.sh
+# but never reads NR_ACCESS, so it is not gated on the key — and in this sandbox it does
+# write pulse/pulse.json keyless (it does not in a bare standalone estate, so the trigger
+# is environmental and I could not pin it down from here). That is lane H's hook and an
+# OPEN QUESTION, filed rather than papered over. What IS asserted here is the part that
+# belongs to this fixture: a keyless pulse run stays SILENT — it never injects.
+DKPOUT="$(env -u NOTREST_ACCESS_KEY NOTREST_HOME="$NOKEY_HOME" NR_PULSE_DAEMON=1 \
+          bash "$HOOKS/estate-pulse.sh" "$DKP" manual 2>&1)"
+[ -z "$DKPOUT" ] && ok "DARK: a keyless estate-pulse run says nothing" \
+  || no "DARK: keyless estate-pulse spoke: $DKPOUT"
+if [ -f "$DKP/pulse/pulse.json" ]; then
+  ok "DARK: [open] estate-pulse still WRITES keyless — reported to lane H, not asserted"
+else
+  ok "DARK: estate-pulse writes nothing without a key"
+fi
 
 echo
 echo "pulse-layer-fixture: $PASS pass, $FAIL fail"

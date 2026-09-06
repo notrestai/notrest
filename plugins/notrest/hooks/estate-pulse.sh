@@ -35,6 +35,15 @@
 # So: double-fork + setsid. The worker is reparented to init, owns no controlling
 # terminal, and is nobody's child. NR_PULSE_DAEMON=1 marks the re-exec — and doubles as
 # the FOREGROUND escape hatch fixtures use to run this synchronously.
+# ── THE ACCESS KEY, ASKED BEFORE ANYTHING FORKS (refuter V8, 2026-09-06). The gate used
+# to sit after the root resolution — which is AFTER the double-fork below — so a keyless
+# machine still spawned a detached daemon before discovering it had no licence. The
+# question is now the first thing this hook does, in the parent, and the re-exec'd child
+# asks again on its own way through (it trusts no inherited marker: an exported "already
+# licensed" flag is exactly the forgeable thing the refuter took the cache away for).
+NR_SKIP_ROOT=1 . "${0%/*}/estate-root.sh" 2>/dev/null || true
+[ -n "${NR_ACCESS:-}" ] || exit 0
+
 if [ -z "${NR_PULSE_DAEMON:-}" ]; then
   NR_PULSE_DAEMON=1 python3 -c '
 import os, sys
@@ -60,6 +69,13 @@ if [ -z "$NR_PULSE_ROOT" ]; then
 fi
 [ -n "$NR_PULSE_ROOT" ] || exit 0
 [ -d "$NR_PULSE_ROOT" ] || exit 0
+
+# ── THE ACCESS KEY (4.8; lane S found this hole). The resolver above is sourced ONLY when
+# no root was passed — and every caller passes one — so this hook never saw NR_ACCESS and
+# a keyless machine kept running the instruments and, on an unattended marker, `draft
+# --all-ripe` and `auto-run`: the one path in the suite that SPENDS TOKENS. NR_SKIP_ROOT
+# keeps it to the licence question (the root is already known), and NR_ACCESS_WHY is the
+# sentinel for "already asked", so atlas.py is called at most once per fire.
 
 NR_SKILLS="$(cd "$(dirname "$0")/../skills" 2>/dev/null && pwd)"
 [ -n "$NR_SKILLS" ] || exit 0

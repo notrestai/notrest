@@ -41,6 +41,11 @@ PAYLOAD="$NR_RAW"
 # nothing, exactly as before. The variable keeps its historical name; it is the ESTATE
 # root, not only a git one.
 . "$(cd "$(dirname "$0")" && pwd)/estate-root.sh" 2>/dev/null || true
+# ── THE ACCESS KEY (4.8): no key, no harness. One resolver answers for every hook
+# (hooks/estate-root.sh · nr_access_ok); this one exits 0 having done nothing, silently,
+# exactly as it does when there is no estate. The banner in session-start.sh is the only
+# place that says anything about it, and it says it once.
+[ -n "${NR_ACCESS:-}" ] || exit 0
 GIT_ROOT="${NR_ESTATE_ROOT:-}"
 [ -z "$GIT_ROOT" ] && exit 0
 

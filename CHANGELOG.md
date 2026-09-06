@@ -1,5 +1,38 @@
 # Changelog — the notrest harness
 
+## 4.8.0 — 2026-09-06
+
+**notrest is part of Atlas. From this release the harness is licensed with Atlas; versions
+through v4.7.1 were released under MIT and remain so for whoever holds them.**
+
+- **Access key.** The harness on a machine is active only with an owner-issued key
+  (`~/.notrest/access-key` or `NOTREST_ACCESS_KEY`) whose hash is in the plugin's committed
+  keyring. Without one the SessionStart banner prints a single line and stops, every writer and
+  injector hook is silent, `establish` and `check` refuse (exit 7), no packet is emitted — and the
+  deny rules of the spawn gate and the ship gate stay active, because a machine without a key
+  must not become a machine without laws. The owner mints and revokes keys with `atlas.py key`. There is ONE verifier: every hook calls `atlas.py key --check`, and the refuter round on this
+  release is why — a shell fast path with a cached verdict let anyone who controlled the private-store
+  variable grant themselves the harness keyless, and disagreed with the verifier in seven line
+  shapes. Both are gone with the fast path; the per-prompt hooks pay one Python start for it.
+  With no verifier resolvable the gate is inert and doctor says so — a missing file
+  must never brick a machine the way a missing key does.
+  Stated bound: the gate controls the harness on a machine, not the source files; the private
+  repository is the real gate until the Atlas merge.
+- **The atlas skill (33rd): the estate-side bank.** At every commit a tracked hook runs
+  `atlas.py bank`: every gate and fixture the map binds is evaluated, each part's status is
+  derived from exit codes under Atlas's law (done only when a test that could fail passed; a done
+  with no test is demoted and reported; a failing done becomes wip + failing), status and
+  evidence stay separate fields, the commit is stamped, an immutable snapshot and the estate's
+  board are written, and both go through a push adapter. The `file` adapter is real; the `http`
+  adapter is a proven stub until the hub contract lands (it never sends and says so).
+  `atlas.py wire --prove` is the born-red proof; `atlas.py status` tells you HEAD versus last
+  banked. Doctor reports the key and the bank; eval's ACCESS-GATE drives the hooks with the key
+  removed and asserts silence plus refusal.
+- **License and surfaces.** LICENSE is Not Rest Inc. proprietary (draft, owner to review) with
+  the MIT history stated; the manifests' license field reads Proprietary; the marketplace entry
+  opens "Part of Atlas"; every install section says private repository plus owner-issued key; a
+  `notrest-free` tombstone pinned at 4.7.1 tells older installs where the harness went.
+
 ## 4.7.1 — 2026-09-05
 
 **The run cap acts inside the run.** The first unattended day showed the per-run token cap was

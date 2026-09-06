@@ -5,7 +5,24 @@
 # Exit 0 = every assertion held. No network, no model calls, no repo writes.
 
 SD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROUTER="$SD/../../../hooks/router.sh"
+
+# ── THE ACCESS KEY (4.8). The harness only runs where the owner minted a key, so this
+# fixture mints its own and runs a KEYED COPY of the hooks: the committed keyring holds
+# the owner's hashes, which a fixture must never need (or be able) to add to. Same bytes
+# (cp -p), plus a keyring the verifier will find at <plugin>/.access/keys.sha256.
+NRK_WORK="$(mktemp -d)"
+NRK_KEY="fixture-access-key-$$-$RANDOM"
+NRK_SHA="$(printf '%s' "$NRK_KEY" | python3 -c 'import hashlib,sys;sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+mkdir -p "$NRK_WORK/plug/.access" "$NRK_WORK/home"
+cp -Rp "$SD/../../../hooks" "$NRK_WORK/plug/hooks"
+printf '# fixture keyring\n%s:fixture:2026-09-06\n' "$NRK_SHA" > "$NRK_WORK/plug/.access/keys.sha256"
+mkdir -p "$NRK_WORK/plug/skills/atlas/scripts"
+cp -p "$SD/../../../skills/atlas/scripts/atlas.py" "$NRK_WORK/plug/skills/atlas/scripts/atlas.py" 2>/dev/null
+export NOTREST_ACCESS_KEY="$NRK_KEY"
+export NOTREST_HOME="$NRK_WORK/home"
+NRK_HOOKS="$NRK_WORK/plug/hooks"
+trap 'rm -rf "$NRK_WORK"' EXIT
+ROUTER="$NRK_HOOKS/router.sh"
 PASS=0
 FAIL=0
 
@@ -100,7 +117,12 @@ echo "── 4.6.3 · the banked lesson speaks only when the route does not"
 # now reads a store and this repo's store is not a fixture.
 RWORK="$(mktemp -d)"
 RPLUG="$RWORK/plug"; mkdir -p "$RPLUG/skills/archivist/scripts"
-cp -Rp "$SD/../../../hooks" "$RPLUG/hooks"
+cp -Rp "$NRK_HOOKS" "$RPLUG/hooks"
+mkdir -p "$RPLUG/.access" "$RPLUG/skills/atlas/scripts"
+cp -p "$NRK_WORK/plug/.access/keys.sha256" "$RPLUG/.access/keys.sha256"
+# the verifier too: since the refuter ruling every hook ASKS atlas.py, so a copy without
+# it is a copy where the harness is correctly dark
+cp -p "$NRK_WORK/plug/skills/atlas/scripts/atlas.py" "$RPLUG/skills/atlas/scripts/atlas.py" 2>/dev/null
 RIDX_SRC="$SD/../../../skills/archivist/scripts/index.py"
 [ -f "$RIDX_SRC" ] && cp -p "$RIDX_SRC" "$RPLUG/skills/archivist/scripts/index.py"
 for rsk in "$SD"/../../../skills/*/; do [ -d "$rsk" ] && mkdir -p "$RPLUG/skills/$(basename "$rsk")"; done

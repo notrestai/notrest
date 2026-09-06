@@ -23,6 +23,41 @@ for f in "$END_HOOK" "$START_HOOK"; do
 done
 
 TMP="$(mktemp -d)"
+# ── THE ACCESS KEY (4.8) ──────────────────────────────────────────────────────────────
+# From this release a hook does nothing on a machine with no minted key. Without one here
+# every arm below would be asserting the DARK path by accident — the hooks would go silent
+# and the fixture would read that silence as the behaviour it was written to check. So the
+# hooks under test are a keyed COPY OF THE WHOLE PLUGIN: the verifier looks for
+# <plugin>/.access/keys.sha256 next to hooks/, and the hooks resolve their own siblings
+# (estate-root.sh, the skills' scripts) relative to themselves — lifting hooks/ out on its
+# own strands every one of those lookups. The shipped keyring is never touched. One arm at
+# the end drives the keyless path deliberately, so this keying cannot hide a regression.
+CV_KEY="fixture-access-key-$$-$RANDOM"
+CV_SHA="$(printf '%s' "$CV_KEY" | python3 -c 'import hashlib,sys;sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+CV_PLUG="$TMP"/keyed-plugin
+cp -Rp "$SD/../../.."/. "$CV_PLUG"
+mkdir -p "$CV_PLUG/.access"
+printf '# fixture keyring\n%s:fixture:2026-09-06\n' "$CV_SHA" > "$CV_PLUG/.access/keys.sha256"
+export NOTREST_ACCESS_KEY="$CV_KEY"
+export NOTREST_HOME="$TMP"/keyhome; mkdir -p "$NOTREST_HOME"
+NOKEY_HOME="$TMP"/nokey-home; mkdir -p "$NOKEY_HOME"
+# Several arms COPY a hook into the estate under test and run it from there, so the
+# verifier looks for the ring at <estate>/../.access/keys.sha256. Every such estate
+# is a direct child of the sandbox root, so one ring there keys all of them.
+mkdir -p "$TMP/.access"
+cp "$CV_PLUG/.access/keys.sha256" "$TMP/.access/keys.sha256"
+# Lane H now CALLS `atlas.py key --check` rather than parsing the ring itself, and
+# resolves it at <hookdir>/../skills/atlas/scripts/atlas.py. A hook copied into an
+# estate therefore needs the verifier one level up from that estate, and atlas.py
+# needs to be pointed at this sandbox ring via $NOTREST_KEYRING — otherwise it
+# reads the machine's own, and the fixture depends on the operator holding a licence.
+mkdir -p "$TMP/skills/atlas/scripts"
+cp "$CV_PLUG/skills/atlas/scripts/atlas.py" "$TMP/skills/atlas/scripts/atlas.py"
+export NOTREST_KEYRING="$TMP/.access/keys.sha256"
+
+END_HOOK="$CV_PLUG/hooks/session-end.sh"
+START_HOOK="$CV_PLUG/hooks/session-start.sh"
+
 # TRAP LAW: session-end.sh now fires the pulse refresher, which is DETACHED and may still
 # be writing into the sandbox when the trap runs ("Directory not empty"). Reap our own
 # daemons first — a fixture owns every process it causes, even the reparented ones.
@@ -143,20 +178,39 @@ chk "N: no-ledger dir writes nothing" "$(ls -A "$TMP/not-a-repo-bare" | wc -l | 
 # ── director-detect: sealed volumes must NOT look like lane blackboards ──────
 # The hook is copied in so its fire-and-forget self-update targets the throwaway
 # repo (which has no remote) instead of the real plugin clone.
-D1="$(newrepo repo-vol)"; cp "$START_HOOK" "$D1/session-start.sh"
+D1="$(newrepo repo-vol)"; # ⛔ RUN THE HOOK FROM A REAL hooks/ DIR. Lane H now PINS the keyring at
+# <hookdir-without-/hooks>/.access/keys.sha256 and scrubs $NOTREST_KEYRING, so a hook
+# copied loose into the estate cannot find a ring at all and goes dark. $CV_PLUG is
+# already a throwaway copy of the whole plugin, so running its hooks/ keeps the
+# self-update pointed away from the real clone AND satisfies the pinned layout.
 seed "$D1/COORD.md" "COORD.md — session coordination ledger" 3
 cp "$D1/COORD.md" "$D1/COORD-001.md"; cp "$D1/COORD.md" "$D1/COORD-012.md"
 cp "$D1/COORD.md" "$D1/COORD-AGENTS.md"; cp "$D1/COORD.md" "$D1/COORD-AGENTS-001.md"
-OUT="$( cd "$D1" && bash ./session-start.sh </dev/null 2>/dev/null )"
+OUT="$( cd "$D1" && bash "$CV_PLUG/hooks/session-start.sh" </dev/null 2>/dev/null )"
 case "$OUT" in *fable-director*) no "V: volumes do not fire director-detect" "it fired" ;;
                               *) ok "V: volumes do not fire director-detect" ;; esac
 
-D2="$(newrepo repo-lane)"; cp "$START_HOOK" "$D2/session-start.sh"
+D2="$(newrepo repo-lane)"; 
 seed "$D2/COORD.md" "COORD.md — session coordination ledger" 3
 cp "$D2/COORD.md" "$D2/COORD-D1.md"
-OUT="$( cd "$D2" && bash ./session-start.sh </dev/null 2>/dev/null )"
+OUT="$( cd "$D2" && bash "$CV_PLUG/hooks/session-start.sh" </dev/null 2>/dev/null )"
 case "$OUT" in *fable-director*) ok "V: a real lane (COORD-D1.md) still fires director-detect" ;;
                               *) no "V: a real lane (COORD-D1.md) still fires director-detect" "silent" ;; esac
+
+# ── THE DARK PATH · without a key the hook does nothing at all ───────────────────────
+# ⛔ EVERY ARM ABOVE RUNS KEYED, SO ONE ARM MUST RUN KEYLESS. Otherwise this fixture would
+# pass just as happily against a build whose access gate had been deleted — the keying
+# would be hiding the very regression it exists to make visible.
+DK="$(newrepo repo-dark)"
+seed "$DK/COORD.md" "COORD.md — session coordination ledger" 3
+cp "$DK/COORD.md" "$DK/COORD-D1.md"
+DARK="$( cd "$DK" && env -u NOTREST_ACCESS_KEY NOTREST_HOME="$NOKEY_HOME" \
+         bash "$CV_PLUG/hooks/session-start.sh" </dev/null 2>&1 )"
+case "$DARK" in *"part of Atlas"*) ok "DARK: keyless session-start says only the Atlas notice" ;;
+                               *) no "DARK: keyless session-start" "said: $DARK" ;; esac
+case "$DARK" in *fable-director*) no "DARK: director-detect must NOT fire without a key" "it fired" ;;
+                               *) ok "DARK: director-detect does not fire without a key" ;; esac
+chk "DARK: exactly one line" "$(printf '%s' "$DARK" | grep -c .)" "1"
 
 echo
 echo "── coord-volume-fixture: $PASS passed, $FAIL failed"

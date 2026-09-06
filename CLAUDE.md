@@ -32,7 +32,8 @@ claimed — so the convention cannot quietly rot into prose nobody applies.
 - This repo IS the `notrest` marketplace: `plugins/notrest/` (31 skills); manifests
   `plugins/notrest/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` —
   **versions must match**. `plugins/oracle-suite-tombstone/` is the rename stub pinned
-  at 9.0.0 — **never bump it**.
+  at 9.0.0 — **never bump it**. `plugins/notrest-free-tombstone/` is the last-MIT-release
+  stub pinned at 4.7.1 — **never bump it either**.
 - Release: bump both manifests + CHANGELOG.md + README table + both version stamps in
   docs/oracle-skill-flow.html → commit → push. This machine runs `notrest@skills-dir`
   (`~/.claude/skills/notrest` → this repo's `plugins/notrest`, loaded IN PLACE, zero cache

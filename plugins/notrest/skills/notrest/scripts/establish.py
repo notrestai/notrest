@@ -50,6 +50,7 @@ from datetime import datetime, timezone
 
 PASS, WARN, FAIL, INFO = "PASS", "WARN", "FAIL", "INFO"
 EXIT_OK, EXIT_USAGE, EXIT_PARTIAL, EXIT_NONE = 0, 2, 5, 6
+EXIT_NOKEY = 7        # 4.8: no valid Atlas access key on this machine
 
 # A directory only counts as a project if it carries one of these. NOTE the absence of
 # `.claude`: ~/.claude exists on every machine this harness runs on, so that one entry
@@ -1720,6 +1721,30 @@ def seed_pulse(root):
         return False
 
 
+def wire_atlas(root):
+    """`establish --atlas` -> `atlas.py wire`. CALLS the script; never copies its logic —
+    the hook's shape, its idempotence and its born-red proof all live in atlas.py, and a
+    second implementation here would be the one that goes stale."""
+    script = atlas_script()
+    if script is None:
+        emit(WARN, "ATLAS", "no atlas.py on this machine — bank hook NOT wired")
+        return
+    try:
+        pr = subprocess.run([sys.executable, script, "wire", "--root", root],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        emit(WARN, "ATLAS", "atlas.py wire could not run (%s) — bank hook NOT wired" % exc)
+        return
+    tail = (pr.stdout or b"").decode("utf-8", "replace").strip().splitlines()
+    detail = tail[-1] if tail else ""
+    if pr.returncode == 0:
+        emit(PASS, "ATLAS", "bank hook wired via atlas.py wire%s"
+             % (" — %s" % detail if detail else ""))
+    else:
+        emit(WARN, "ATLAS", "atlas.py wire exited %d%s"
+             % (pr.returncode, " — %s" % detail if detail else ""))
+
+
 def cmd_establish(args):
     root, err = resolve_root(args.root)
     if err:
@@ -1803,8 +1828,80 @@ def cmd_establish(args):
     else:
         tail = " · wrote: %s" % (", ".join(wrote) if wrote
                                  else "nothing (already established)")
+    if getattr(args, "atlas", False):
+        wire_atlas(root)
     verdict(code, root, tail)
     return code
+
+
+# ── 4.8 · THE ACCESS GATE ─────────────────────────────────────────────────────────────
+# notrest is part of Atlas from 4.8. The private repo is the real install gate; this is the
+# belt-and-braces one, and its honest bound is stated in the docket and repeated here: IT
+# CONTROLS THE HARNESS ON A MACHINE, NOT THE SOURCE FILES. Somebody holding the tree can
+# read it; they cannot have the session behave like an established estate.
+#
+# ⛔ THE CHECK IS CALLED, NEVER REIMPLEMENTED. `atlas.py key --check` is the one verifier;
+# lane H's hooks call the same script. A second copy of a key check is a second policy the
+# moment one of them is edited, and the copy that drifts is the one nobody is watching.
+ATLAS_ENV = "NOTREST_ATLAS_PY"
+ACCESS_KEY_PATH = "~/.notrest/access-key"
+
+
+def atlas_script():
+    """The verifier, resolved in one order: env override (fixtures), the sibling skill in
+    this same plugin, then PATH. Returns None when no verifier can be found."""
+    v = os.environ.get(ATLAS_ENV)
+    if v and os.path.isfile(v):
+        return v
+    here = os.path.dirname(os.path.abspath(__file__))
+    sib = os.path.normpath(os.path.join(here, "..", "..", "atlas", "scripts", "atlas.py"))
+    if os.path.isfile(sib):
+        return sib
+    for d in (os.environ.get("PATH") or "").split(os.pathsep):
+        cand = os.path.join(d, "atlas.py")
+        if d and os.path.isfile(cand):
+            return cand
+    return None
+
+
+def access_state():
+    """(allowed, reason). ⛔ THE GATE IS ACTIVE ONLY WHERE IT IS DEPLOYED.
+
+    With no verifier on the machine the gate cannot run, and refusing everything would
+    brick a harness because one file is missing rather than because a key is. So: no
+    verifier -> allowed, and doctor SAYS SO on its ACCESS KEY line, which is where an
+    operator finds out the gate is inert. The moment atlas.py ships, every surface here
+    gates at once, with no flag to flip.
+    """
+    script = atlas_script()
+    if script is None:
+        return True, "no verifier on this machine (atlas.py absent) — gate not deployed"
+    try:
+        pr = subprocess.run([sys.executable, script, "key", "--check"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
+    except (OSError, subprocess.SubprocessError) as exc:
+        # A verifier that cannot RUN is not a verdict. Fail open and name it, rather than
+        # turning a broken interpreter into a licensing decision.
+        return True, "verifier could not run (%s) — gate not enforced" % exc
+    out = (pr.stdout or b"").decode("utf-8", "replace").strip().splitlines()
+    reason = out[-1] if out else ("valid" if pr.returncode == 0 else "no valid key")
+    return pr.returncode == 0, reason
+
+
+NOKEY_LINE = ("notrest is part of Atlas — no valid access key on this machine. Put your key "
+              "in %s (or set NOTREST_ACCESS_KEY) and ask the owner to mint one "
+              "(`atlas.py key --mint --label <who>`)." % ACCESS_KEY_PATH)
+
+
+def refuse_without_key(quiet=False):
+    """EXIT_NOKEY and ONE line, or None when the gate allows. `quiet` is for the packet:
+    a SessionStart hook must inject NOTHING, not an error a model would read as content."""
+    allowed, _reason = access_state()
+    if allowed:
+        return None
+    if not quiet:
+        sys.stderr.write("establish.py: %s\n" % NOKEY_LINE)
+    return EXIT_NOKEY
 
 
 def main(argv=None):
@@ -1822,6 +1919,9 @@ def main(argv=None):
     e.add_argument("--surface", choices=("auto", "codex", "claude", "both"), default="auto",
                    help="foundation surface to write (default: auto — host signals decide, and "
                         "auto never CREATES a foundation file for a host it did not detect)")
+    e.add_argument("--atlas", action="store_true",
+                   help="also install the Atlas bank git hook (calls `atlas.py wire`; the "
+                        "wiring lives there, never a copy of it here)")
     e.add_argument("--git-init", action="store_true",
                    help="also run `git init` (and nothing else) when the root is not a repo")
     e.add_argument("--allow-protocol-weakening", action="store_true",
@@ -1837,6 +1937,13 @@ def main(argv=None):
                    help="the COMPACT packet a SessionStart hook can inject on every "
                         "session (bounded, deterministic, seeds nothing)")
     args = ap.parse_args(argv)
+    if args.cmd in ("check", "establish", "continuation"):
+        # ⛔ THE PACKET REFUSES SILENTLY. `continuation` is what SessionStart injects, so a
+        # refusal there must emit NO packet and NO terminator — a hook that printed an
+        # error would put a licensing message into the model's context on every start.
+        rc = refuse_without_key(quiet=(args.cmd == "continuation"))
+        if rc is not None:
+            return rc
     if args.cmd == "check":
         return cmd_check(args)
     if args.cmd == "establish":

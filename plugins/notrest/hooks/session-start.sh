@@ -10,6 +10,24 @@
 # watching. First statement in the file, before any side effect.
 [ "${NOTREST_UNATTENDED:-}" = "1" ] && exit 0
 
+# ── THE ACCESS KEY (4.8), before ANY side effect — the self-update included. notrest is
+# part of Atlas from this release: without a key the harness does nothing here except say
+# so, in one line, at EVERY SessionStart — this hook has no memory across sessions and
+# does not try to build one; the line is cheap and a keyless machine should be told each
+# time it starts, not once and then silently.
+. "${0%/*}/estate-root.sh" 2>/dev/null || true
+if [ -z "${NR_ACCESS:-}" ]; then
+  case "${NR_ACCESS_WHY:-nokey}" in
+    # `atlas.py key --check` answers licensed-or-not; it does not enumerate WHY not, so
+    # the only distinction worth drawing here is a verifier that could not be asked at
+    # all — an install fault, not a licence one, and a different thing to go and fix.
+    noverifier) NR_ACCESS_TAIL=" (the key verifier is missing from this install — reinstall the plugin)" ;;
+    *)          NR_ACCESS_TAIL="" ;;
+  esac
+  echo "[notrest] notrest is part of Atlas — no valid access key on this machine; ask the owner. The harness is inactive here.${NR_ACCESS_TAIL}"
+  exit 0
+fi
+
 # ── self-update: if this plugin lives in a git clone, quietly pull latest.
 # Fire-and-forget: never blocks session start; --ff-only never clobbers local
 # edits (dirty/diverged clones are silently left alone). Updates apply from

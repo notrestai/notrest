@@ -24,7 +24,8 @@
 # — every hook that writes an estate is run from a scratch estate, never from this repo.
 
 SD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-H="$SD/../../../hooks"
+HSRC="$SD/../../../hooks"          # the real tree: modes, syntax, the skills roster
+H="$HSRC"                          # rebound below to a keyed copy once $WORK exists
 PASS=0
 FAIL=0
 
@@ -38,6 +39,34 @@ no() { FAIL=$((FAIL+1)); echo "FAIL  $1${2:+  — $2}"; }
 CAP="${NR_FIXTURE_CAP:-8}"
 
 WORK="$(mktemp -d)"
+
+# ── THE ACCESS KEY (4.8). From this release the harness only runs where the owner minted
+# a key, so every scratch plugin below needs a keyring and this run needs a key — without
+# them every existing arm would be asserting the DARK path by accident. The key is minted
+# here, lives only in $WORK, and is exported for the whole run; the keyless arms unset it
+# deliberately. mkring() stamps the keyring next to a hooks/ copy, where the verifier
+# looks for it (<plugin>/.access/keys.sha256).
+FIXKEY="fixture-access-key-$$-$RANDOM"
+FIXSHA="$(printf '%s' "$FIXKEY" | python3 -c 'import hashlib,sys;sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+# A scratch plugin is only usable if it can ANSWER the licence question: since the refuter
+# ruling the hooks ask atlas.py rather than reading the keyring themselves, so a copy
+# without the verifier is a copy where every hook is correctly dark — and every arm would
+# be asserting that instead of what it says it tests.
+ATLAS_REAL="$SD/../../../skills/atlas/scripts/atlas.py"
+mkring() {
+  mkdir -p "$1/.access" "$1/skills/atlas/scripts"
+  printf '# fixture keyring\n%s:fixture:2026-09-06\n' "$FIXSHA" > "$1/.access/keys.sha256"
+  [ -f "$ATLAS_REAL" ] && cp -p "$ATLAS_REAL" "$1/skills/atlas/scripts/atlas.py"
+}
+NOKEY_HOME="$WORK/nokey-home"; mkdir -p "$NOKEY_HOME"    # a store with no access-key in it
+export NOTREST_ACCESS_KEY="$FIXKEY"
+export NOTREST_HOME="$WORK/keyhome"; mkdir -p "$NOTREST_HOME"
+
+# The hooks under test are a keyed copy of the real ones: same bytes (cp -p), plus the
+# keyring the tree will ship once lane A lands. $HSRC still points at the original for the
+# arms that read the plugin around it.
+HPLUG="$WORK/hplug"; mkdir -p "$HPLUG"; cp -Rp "$HSRC" "$HPLUG/hooks"; mkring "$HPLUG"
+H="$HPLUG/hooks"
 NOEST="$WORK/not-an-estate"          # no git, no COORD.md -> every estate hook exits 0
 mkdir -p "$NOEST"
 cleanup() {
@@ -285,7 +314,7 @@ echo "── F7 · session-start prints its version with CLAUDE_PLUGIN_ROOT unse
 # plugin root from $0's directory. Copying also keeps the arm off this repo's git — the
 # hook's self-update pull finds no clone under the scratch tree and stays home.
 PLUG="$WORK/plug"; mkdir -p "$PLUG/.claude-plugin"
-cp -R "$H" "$PLUG/hooks"
+cp -R "$H" "$PLUG/hooks"; mkring "$PLUG"
 printf '{\n  "name": "notrest",\n  "version": "9.9.9-fixture"\n}\n' > "$PLUG/.claude-plugin/plugin.json"
 d="$WORK/ssin"; mkdir -p "$d"; : > "$d/in"
 run_bounded "$CAP" "$NOEST" "$d/in" "$PLUG/hooks/session-start.sh" -u CLAUDE_PLUGIN_ROOT
@@ -341,7 +370,7 @@ echo "── 4.7.0 · the unattended daemon says when it is STUCK"
 AEST="$WORK/arest"; mkdir -p "$AEST/pulse" "$AEST/compile"
 printf '# COORD.md\n\n- x\n' > "$AEST/COORD.md"
 AP="$WORK/aplug"; mkdir -p "$AP/.claude-plugin" "$AP/skills/compile/scripts"
-cp -Rp "$H" "$AP/hooks"
+cp -Rp "$H" "$AP/hooks"; mkring "$AP"
 printf '{"name":"notrest","version":"9.9.9-fixture"}' > "$AP/.claude-plugin/plugin.json"
 cat > "$AP/skills/compile/scripts/compile.py" <<'ASTUB'
 #!/usr/bin/env python3
@@ -445,10 +474,10 @@ echo "── 4.7.0 · the commission's DONE-WHEN block becomes a gate, and comes
 # The whole life of a lane's gates: harvested at spawn (narrowly), red at the seat's Stop,
 # retired when the lane stops, swept if the lane never does. Rebuilt after the refuter
 # round: the pairing is an explicit key, and the harvest is fence-aware.
-GP="$WORK/gplug"; mkdir -p "$GP/skills/archivist/scripts"; cp -Rp "$H" "$GP/hooks"
+GP="$WORK/gplug"; mkdir -p "$GP/skills/archivist/scripts"; cp -Rp "$H" "$GP/hooks"; mkring "$GP"
 # the indexer too: these arms bank records, and $LP/$LIDX are built by the learnings
 # section further down — using them here silently gave the F1 arm no hook at all
-GIDX_SRC="$H/../skills/archivist/scripts/index.py"
+GIDX_SRC="$HSRC/../skills/archivist/scripts/index.py"
 [ -f "$GIDX_SRC" ] && cp -p "$GIDX_SRC" "$GP/skills/archivist/scripts/index.py"
 GIDX="$GP/skills/archivist/scripts/index.py"
 GEST="$WORK/gest"; mkdir -p "$GEST/archive" "$WORK/gtr"
@@ -673,7 +702,7 @@ echo "── 4.7.0 · the pulse dispatches AUTO-BUILD only as far as the marker 
 # A stub compile.py records its argv and answers `auto` as each arm dictates: the pulse's
 # job is to obey that answer, and this arm is about the pulse, not about compile.py.
 PP="$WORK/pplug"; mkdir -p "$PP/skills/compile/scripts"
-cp -Rp "$H" "$PP/hooks"
+cp -Rp "$HSRC" "$PP/hooks"; mkring "$PP"
 cat > "$PP/skills/compile/scripts/compile.py" <<'CSTUB'
 #!/usr/bin/env python3
 import os, sys
@@ -722,6 +751,30 @@ case "$CALLS" in
     esac ;;
   *) no "pulse: unattended calls both" "calls=$CALLS" ;;
 esac
+# ── THE ACCESS KEY (lane S, 2026-09-06): a keyless machine must not run the readings and
+# above all must not reach the two verbs that spend tokens.
+PEST2="$WORK/pest2"; mkdir -p "$PEST2"; printf '# COORD.md\n\n- x\n' > "$PEST2/COORD.md"
+printf '%s' unattended > "$PP/mode.txt"; : > "$PP/calls.log"
+PSHIM="$WORK/pshim"; mkdir -p "$PSHIM"; : > "$PSHIM/forks.log"
+printf '#!/bin/sh\necho "$@" >> "%s/forks.log"\nexec /usr/bin/python3 "$@"\n' "$PSHIM" > "$PSHIM/python3"
+chmod 755 "$PSHIM/python3"
+( cd "$PEST2" && env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$NOKEY_HOME" "PATH=$PSHIM:$PATH" \
+    bash "$PP/hooks/estate-pulse.sh" "$PEST2" manual >/dev/null 2>&1 )
+sleep 1
+KCALLS="$(tr '\n' ',' < "$PP/calls.log")"
+# V8 (refuter): the gate used to sit AFTER the double-fork, so a keyless machine spawned a
+# detached daemon before discovering it had no licence. Nothing may be left running.
+# THE FORK ITSELF IS THE THING TO SEE, and it is transient — a child that starts and then
+# exits at a later gate leaves nothing to count. The daemon block calls `python3` off
+# PATH; a shim there logs any attempt, so "did it fork before asking?" becomes a file.
+KKIDS="$(pgrep -f "estate-pulse.sh $PEST2" 2>/dev/null | wc -l | tr -d ' ')"
+# `grep -c` prints 0 AND exits 1 on an empty file, so `|| echo 0` used to append a second
+# zero and the comparison never matched — the arm failed while the hook was correct.
+KFORK="$(wc -l < "$PSHIM/forks.log" 2>/dev/null | tr -d ' ')"; [ -n "$KFORK" ] || KFORK=0
+if [ -z "$KCALLS" ] && [ ! -e "$PEST2/pulse/pulse.json" ] && [ "$KKIDS" = "0" ] && [ "$KFORK" = "0" ]; then
+  ok "pulse: a KEYLESS machine forks nothing, writes nothing, and reaches neither verb (V8)"
+else no "pulse: keyless forks nothing and spends nothing" "calls=${KCALLS:-none} pulse.json=$([ -e "$PEST2/pulse/pulse.json" ] && echo written || echo none) children=$KKIDS forks=$KFORK"; fi
+
 # and the dispatch must never make the pulse wait: auto-run is detached and self-locking
 cat > "$PP/skills/compile/scripts/compile.py" <<'CSTUB2'
 #!/usr/bin/env python3
@@ -797,8 +850,8 @@ MODEBAD=""
 for f in "$H"/*.sh "$H"/gate-check.py; do
   [ -x "$f" ] || MODEBAD="$MODEBAD $(basename "$f")"
 done
-if [ -n "$MODEBAD" ]; then no "all 12 hook scripts are executable" "not +x:$MODEBAD"
-else ok "all 12 hook scripts are executable"; fi
+if [ -n "$MODEBAD" ]; then no "every hook script is executable" "not +x:$MODEBAD (whoever owns that file: chmod 755)"
+else ok "every hook script is executable"; fi
 if [ -x "$H/hooks.json" ]; then no "hooks.json is not executable" "it is +x"
 else ok "hooks.json is not executable"; fi
 
@@ -808,12 +861,12 @@ echo "── 4.6.3 · THE LEARNINGS LOOP (Stop gate · spawn digest · router li
 # and WRITE, and a fixture that uses the live ledger as its fixture is the exact defect
 # the first banked learning is about.
 LP="$WORK/lplug"; mkdir -p "$LP/skills/archivist/scripts"
-cp -Rp "$H" "$LP/hooks"
-IDX_SRC="$H/../skills/archivist/scripts/index.py"
+cp -Rp "$H" "$LP/hooks"; mkring "$LP"
+IDX_SRC="$HSRC/../skills/archivist/scripts/index.py"
 [ -f "$IDX_SRC" ] && cp -p "$IDX_SRC" "$LP/skills/archivist/scripts/index.py"
 # the suite's skill names are read off disk by router.sh and spawn-gate.sh — give the
 # scratch plugin the same roster so the scope tokens are the real ones
-for sk in "$H"/../skills/*/; do [ -d "$sk" ] && mkdir -p "$LP/skills/$(basename "$sk")"; done
+for sk in "$HSRC"/../skills/*/; do [ -d "$sk" ] && mkdir -p "$LP/skills/$(basename "$sk")"; done
 
 LEST="$WORK/lest"; mkdir -p "$LEST/archive"
 lstore() { printf '%s\n' "$1" > "$LEST/archive/findings.jsonl"; }
@@ -1010,7 +1063,7 @@ fi
 # The integration arms above test the other half. The stub reads its answer from a file,
 # so no fixture quoting can ever change the JSON the hook actually sees.
 CP="$WORK/cplug"; mkdir -p "$CP/skills/archivist/scripts"
-cp -Rp "$H" "$CP/hooks"
+cp -Rp "$H" "$CP/hooks"; mkring "$CP"
 CEST="$WORK/cest"; mkdir -p "$CEST/archive"
 printf '# COORD.md\n\n- [2026-09-05 05:20Z] [owner] CORRECTION: bank the lesson\n' > "$CEST/COORD.md"
 : > "$CEST/archive/findings.jsonl"
@@ -1191,6 +1244,251 @@ sys.stdout.write(str(n))' "$ADDEST/archive/findings.jsonl")"
     no "the add command the Stop gate prints is accepted by index.py add" \
        "rc=$ADDRC records=$ADDN — $(head -c 120 "$WORK/adderr")"
   fi
+fi
+
+echo "── 4.8 · THE ACCESS KEY: no key, no harness — but still every law"
+# notrest is part of Atlas from 4.8. Without a key the harness says so once and does
+# nothing else; WITH a key nothing changes (every other arm in this file is that half of
+# the proof). The deny rules are the deliberate exception: a machine without a key must
+# not become a machine without laws.
+KEST="$WORK/kest"; mkdir -p "$KEST/archive" "$KEST/pulse" "$WORK/ktr"
+printf '# COORD.md\n\n- x\n' > "$KEST/COORD.md"; : > "$KEST/archive/findings.jsonl"
+KP="$WORK/kplug"; mkdir -p "$KP"; cp -Rp "$H" "$KP/hooks"; mkring "$KP"
+: > "$WORK/k-empty"
+PROMPT_PAY='{"hook_event_name":"UserPromptSubmit","prompt":"can you research how vector databases handle deletes in plugins/notrest/hooks/router.sh"}'
+# nokey <hook> <payload> -> rc in $RB_RC, output in $WORK/out (+err)
+nokey() {
+  printf '%s' "$2" > "$WORK/payload"
+  run_bounded "$CAP" "$KEST" "$WORK/payload" "$KP/hooks/$1" \
+    -u NOTREST_ACCESS_KEY "NOTREST_HOME=$NOKEY_HOME"
+}
+nokey session-start.sh ""
+KLINES="$(grep -c . "$WORK/out" 2>/dev/null)"
+case "$(cat "$WORK/out")" in
+  *"notrest is part of Atlas"*"The harness is inactive here."*)
+      if [ "$KLINES" = "1" ]; then ok "access: no key -> EXACTLY one line, and it is the Atlas line"
+      else no "access: no key -> exactly one line" "got $KLINES lines"; fi ;;
+  *) no "access: no key -> the Atlas line" "got: $(head -c 90 "$WORK/out")" ;;
+esac
+KQUIET=1
+for kh in coord-nudge.sh router.sh pre-compact.sh session-end.sh completion-gate.sh; do
+  nokey "$kh" "$PROMPT_PAY"
+  KB="$(wc -c < "$WORK/out" | tr -d ' ')"; KE="$(wc -c < "$WORK/err" | tr -d ' ')"
+  [ "$RB_RC" = "0" ] && [ "$KB" = "0" ] && [ "$KE" = "0" ] || { KQUIET=""; KWHY="$kh rc=$RB_RC out=${KB}B err=${KE}B"; }
+done
+nokey agent-ledger.sh '{"hook_event_name":"SubagentStop","agent_id":"nokeylane"}'
+[ "$RB_RC" = "0" ] || { KQUIET=""; KWHY="agent-ledger rc=$RB_RC"; }
+if [ -n "$KQUIET" ] && [ ! -e "$KEST/COORD-AGENTS.md" ] \
+   && ! grep -q "auto-cushion" "$KEST/COORD.md" 2>/dev/null; then
+  ok "access: no key -> every nudger, writer and gate is silent and writes nothing"
+else no "access: no key -> the writers are silent" "${KWHY:-a writer touched the estate}"; fi
+# the deny rules are NOT gated
+nokey spawn-gate.sh '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"l","model":"haiku","subagent_type":"general-purpose","prompt":"x"}}'
+if [ "$RB_RC" = "2" ]; then ok "access: no key -> spawn-gate STILL denies haiku (laws outlive the licence)"
+else no "access: no key -> the spawn deny survives" "rc=$RB_RC"; fi
+SHADOW_CMD="claude plugin ins""tall notrest"
+python3 -c 'import json,sys
+print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","cwd":sys.argv[1],
+                  "tool_input":{"command":sys.argv[2]}}))' "$KEST" "$SHADOW_CMD" > "$WORK/payload"
+run_bounded "$CAP" "$KEST" "$WORK/payload" "$KP/hooks/pretool-gate.sh" \
+  -u NOTREST_ACCESS_KEY "NOTREST_HOME=$NOKEY_HOME"
+if [ "$RB_RC" = "2" ]; then ok "access: no key -> pretool-gate STILL refuses the shadow flow"
+else no "access: no key -> the shadow guard survives" "rc=$RB_RC"; fi
+# and the injector stays out of the prompt
+printf '%s\n' '{"id":"L-1","kind":"learning","ts":"2026-09-06T01:00:00Z","tag":"LEARNED","statement":"x","evidence":[{"type":"path","ref":"briefs/a.md","label":"cited"}],"scope":["estate"],"source":"seat"}' > "$KEST/archive/findings.jsonl"
+nokey spawn-gate.sh '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"l","model":"opus","subagent_type":"general-purpose","prompt":"fix plugins/notrest/hooks/router.sh"}}'
+if [ "$RB_RC" = "0" ] && [ "$(wc -c < "$WORK/out" | tr -d ' ')" = "0" ]; then
+  ok "access: no key -> no digest is injected into a lawful lane"
+else no "access: no key -> nothing is injected" "rc=$RB_RC out=$(head -c 60 "$WORK/out")"; fi
+# an unattended run needs the key too
+run_bounded "$CAP" "$KEST" "$WORK/k-empty" "$KP/hooks/session-start.sh" \
+  -u NOTREST_ACCESS_KEY "NOTREST_HOME=$NOKEY_HOME" NOTREST_UNATTENDED=1
+if [ "$(wc -c < "$WORK/out" | tr -d ' ')" = "0" ]; then
+  ok "access: an UNATTENDED run without a key gets nothing, not even the banner"
+else no "access: unattended without a key is silent" "bytes=$(wc -c < "$WORK/out")"; fi
+# revocation is a deleted line
+printf '# keyring\n' > "$KP/.access/keys.sha256"
+run_bounded "$CAP" "$KEST" "$WORK/k-empty" "$KP/hooks/session-start.sh" "NOTREST_HOME=$NOKEY_HOME"
+case "$(cat "$WORK/out")" in
+  *"notrest is part of Atlas"*"The harness is inactive here."*)
+      [ "$(grep -c . "$WORK/out")" = "1" ] && ok "access: an EMPTY keyring is dark, in one line" \
+        || no "access: an empty keyring is dark in one line" "got $(grep -c . "$WORK/out") lines" ;;
+  *) no "access: an empty keyring is dark" "got: $(head -c 90 "$WORK/out")" ;;
+esac
+printf '# keyring\nnot-a-hash:whatever\n0000:bad:line\n' > "$KP/.access/keys.sha256"
+run_bounded "$CAP" "$KEST" "$WORK/k-empty" "$KP/hooks/session-start.sh" "NOTREST_HOME=$NOKEY_HOME"
+KL="$(grep -c . "$WORK/out")"
+case "$(cat "$WORK/out")" in
+  *"notrest is part of Atlas"*) [ "$KL" = "1" ] && ok "access: a MALFORMED keyring fails closed, in one line" \
+        || no "access: malformed keyring -> one line" "got $KL lines" ;;
+  *) no "access: a malformed keyring fails closed" "got: $(head -c 90 "$WORK/out")" ;;
+esac
+mkring "$KP"
+printf '%s' "$FIXKEY" > "$NOKEY_HOME/access-key"
+run_bounded "$CAP" "$KEST" "$WORK/k-empty" "$KP/hooks/session-start.sh" -u NOTREST_ACCESS_KEY "NOTREST_HOME=$NOKEY_HOME"
+# NO CACHE ANYWHERE (refuter ruling): the verdict is asked for every time. A marker that
+# can be forged is worse than the ~50 ms it saved.
+if [ "$(grep -c . "$WORK/out")" -gt 1 ] && [ ! -e "$NOKEY_HOME/cache/access-ok" ]; then
+  ok "access: a key in ~/.notrest/access-key works, and NOTHING is cached (no forgeable marker)"
+else no "access: the key FILE works and caches nothing" "lines=$(grep -c . "$WORK/out") marker=$([ -e "$NOKEY_HOME/cache/access-ok" ] && echo present || echo none)"; fi
+if [ ! -e "$KEST/pulse/access-ok" ] && [ ! -e "$KEST/.access-ok" ]; then
+  ok "access: the verdict cache never lands in the estate (it would travel with a clone)"
+else no "access: the cache stays out of the estate" "a marker was written into the estate"; fi
+rm -f "$NOKEY_HOME/access-key"
+
+# ── PARITY WITH THE AUTHORITY (lane A, 2026-09-06). estate-root.sh's nr_access_ok is a
+# FAST reimplementation of the same question `atlas.py key --check` answers (exit 0 valid,
+# 7 not) — it exists because per-prompt hooks cannot afford a python start. Two
+# implementations of one law drift; this arm holds them to the same verdict on the same
+# keyring and the same key file, across every state the keyring can be in.
+APLUG="$WORK/aplug"; mkdir -p "$APLUG/skills/atlas/scripts"
+cp -Rp "$H" "$APLUG/hooks"; mkring "$APLUG"
+ATLAS_SRC="$HSRC/../skills/atlas/scripts/atlas.py"
+# ONE STORE, TWO READERS. atlas.py resolves the key file as ~/.notrest/access-key (HOME);
+# the hook also honours $NOTREST_HOME, the same override the auto-build marker uses. The
+# arm points BOTH at the same file so it tests the shared contract rather than that
+# difference — which is reported to lane A separately, since a machine that sets
+# NOTREST_HOME would otherwise get "the hook says licensed, atlas.py says not".
+AHOME="$WORK/ahome/.notrest"; mkdir -p "$AHOME"   # ~/.notrest under the arm's HOME
+if [ -f "$ATLAS_SRC" ]; then
+  cp -p "$ATLAS_SRC" "$APLUG/skills/atlas/scripts/atlas.py"
+  parity() {   # parity <label> <key-in-the-file|-> ; compares the two verdicts
+    if [ "$2" = "-" ]; then rm -f "$AHOME/access-key"; else printf '%s' "$2" > "$AHOME/access-key"; fi
+    rm -rf "$AHOME/cache"
+    # the SAME environment to both, because the hook now has no opinion of its own: it
+    # asks atlas.py and takes the answer. Anything else would be testing the fixture.
+    MINE="$(env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$WORK/ahome" bash -c '. "$1" 2>/dev/null; [ -n "${NR_ACCESS:-}" ] && echo ok || echo no' _ "$APLUG/hooks/estate-root.sh" 2>/dev/null)"
+    env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$WORK/ahome" python3 "$APLUG/skills/atlas/scripts/atlas.py" key --check --quiet >/dev/null 2>&1
+    case "$?:$MINE" in
+      0:ok|7:no) ok "access parity · $1 — the hook and atlas.py key --check agree" ;;
+      *) no "access parity · $1" "atlas.py said $? , the hook said $MINE" ;;
+    esac
+  }
+  parity "a valid key"        "$FIXKEY"
+  parity "a wrong key"        "not-the-key"
+  parity "no key file at all" "-"
+  printf '# keyring\n' > "$APLUG/.access/keys.sha256"
+  parity "an EMPTY keyring"   "$FIXKEY"
+  printf '# keyring\n%s:other:2026-09-06\n' "$(printf 'someone-elses-key' | python3 -c 'import hashlib,sys;sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')" > "$APLUG/.access/keys.sha256"
+  parity "a REVOKED key (its line deleted)" "$FIXKEY"
+  mkring "$APLUG"
+  parity "the key restored"   "$FIXKEY"
+
+  # ── B1 (refuter, BLOCKER): the old fast path trusted a marker file's existence and
+  # mtime, so a directory the caller controls answered LICENSED. There is no cache now,
+  # and the forged marker must change nothing.
+  mkdir -p "$WORK/evil/cache"; echo bogus > "$WORK/evil/access-key"; : > "$WORK/evil/cache/access-ok"
+  EVIL="$(env -u NOTREST_ACCESS_KEY "NOTREST_HOME=$WORK/evil" "HOME=$WORK/evil-home" bash -c '. "$1" 2>/dev/null; [ -n "${NR_ACCESS:-}" ] && echo ok || echo no' _ "$APLUG/hooks/estate-root.sh" 2>/dev/null)"
+  if [ "$EVIL" = "no" ]; then ok "access: a FORGED cache marker beside a bogus key grants nothing (B1 repro)"
+  else no "access: the forged-marker repro is dark" "the hook said $EVIL"; fi
+  # ── D1: keyring line shapes the shell used to admit and atlas.py rejects. The hook has
+  # no opinion now, so every shape must land on atlas.py's verdict, whatever it is.
+  printf '%s' "$FIXKEY" > "$AHOME/access-key"
+  d1() {
+    printf '# keyring\n%s\n' "$1" > "$APLUG/.access/keys.sha256"
+    MINE="$(env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$WORK/ahome" bash -c '. "$1" 2>/dev/null; [ -n "${NR_ACCESS:-}" ] && echo ok || echo no' _ "$APLUG/hooks/estate-root.sh" 2>/dev/null)"
+    env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$WORK/ahome" python3 "$APLUG/skills/atlas/scripts/atlas.py" key --check --quiet >/dev/null 2>&1
+    case "$?:$MINE" in 0:ok|7:no) return 0 ;; *) D1BAD="$D1BAD [$2]"; return 0 ;; esac
+  }
+  D1BAD=""
+  d1 "$(printf '%s' "$FIXSHA" | tr 'a-f' 'A-F'):fixture:2026-09-06" "uppercase hash"
+  d1 "$FIXSHA:fixture:2026-9-6"        "short date"
+  d1 "$FIXSHA:fixture:not-a-date"      "bad date"
+  d1 "$FIXSHA::2026-09-06"             "empty label"
+  d1 "$FIXSHA:  :2026-09-06"           "spaced label"
+  d1 "$FIXSHA:fixture:2026-09-06 junk" "trailing junk"
+  if [ -z "$D1BAD" ]; then ok "access: six odd keyring line shapes — hook verdict == atlas verdict (D1)"
+  else no "access: the odd keyring shapes agree" "diverged on:$D1BAD"; fi
+  mkring "$APLUG"
+  # ── D2: a key FILE with a leading comment or a blank line, and NOTREST_ACCESS_KEY_FILE.
+  # atlas.py owns all three readings; the hook inherits them by construction.
+  # d1() accumulates into $D1BAD; reset it so a D2 failure names D2 shapes only
+  D2BAD=""; D1BAD=""
+  printf '# my atlas key\n%s\n' "$FIXKEY" > "$AHOME/access-key"; d1 "$FIXSHA:fixture:2026-09-06" "commented key file"
+  printf '\n%s\n' "$FIXKEY" > "$AHOME/access-key"; d1 "$FIXSHA:fixture:2026-09-06" "blank-line key file"
+  [ -n "$D1BAD" ] && D2BAD="$D1BAD"
+  printf '%s' "$FIXKEY" > "$WORK/elsewhere.key"; rm -f "$AHOME/access-key"
+  # NOTREST_ACCESS_KEY_FILE is now STRIPPED before the verifier runs (V1 ruling): a caller
+  # may bring its own key, never its own place to read one from. So the hook is dark here
+  # while atlas.py on its own honours the variable — a deliberate divergence, asserted in
+  # both directions rather than left to be discovered.
+  MINE="$(env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$WORK/ahome" "NOTREST_ACCESS_KEY_FILE=$WORK/elsewhere.key" bash -c '. "$1" 2>/dev/null; [ -n "${NR_ACCESS:-}" ] && echo ok || echo no' _ "$APLUG/hooks/estate-root.sh" 2>/dev/null)"
+  env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$WORK/ahome" "NOTREST_ACCESS_KEY_FILE=$WORK/elsewhere.key" python3 "$APLUG/skills/atlas/scripts/atlas.py" key --check --quiet >/dev/null 2>&1
+  case "$?:$MINE" in
+    0:no) ;;                                   # atlas honours it, the hook refuses it
+    *) D2BAD="$D2BAD [NOTREST_ACCESS_KEY_FILE not stripped]" ;;
+  esac
+  if [ -z "$D2BAD" ]; then ok "access: odd key-file shapes agree; NOTREST_ACCESS_KEY_FILE is stripped by the hook (D2)"
+  else no "access: the key-file shapes agree" "diverged on:$D2BAD"; fi
+  # ── V1/V2/V5c (refuter, 2026-09-06): the verdict must come from the PINNED ring, a
+  # verifier that proves which ring it read, and an absolute hook directory.
+  vsay() {   # vsay <label> <plugin-dir> [env...] -> the hook's verdict for that plugin
+    shift 0
+    env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$WORK/ahome" "${@:3}" \
+      bash -c '. "$1" 2>/dev/null; printf "%s:%s" "${NR_ACCESS:-no}" "$NR_ACCESS_WHY"' _ "$2/hooks/estate-root.sh" 2>/dev/null
+  }
+  vplug() {  # vplug <name> <atlas.py body> -> a plugin dir with the REAL ring
+    VP="$WORK/v-$1"; mkdir -p "$VP/hooks" "$VP/.access" "$VP/skills/atlas/scripts"
+    cp -p "$H"/estate-root.sh "$VP/hooks/"
+    cp -p "$APLUG/.access/keys.sha256" "$VP/.access/keys.sha256"
+    printf '%s' "$2" > "$VP/skills/atlas/scripts/atlas.py"
+    printf '%s' "$FIXKEY" > "$AHOME/access-key"
+  }
+  RINGHASH="$(/usr/bin/shasum -a 256 "$APLUG/.access/keys.sha256" 2>/dev/null | cut -c1-12)"
+  # V1 · a caller-chosen keyring must not be consulted
+  printf '%s' "evil-key" > "$WORK/evil.key"
+  printf '%s:evil:2026-09-06\n' "$(printf 'evil-key' | python3 -c 'import hashlib,sys;sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')" > "$WORK/evil-ring.sha256"
+  V="$(vsay x "$APLUG" "NOTREST_KEYRING=$WORK/evil-ring.sha256" "NOTREST_ACCESS_KEY=evil-key")"
+  case "$V" in no:*) ok "access V1: a caller-chosen NOTREST_KEYRING is not consulted ($V)" ;;
+    *) no "access V1: the pinned ring wins" "$V" ;; esac
+  # V1b · a symlinked keyring is refused rather than followed
+  VS="$WORK/v-symlink"; mkdir -p "$VS/hooks" "$VS/.access" "$VS/skills/atlas/scripts"
+  cp -p "$H"/estate-root.sh "$VS/hooks/"; cp -p "$APLUG/skills/atlas/scripts/atlas.py" "$VS/skills/atlas/scripts/"
+  ln -sf "$APLUG/.access/keys.sha256" "$VS/.access/keys.sha256"
+  V="$(vsay x "$VS")"
+  case "$V" in no:ring) ok "access V1b: a SYMLINKED keyring is refused, not followed ($V)" ;;
+    *) no "access V1b: a symlinked ring is refused" "$V" ;; esac
+  # V2 · the sentinel binds the answer to the ring that was read
+  vplug wrongring "$(printf '#!/usr/bin/env python3\nprint("notrest-access: ok ring=deadbeefcafe")\n')"
+  V="$(vsay x "$WORK/v-wrongring")"
+  case "$V" in no:ringmismatch) ok "access V2: a verifier that names the WRONG ring is refused ($V)" ;;
+    *) no "access V2: the ring fingerprint must match" "$V" ;; esac
+  vplug nosentinel "$(printf '#!/usr/bin/env python3\nprint("all good")\n')"
+  V="$(vsay x "$WORK/v-nosentinel")"
+  case "$V" in no:nosentinel) ok "access V2b: exit 0 with NO sentinel is refused (an exit code is only a claim)" ;;
+    *) no "access V2b: the sentinel is required" "$V" ;; esac
+  # a sentinel that names ANOTHER ring is dark even when the hash is right — a correct
+  # fingerprint for somebody else's keyring is still somebody else's keyring
+  vplug wrongpath "$(printf '#!/usr/bin/env python3\nprint("notrest-access: ok ring=%s path=/tmp/somebody-elses.sha256")\n' "$RINGHASH")"
+  V="$(vsay x "$WORK/v-wrongpath")"
+  case "$V" in no:ringpath) ok "access V2c: a sentinel naming ANOTHER ring is refused ($V)" ;;
+    *) no "access V2c: the sentinel must name the pinned ring" "$V" ;; esac
+  vplug rightring "$(printf '#!/usr/bin/env python3\nprint("notrest-access: ok ring=%s path=%s")\n' "$RINGHASH" "$WORK/v-rightring/.access/keys.sha256")"
+  V="$(vsay x "$WORK/v-rightring")"
+  case "$V" in 1:ok) ok "access V2d: the right fingerprint AND the right path pass (the guard is not just deaf)" ;;
+    *) no "access V2d: a correct sentinel passes" "$V" ;; esac
+  # V5c · a relative hook directory is never resolved against the caller's cwd
+  VH="$WORK/v-rel"; mkdir -p "$VH/hooks" "$VH/.access" "$VH/skills/atlas/scripts"
+  cp -p "$H"/estate-root.sh "$VH/hooks/"; cp -p "$APLUG/.access/keys.sha256" "$VH/.access/"
+  printf '#!/usr/bin/env python3\nprint("notrest-access: ok ring=%s")\n' "$RINGHASH" > "$VH/skills/atlas/scripts/atlas.py"
+  V="$(cd "$VH/hooks" && env -u NOTREST_ACCESS_KEY -u NOTREST_HOME "HOME=$WORK/ahome" bash -c '. estate-root.sh 2>/dev/null; printf "%s:%s" "${NR_ACCESS:-no}" "$NR_ACCESS_WHY"' 2>/dev/null)"
+  case "$V" in no:hookdir) ok "access V5c: a RELATIVE hook dir under a hijacked cwd is dark ($V)" ;;
+    *) no "access V5c: the hook dir must be absolute" "$V" ;; esac
+  rm -f "$AHOME/access-key"
+
+  # ── the verifier itself missing is an INSTALL fault, and says so
+  NOATLAS="$WORK/noatlas"; mkdir -p "$NOATLAS"; cp -Rp "$H" "$NOATLAS/hooks"
+  mkdir -p "$NOATLAS/.access"; cp -p "$APLUG/.access/keys.sha256" "$NOATLAS/.access/"
+  run_bounded "$CAP" "$KEST" "$WORK/k-empty" "$NOATLAS/hooks/session-start.sh"
+  case "$(cat "$WORK/out")" in
+    *"the key verifier is missing from this install"*)
+        [ "$(grep -c . "$WORK/out")" = "1" ] && ok "access: no atlas.py -> dark, one line, and it names the install fault" \
+          || no "access: the noverifier line is alone" "got $(grep -c . "$WORK/out") lines" ;;
+    *) no "access: a missing verifier is dark and named" "got: $(head -c 90 "$WORK/out")" ;;
+  esac
+else
+  echo "SKIP  atlas.py is not in this tree — the parity arms are UNRUN, not passed"
+  FAIL=$((FAIL+1))
 fi
 
 echo "── syntax: every shipped hook still parses"

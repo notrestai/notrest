@@ -11,6 +11,8 @@ Exit: 0 all pass · 5 warnings only · 6 any FAIL · 2 usage error.
 import argparse
 import glob
 import importlib.util
+import shutil
+import hashlib
 import json
 import os
 import py_compile
@@ -1074,7 +1076,361 @@ def clip_line(text, n):
     return t if len(t) <= n else t[:n - 1] + "\u2026"
 
 
+KEYRING_REL = os.path.join(".access", "keys.sha256")
+# Hooks that WRITE to the estate or INJECT into the model's context. Without a key these
+# must do neither — and must still exit 0, because a hook that fails loudly breaks every
+# session on a machine whose licence lapsed.
+# ⛔ EACH HOOK IS DRIVEN WITH A REAL PAYLOAD OF ITS OWN EVENT. The first cut fed every
+# hook `{}` — a payload that reaches no writing and no denying path — so deleting the gate
+# from coord-nudge.sh still PASSED and adding a gate to spawn-gate's deny (making a
+# keyless machine LAWLESS) still PASSED. A gate check that never reaches the gated code is
+# a green light wired to nothing. WRITERS get input that would make them write; DENIERS get
+# input they must refuse.
+WRITER_HOOKS = {
+    "coord-nudge.sh": {"hook_event_name": "UserPromptSubmit",
+                       "prompt": "ship the release and bank the ledger line"},
+    "agent-ledger.sh": {"hook_event_name": "SubagentStop", "agent_id": "eval-probe",
+                        "transcript_path": "/nonexistent/eval-probe.jsonl",
+                        "description": "eval access-gate probe"},
+    "session-end.sh": {"hook_event_name": "Stop", "reason": "eval access-gate probe"},
+    "router.sh": {"hook_event_name": "UserPromptSubmit", "prompt": "research the cache"},
+}
+BANNER_HOOK = "session-start.sh"
+BANNER_PAYLOAD = {"hook_event_name": "SessionStart", "source": "startup"}
+# A Task spawned with no model is the spawn gate's whole reason to exist; a Bash command
+# the pretool gate's own rules deny is the other. Both must still be refused (rc 2) on a
+# machine whose licence lapsed — otherwise an expired key is a security downgrade.
+DENY_HOOKS = ("spawn-gate.sh", "pretool-gate.sh")
+SPAWN_DENY_PAYLOAD = {"hook_event_name": "PreToolUse", "tool_name": "Task",
+                      "tool_input": {"description": "a lane", "prompt": "do the work"}}
+GATED_HOOKS = tuple(WRITER_HOOKS) + (BANNER_HOOK,)
+# ⛔ ONE HOOK IS ALLOWED TO SPEAK, AND ONLY TO SAY THIS. The docket gives SessionStart a
+# single banner line without a key — otherwise a machine whose licence lapsed gets a
+# harness that silently does nothing and an operator with no idea why. The exemption is
+# BOUNDED: one line, and it must be the Atlas notice.
+# ANCHORED, by ruling: the line must OPEN with the notrest tag and the Atlas sentence.
+# An unanchored match would let a hook print its own paragraph and end with the notice.
+BANNER_RE = re.compile(r"^\[notrest\] notrest is part of Atlas")
+NORM_CASE_RE = re.compile(r'\*"\s([a-z0-9 ]+?)\s"\*')
+
+
+def _derived_deny_probe(hook_text):
+    """A command the hook's OWN rules deny, built from its `case "$NORM"` patterns.
+
+    ⛔ DERIVED, NEVER TYPED. Two reasons, the second load-bearing: a literal consumer-flow
+    command sitting in this file trips the very gate it tests every time anyone greps or
+    edits the tree; and a hardcoded phrase quietly stops probing anything the day the deny
+    list changes. The gate normalises a command to lowercase alphanumerics separated by
+    single spaces before matching, so a pattern lifted out of the case statement IS a
+    denied command once the qualifying token the second case wants is appended.
+    """
+    if not hook_text:
+        return None
+    pats = NORM_CASE_RE.findall(hook_text)
+    if not pats:
+        return None
+    m = re.search(r'case\s+"\$NORM"\s+in\s+\*([a-z]+)\*\|', hook_text)
+    return (pats[0] + (" " + m.group(1) if m else "")).strip()
+
+
+def _tree_state(root):
+    """Every file under `root` with its size — enough to see a hook write or append."""
+    out = set()
+    for base, _dirs, files in os.walk(root):
+        for fn in files:
+            fp = os.path.join(base, fn)
+            try:
+                out.add("%s:%d" % (os.path.relpath(fp, root), os.path.getsize(fp)))
+            except OSError:
+                pass
+    return out
+
+
+def _is_dark(stdout):
+    """Dark = said nothing, or said exactly the one sanctioned Atlas notice. A gate that
+    was fooled does not go quiet — it emits the live banner, the nudges, the packet."""
+    lines = [l for l in (stdout or "").splitlines() if l.strip()]
+    return (not lines) or (len(lines) == 1 and BANNER_RE.search(lines[0]))
+
+
+def _scratch_plugin(plug):
+    """A throwaway copy of the plugin's hooks + verifier + a keyring of our own.
+
+    ⛔ NEVER THE REAL KEY, NEVER THE REAL RING. These probes need to swap the verifier and
+    poison $PATH; doing that against the shipped plugin would either fail on a machine
+    whose operator holds a licence, or corrupt the install. Returns (dir, minted_key) or
+    (None, None) when the plugin has no verifier to copy.
+    """
+    atlas_src = os.path.join(plug, "skills", "atlas", "scripts", "atlas.py")
+    hooks_src = os.path.join(plug, "hooks")
+    if not os.path.isfile(atlas_src) or not os.path.isdir(hooks_src):
+        return None, None
+    d = tempfile.mkdtemp(prefix="notrest-eval-plug-")
+    try:
+        shutil.copytree(hooks_src, os.path.join(d, "hooks"))
+        os.makedirs(os.path.join(d, "skills", "atlas", "scripts"))
+        shutil.copy2(atlas_src, os.path.join(d, "skills", "atlas", "scripts", "atlas.py"))
+        os.makedirs(os.path.join(d, ".access"))
+        key = "eval-scratch-key-%d" % os.getpid()
+        with open(os.path.join(d, ".access", "keys.sha256"), "w", encoding="utf-8") as fh:
+            fh.write("# eval scratch keyring\n%s:eval:2026-09-06\n"
+                     % hashlib.sha256(key.encode("utf-8")).hexdigest())
+        return d, key
+    except (OSError, shutil.Error):
+        return None, None
+
+
+def _stub_bin():
+    """A directory holding a fake `python3` that FORGES a passing verifier reply.
+
+    ⛔ A STUB THAT ONLY EXITS 0 IS TOO WEAK A PROBE. The sentinel and the ring-hash check
+    both refuse a silent exit-0, so such a stub stays dark even with the /usr/bin/python3
+    preference removed — the arm would pass for the wrong reason and the preference could
+    be deleted unnoticed. This stub does what a real attacker would: it reads the
+    `--keyring` path it was handed, hashes it, and prints the exact sentinel the hook
+    demands. Only the preference for the system interpreter stops it.
+    """
+    d = tempfile.mkdtemp(prefix="notrest-eval-bin-")
+    fp = os.path.join(d, "python3")
+    with open(fp, "w", encoding="utf-8") as fh:
+        fh.write(
+            "#!/bin/sh\n"
+            "ring=''\n"
+            "prev=''\n"
+            "for a in \"$@\"; do\n"
+            "  [ \"$prev\" = --keyring ] && ring=\"$a\"\n"
+            "  prev=\"$a\"\n"
+            "done\n"
+            "if [ -n \"$ring\" ] && [ -f \"$ring\" ]; then\n"
+            "  h=$(/usr/bin/shasum -a 256 \"$ring\" 2>/dev/null | cut -c1-12)\n"
+            "  [ -n \"$h\" ] && printf 'notrest-access: ok ring=%s path=%s\\n' \"$h\" \"$ring\"\n"
+            "fi\n"
+            "exit 0\n")
+    os.chmod(fp, 0o755)
+    return d
+
+
+def check_access_gate(root, plug, _skills):
+    """4.8: without an access key, does the harness go QUIET without going PERMISSIVE?
+
+    Two failure shapes, opposite in direction and both fatal: a hook that still writes or
+    injects (the gate is decorative), and a hook that stops DENYING (an expired licence
+    becomes a security downgrade). Driven for real — each hook is RUN with the key removed
+    and its output and exit code read. Nothing is inferred from source text.
+    """
+    ID = "ACCESS-GATE"
+    law = ("without a valid access key every writing/injecting hook is silent and exits 0, "
+           "the deny rules still deny, the committed keyring exists with a header, and "
+           "SessionStart says ONE Atlas notice and nothing else")
+    hooks_dir = os.path.join(plug, "hooks")
+    if not os.path.isdir(hooks_dir):
+        return [R(ID, "SKIP", law, "no hooks/ under %s" % rel(root, plug))]
+    present = [h for h in GATED_HOOKS if os.path.isfile(os.path.join(hooks_dir, h))]
+    keyring = os.path.join(plug, KEYRING_REL)
+    out = []
+    # ⛔ AN ABSENT KEYRING IS A FAILURE, NOT A SKIP. The clause is "the committed keyring
+    # exists with a header"; skipping when it is missing meant deleting the keyring turned
+    # the whole gate green — the one mutation the check most needs to catch.
+    if not os.path.isfile(keyring):
+        out.append(R(ID, "FAIL", law,
+                     "%s is absent — the plugin ships no keyring, so no key can be valid "
+                     "and the access gate cannot be enforced anywhere" % rel(root, keyring),
+                     "commit the keyring (`atlas.py key --mint --label <who>` writes it) — "
+                     "an absent keyring is not an unconfigured gate, it is a broken one"))
+    elif not [l for l in (read(keyring) or "").splitlines() if l.strip().startswith("#")]:
+        out.append(R(ID, "FAIL", law, "%s has no header line" % rel(root, keyring),
+                     "open the keyring with a '# ...' line saying what it is and who mints "
+                     "into it — a bare list of hashes tells a reader nothing"))
+    if not present:
+        out.append(R(ID, "SKIP", law, "none of the gated hooks are present"))
+        return out
+
+    # A scratch ESTABLISHED estate: a writer only writes where there is something to write
+    # to, so an unestablished cwd would let every hook look innocent.
+    est = tempfile.mkdtemp(prefix="notrest-eval-gate-")
+    try:
+        with open(os.path.join(est, "COORD.md"), "w", encoding="utf-8") as fh:
+            fh.write("# COORD.md — session coordination ledger\n\n## LEDGER\n"
+                     "- [2026-09-06 00:00Z] [eval] probe -> seeded | evidence: none\n")
+        with open(os.path.join(est, "COORD-AGENTS.md"), "w", encoding="utf-8") as fh:
+            fh.write("# COORD-AGENTS.md — agent activity ledger\n\n## LEDGER\n")
+    except OSError:
+        pass
+    env = dict(os.environ)
+    env.pop("NOTREST_ACCESS_KEY", None)
+    env["HOME"] = tempfile.mkdtemp(prefix="notrest-eval-nokey-")
+    env["NOTREST_HOME"] = env["HOME"]
+    env["CLAUDE_PROJECT_DIR"] = est
+    before = _tree_state(est)
+
+    noisy, broke = [], []
+    for h in present:
+        payload = json.dumps(WRITER_HOOKS.get(h, BANNER_PAYLOAD))
+        try:
+            pr = subprocess.run(["bash", os.path.join(hooks_dir, h)],
+                                input=payload.encode(), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, timeout=25, cwd=est, env=env)
+        except (OSError, subprocess.SubprocessError) as exc:
+            broke.append("%s (%s)" % (h, exc))
+            continue
+        if pr.returncode != 0:
+            broke.append("%s exit %d" % (h, pr.returncode))
+        said = (pr.stdout or b"").decode("utf-8", "replace").strip()
+        if not said:
+            continue
+        if h == BANNER_HOOK:
+            lines = [l for l in said.splitlines() if l.strip()]
+            if len(lines) == 1 and BANNER_RE.search(lines[0]):
+                continue
+            noisy.append("%s (%d line(s); the banner exemption is ONE Atlas notice)"
+                         % (h, len(lines)))
+        else:
+            noisy.append(h)
+    if broke:
+        out.append(R(ID, "FAIL", law, "keyless hooks did not exit 0: %s" % ", ".join(broke[:4]),
+                     "a hook without a key must go quiet, never fail"))
+    if noisy:
+        out.append(R(ID, "FAIL", law,
+                     "keyless hooks still wrote to stdout: %s" % ", ".join(noisy[:4]),
+                     "gate the hook body behind `atlas.py key --check` so it injects "
+                     "nothing without a key"))
+    wrote = _tree_state(est) - before
+    if wrote:
+        out.append(R(ID, "FAIL", law,
+                     "keyless hooks CHANGED the estate: %s" % ", ".join(sorted(wrote)[:4]),
+                     "a hook without a key must not write to the ledgers either — silence "
+                     "on stdout is not the same as leaving the estate alone"))
+
+    # ── the three clauses a reverted hardening would silently drop ──────────────────
+    sp, spkey = _scratch_plugin(plug)
+    if sp is None:
+        out.append(R(ID, "SKIP", law, "no atlas.py to copy — the verifier probes are "
+                                      "skipped, never assumed"))
+    else:
+        shooks = os.path.join(sp, "hooks")
+        sstart = os.path.join(shooks, BANNER_HOOK)
+        base = dict(env)
+        base["CLAUDE_PROJECT_DIR"] = est
+
+        def dark_probe(label, extra_env, drop_key=True, fix=None):
+            e = dict(base)
+            if drop_key:
+                e.pop("NOTREST_ACCESS_KEY", None)
+            e.update(extra_env)
+            try:
+                pr = subprocess.run(["bash", sstart],
+                                    input=json.dumps(BANNER_PAYLOAD).encode(),
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    timeout=25, cwd=est, env=e)
+            except (OSError, subprocess.SubprocessError):
+                return
+            said = (pr.stdout or b"").decode("utf-8", "replace")
+            if not _is_dark(said):
+                out.append(R(ID, "FAIL", law, "%s — the hook went LIVE: %s"
+                             % (label, " / ".join(said.split())[:160]), fix))
+
+        # (1) ⛔ A FAKE python3 ON $PATH MUST NOT BE ABLE TO SAY "licensed". With no key
+        # the honest answer is dark; a stub that exits 0 for every argument is exactly the
+        # attack. Two independent clauses have to hold for this to stay dark: the hook
+        # prefers /usr/bin/python3 over $PATH, and it demands atlas.py's stdout sentinel.
+        # On a machine with no /usr/bin/python3 the sentinel alone must refuse the stub.
+        if os.path.isfile(sstart):
+            stub = _stub_bin()
+            dark_probe("a stub python3 first on $PATH answered 'licensed'",
+                       {"PATH": stub + os.pathsep + base.get("PATH", "")},
+                       fix="prefer /usr/bin/python3 over $PATH AND require atlas.py's "
+                           "stdout sentinel — an exit code alone is a claim anything can "
+                           "make")
+
+            # (2) ⛔ THE SENTINEL, ALONE. A verifier that exits 0 and says NOTHING is not
+            # an answer. Given a VALID key here, only the sentinel requirement can keep
+            # this dark — so deleting that requirement flips this arm.
+            sa = os.path.join(sp, "skills", "atlas", "scripts", "atlas.py")
+            try:
+                with open(sa, "w", encoding="utf-8") as fh:
+                    fh.write("#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n")
+                dark_probe("a verifier that exits 0 with the sentinel stripped was believed",
+                           {}, drop_key=False,
+                           fix="require the `notrest-access: ok ring=<hash>` sentinel on "
+                               "stdout, not just exit 0")
+            except OSError:
+                pass
+
+        # (3) ⛔ THE PULSE IS A WRITER. Keyless, with a root handed to it, it must write
+        # NOTHING and fork NOTHING — silence on stdout is not the same as doing no work.
+        pulse = os.path.join(shooks, "estate-pulse.sh")
+        if os.path.isfile(pulse):
+            pest = tempfile.mkdtemp(prefix="notrest-eval-pulse-")
+            try:
+                with open(os.path.join(pest, "COORD.md"), "w", encoding="utf-8") as fh:
+                    fh.write("# COORD.md — session coordination ledger\n\n## LEDGER\n")
+            except OSError:
+                pass
+            before_p = _tree_state(pest)
+            counter = os.path.join(tempfile.mkdtemp(prefix="notrest-eval-fork-"), "forks")
+            cbin = tempfile.mkdtemp(prefix="notrest-eval-cbin-")
+            cp = os.path.join(cbin, "python3")
+            try:
+                with open(cp, "w", encoding="utf-8") as fh:
+                    fh.write("#!/bin/sh\nprintf 'x' >> %s\nexit 0\n" % counter)
+                os.chmod(cp, 0o755)
+                e = dict(base)
+                e.pop("NOTREST_ACCESS_KEY", None)
+                e["PATH"] = cbin + os.pathsep + base.get("PATH", "")
+                e["NR_PULSE_ROOT"] = pest
+                e["NR_PULSE_DAEMON"] = "1"
+                subprocess.run(["bash", pulse, pest, "manual"], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, timeout=25, cwd=pest, env=e)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            wrote_p = _tree_state(pest) - before_p
+            forks = os.path.getsize(counter) if os.path.isfile(counter) else 0
+            if wrote_p or forks:
+                out.append(R(ID, "FAIL", law,
+                             "keyless estate-pulse.sh did work: %d file(s) written (%s), "
+                             "%d fork(s)" % (len(wrote_p),
+                                             ", ".join(sorted(wrote_p)[:3]) or "-", forks),
+                             "gate estate-pulse.sh on NR_ACCESS before it touches the "
+                             "estate — a writer that runs unlicensed is the gate's whole "
+                             "point"))
+
+    for dh in DENY_HOOKS:
+        path = os.path.join(hooks_dir, dh)
+        if not os.path.isfile(path):
+            continue
+        if dh == "spawn-gate.sh":
+            payload = json.dumps(SPAWN_DENY_PAYLOAD)
+            what = "a Task spawned with NO model"
+        else:
+            probe = _derived_deny_probe(read(path))
+            if not probe:
+                out.append(R(ID, "SKIP", law, "could not derive a denied command from %s — "
+                                              "the deny probe is skipped, never guessed"
+                             % rel(root, path)))
+                continue
+            payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": probe}})
+            what = "a command its own rules deny"
+        try:
+            pr = subprocess.run(["bash", path], input=payload.encode(),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                timeout=25, cwd=est, env=env)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if pr.returncode != 2:
+            out.append(R(ID, "FAIL", law,
+                         "%s ALLOWED %s with no key present (exit %d, expected 2)"
+                         % (dh, what, pr.returncode),
+                         "the deny rules must not depend on the key — an expired licence "
+                         "must never become a security downgrade"))
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law,
+                        "%d gated hook(s) silent and exit 0 without a key; deny rules "
+                        "still deny; keyring present with a header" % len(present)))
+    return out
+
+
 CHECKS = [check_network, check_kernel, check_release_surface, check_learning_loop,
+          check_access_gate,
           check_offload, check_labels, check_scripts, check_references,
           check_estate, check_selfcheck, check_triggers, check_safety,
           check_hooks, check_router, check_route_parity, check_route_conformance]

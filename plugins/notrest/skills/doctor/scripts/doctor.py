@@ -1641,6 +1641,117 @@ def check_loop_health(t):
     return status, detail, fix
 
 
+ATLAS_ENV = "NOTREST_ATLAS_PY"
+KEYRING_REL = os.path.join(".access", "keys.sha256")
+
+
+def _atlas_script(t):
+    """The one verifier: env override (fixtures), the sibling skill, then PATH."""
+    v = os.environ.get(ATLAS_ENV)
+    if v and os.path.isfile(v):
+        return v
+    if t.primary:
+        sib = os.path.join(t.primary, "skills", "atlas", "scripts", "atlas.py")
+        if os.path.isfile(sib):
+            return sib
+    for d in (os.environ.get("PATH") or "").split(os.pathsep):
+        if d and os.path.isfile(os.path.join(d, "atlas.py")):
+            return os.path.join(d, "atlas.py")
+    return None
+
+
+def _run_atlas(script, args, timeout=15):
+    try:
+        pr = subprocess.run([sys.executable, script] + args, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, str(exc)
+    return pr.returncode, (pr.stdout or b"").decode("utf-8", "replace").strip()
+
+
+def check_access_key(t):
+    """Is this machine entitled to run the harness, and is the Atlas bank wired?
+
+    ⛔ DOCTOR REPORTS, IT DOES NOT VERIFY. The verdict comes from `atlas.py key --check` —
+    the same verifier establish.py and the hooks call — because a second key check here
+    would be a second policy, and the copy that drifts is the one nobody watches. What
+    doctor adds is the thing an operator actually needs: WHY the gate is quiet. A gate
+    that is inert because no verifier shipped looks exactly like a gate that is passing,
+    and telling those apart is the whole job of this line.
+    """
+    script = _atlas_script(t)
+    keyring = os.path.join(t.primary, KEYRING_REL) if t.primary else None
+    status, detail, fix = PASS, [], None
+
+    if keyring and os.path.isfile(keyring):
+        lines = [l.strip() for l in (read(keyring) or "").splitlines()]
+        keys = [l for l in lines if l and not l.startswith("#")]
+        header = [l for l in lines if l.startswith("#")]
+        detail.append("keyring: %s — %d key(s)%s"
+                      % (t.rel(keyring), len(keys),
+                         "" if header else " (no header line)"))
+        if not keys:
+            status = WARN
+            detail.append("KEYRING EMPTY — no key can be valid, so no machine but this "
+                          "one can run the harness")
+            fix = ("mint a key for whoever needs one: `atlas.py key --mint --label <who>` "
+                   "— it prints the key once and appends its hash here")
+    else:
+        detail.append("keyring: absent (%s) — the access gate is not deployed in this tree"
+                      % (t.rel(keyring) if keyring else "no plugin dir"))
+
+    if script is None:
+        detail.append("access key: NOT CHECKED — no atlas.py on this machine, so the gate "
+                      "is inert (establish/check/continuation all allow)")
+    else:
+        rc, out = _run_atlas(script, ["key", "--check"])
+        last = (out or "").splitlines()[-1] if out else ""
+        if rc is None:
+            status = WARN if status == PASS else status
+            detail.append("access key: verifier could not run (%s) — gate not enforced" % out)
+        elif rc == 0:
+            detail.append("access key: present and valid%s" % (" — %s" % last if last else ""))
+        else:
+            detail.append("access key: NO VALID KEY (atlas.py key --check exit %d%s) — "
+                          "establish/check refuse with exit 7 and the packet is silent"
+                          % (rc, "; %s" % last if last else ""))
+            status = WARN if status == PASS else status
+            fix = fix or ("put the key in ~/.notrest/access-key (or set NOTREST_ACCESS_KEY); "
+                          "the owner mints one with `atlas.py key --mint --label <who>`")
+
+    if script is None:
+        detail.append("atlas: no atlas.py — bank hook state unknown")
+    else:
+        # lane A's contract: 0 green · 3 not on the map / no HEAD · 5 RED board ·
+        # 6 HEAD not banked. `--json` is asked for and PARSED WHEN IT IS JSON — a verb
+        # that answers in prose for some states is not a reason to show the operator
+        # nothing, so the text line is the fallback rather than an error.
+        ATLAS_STATUS = {0: "green", 3: "not on the map (or no HEAD)",
+                        5: "RED board", 6: "HEAD not banked"}
+        rc, out = _run_atlas(script, ["status", "--json"])
+        if rc is None:
+            detail.append("atlas: status could not run (%s)" % out)
+        else:
+            said = ""
+            try:
+                obj = json.loads(out) if out.strip().startswith("{") else None
+            except ValueError:
+                obj = None
+            if isinstance(obj, dict):
+                said = " · ".join("%s=%s" % (k, obj[k]) for k in sorted(obj)
+                                  if not isinstance(obj[k], (dict, list)))[:300]
+            elif out:
+                said = " · ".join(out.splitlines()[:2])
+            detail.append("atlas: %s%s"
+                          % (ATLAS_STATUS.get(rc, "status exit %s" % rc),
+                             " — %s" % said if said else ""))
+            if rc in (5, 6):
+                status = WARN if status == PASS else status
+                fix = fix or ("run `atlas.py bank` — the board is behind HEAD, so the "
+                              "estate's public state is not what this commit says")
+    return status, detail, fix
+
+
 CHECKS = [
     ("FRONTMATTER", check_frontmatter),
     ("MANIFESTS", check_manifests),
@@ -1652,6 +1763,7 @@ CHECKS = [
     ("INSTALL FRESHNESS", check_install_freshness),
     ("SHADOW-APPSIDE", check_shadow_appside),
     ("TOKEN BUDGET", check_token_budget),
+    ("ACCESS KEY", check_access_key),
     ("LOOP HEALTH", check_loop_health),
     ("GITIGNORE", check_gitignore),
     ("RENDER SURFACES", check_render_surfaces),

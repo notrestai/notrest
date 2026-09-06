@@ -1,8 +1,16 @@
 # MAP.md — the complete notrest plugin map
 
-**Version mapped:** v4.7.1 (`plugins/notrest/.claude-plugin/plugin.json`), commit: the v4.7.1 release commit (`git log -1 --grep "v4.7.1"`).
+**Version mapped:** v4.8.0 (`plugins/notrest/.claude-plugin/plugin.json`), commit: the v4.8.0 release commit (`git log -1 --grep "v4.8.0"`).
 **Mapped:** 2026-09-01, by probing the live tree — every claim below comes from a file read
 or a command run during the mapping session. Nothing here is recalled.
+
+**Distribution (v4.8.0).** notrest is **part of Atlas** and ships to Atlas customers. The
+repository is private, so installing takes two things: access to `notrestai/notrest`, and an
+owner-issued key at `~/.notrest/access-key` (or `NOTREST_ACCESS_KEY`). Installed without a valid
+key the harness is inert — one SessionStart line, silence from every other hook — and the honest
+bound is worth stating: **the key gates the harness on a machine, not the source files.**
+Versions through v4.7.1 were released under the MIT License and remain under it for whoever
+holds them; v4.8.0 onward is proprietary (`LICENSE`).
 
 **What notrest is, in one paragraph.** It is a Claude Code plugin that turns a project into
 an *estate*: a directory that keeps its own written record of what happened in it. Lifecycle
@@ -11,8 +19,9 @@ session can invoke. Instruments are small read-only scripts that answer question
 estate without asking the model anything. The design principle repeated everywhere: **the
 machine writes, the session pays nothing, and a claim without evidence is labeled unverified.**
 
-**Counts in this map:** 11 hooks · 1 hook-adjacent checker · 22 skills that own scripts
-(≈50 runnable tools) · 32 skills · 8 estate files.
+**Counts in this map:** 11 lifecycle hooks + 1 tracked commit hook · 1 hook-adjacent checker ·
+23 skills that own scripts (≈50 runnable tools) · 33 skills · 9 estate files.
+(`ls -d plugins/notrest/skills/*/ | wc -l` prints the live skill count.)
 
 ---
 
@@ -196,6 +205,26 @@ The single answer to "which project does this session belong to". Sets `NR_ESTAT
   are four different estates, and the disagreement is invisible until something lands in the
   wrong project.
 
+**The access gate (4.8.0), in `estate-root.sh`.** Before any of this runs, the helper resolves
+the machine's access key — `$NOTREST_ACCESS_KEY`, else the first line of
+`${NOTREST_HOME:-~/.notrest}/access-key` — against the plugin's own committed keyring
+`plugins/notrest/.access/keys.sha256` (one `sha256(key):label:date` line per key; the key itself
+is never stored, so minting prints it once and revocation is deleting the line). Without a valid
+key `session-start.sh` prints one line — *notrest is part of Atlas — no valid access key on this
+machine* — and every other hook exits silently. The bound is stated wherever this appears: **the
+gate controls the harness on a machine, not the source files.** It is a belt beside the
+private-repo braces, never more.
+
+**12. `atlas-bank-hook.sh` — the tracked post-commit body (not a lifecycle hook)**
+`atlas.py wire` writes a four-line shim at `<git-dir>/hooks/post-commit` (honouring
+`core.hooksPath`) that points here, so the logic running at every commit lives **in the repo**,
+reviewed like code — a hook body copied into `.git/hooks` is a fork nobody can see.
+- **Writes:** nothing itself; it calls `atlas.py bank`.
+- **Safety property:** it can never cost you a commit. No `set -e`, four fast paths (no
+  python3 · no `atlas/` dir · **no valid access key** · already banking), and `exit 0` always —
+  the bank's exit code is deliberately dropped, because a red board is a true fact about the
+  commit that just landed, not a reason to make `git commit` look broken.
+
 **11. `estate-pulse.sh` — called detached by coord-nudge and agent-ledger**
 The background refresher. It runs the four read-only instruments and banks their output as
 machine-written readings, so a session can see the estate's state without spending a token
@@ -205,7 +234,7 @@ asking.
   --all-ripe` after a fresh scan when the estate is opted in — every ripe NEW candidate
   scaffolded into its own isolated dir, idempotently, at zero model tokens — and then, where
   the authorization also says *unattended*, `compile.py auto-run --next`, which **does** spend
-  model tokens: a headless opus CLI run builds the oldest drafted candidate, a free fixture
+  model tokens: a headless opus CLI run builds the oldest drafted candidate, a no-token fixture
   gates it, a second headless run attacks it, a script benchmarks it, and only then do green
   gates adopt it. **Never writes COORD** — a pulse per lane-stop would spam the ledger into
   uselessness.
@@ -449,6 +478,21 @@ the STALE-at-5 path was gated by the seat on this repo before the upgrade landed
 - **`index.py library`** — the cross-project shelf: register, list, find, track.
 - **`fixture.sh`** — proves every validation rule turns its record away and names itself.
 
+### atlas — "is this commit banked, and does the map still tell the truth?"
+- **`atlas.py bank --root .`** — the whole instrument: runs the tests the map binds, derives
+  each part's status from the exit codes, writes the snapshot and board, pushes. *(Writes.)*
+  **Exits:** `0` green · `3` nothing to derive · `4` banked but the push failed · `5` board RED.
+- **`atlas.py wire`** — installs the tracked post-commit hook (idempotent; **exit 5** rather
+  than clobber a foreign `post-commit`, kept as `post-commit.pre-atlas` under `--force`);
+  `--prove` is the **born-red proof** in a scratch repo (`0` it went red · `6` it did not ·
+  `7` no key); `--unwire` removes it and restores any hook it backed up.
+- **`atlas.py status --root .`** — HEAD vs last banked, snapshot age, hub, hook. **Exits:**
+  `0` green · `3` nothing to derive · `5` RED · `6` **HEAD is not banked**.
+- **`atlas.py key --mint|--check|--revoke|--list`** — the keyring the harness gates on.
+  `--check` is what every hook asks: **0** valid · **7** none or invalid.
+- **Fixture:** `scripts/fixture.sh` — scratch git repos in a mktemp dir, a scratch keyring,
+  no network, the real repository never touched.
+
 ### watch — "are these facts still true?"
 - **`watch.py due`** — which watched claims are past their re-check date — and, since 4.7.0,
   which **open records** are: a question the project left open carries a `recheck` date and
@@ -608,6 +652,7 @@ since moved.
 | **`briefs/`** | The **`agent-ledger.sh` hook**, banking each lane's verbatim commission as `agent-<id>.md`. | The owner and any reviewer — this is what makes commission transparency structural. |
 | **`archive/findings.jsonl`** | The **knowledge verbs**, via `index.py add`, validated at the door — findings about the world; `kind=learning`, what the estate learned about working here; `open`, what was *not* tested or could not be verified, with a recheck date; `alternative`, a road not taken; and `result`, which must name what ran, the command and the exit code. Since 4.7.0 the **`agent-ledger.sh` hook** writes here too, banking every lane's return card — its judgment kinds as `proposed`, awaiting the seat's `accept` / `reject --why`. | `archivist find/track/learnings`, `graph river`, `recap` — plus, for learnings, the continuation packet, `spawn-gate.sh`, `router.sh`, `completion-gate.sh` and eval's LEARNING-LOOP. Append-only; status flips are tombstones. |
 | **`gates/ACTIVE.md`** | The **owner or director**, declaring the commission's gates as runnable `CHECK:`/`EXPECT:` lines — and, since 4.7.0, `spawn-gate.sh`, appending a lane's own unfenced `DONE-WHEN:` block under `## lane <8-hex key> · opened <UTC>` with a provenance comment per line (retired by key when the lane stops, swept by `session-start.sh` after 24 h). | `completion-gate.sh` via `gate-check.py`, at every Stop. Absent → the gate is inert. |
+| **`atlas/`** | **`atlas.py`**, at every commit through the tracked post-commit hook: `snapshots/<commit>.json` written once at `0444` and **never rewritten** (a re-bank that derives differently *reports the difference* and leaves the snapshot standing), `board.json`, `map.md`, `config.json`, and the `born-red.json` receipt. | The Atlas hub via the push adapter, `atlas.py status`, and any session asking whether HEAD is banked. Immutable per commit — history is what the estate looked like when that commit landed. |
 | **`pulse/`** | The **`estate-pulse.sh` daemon**, in the background. `pulse.json` plus one `.txt` per instrument. | `session-start.sh` (echoes the reading), `coord-nudge.sh` (surfaces swarm alerts), the cockpit. Derived and disposable — the ledgers remain the record. |
 | **`~/.notrest/auto-build/`** | The **owner**, via `compile.py auto --on`. Deliberately outside the estate. | `session-start.sh`, to decide whether to echo a nudge or a directive. Authorizes *dispatching* a lane and nothing else — installing is still the owner's act. |
 

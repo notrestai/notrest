@@ -157,6 +157,10 @@ esac
 # path pays nothing.
 nr_learnings_inject() {
   . "$(cd "$(dirname "$0")" && pwd)/estate-root.sh" 2>/dev/null || true
+  # ── THE ACCESS KEY (4.8). Only the INJECTION half is gated: the deny rules above have
+  # already run, and they stay armed on a keyless machine on purpose — a machine without
+  # a key must not become a machine without laws.
+  [ -n "${NR_ACCESS:-}" ] || return 0
   NR_ROOT="${NR_ESTATE_ROOT:-}"
   [ -n "$NR_ROOT" ] || return 0
   NR_IDX="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/skills/archivist/scripts/index.py"

@@ -36,3 +36,7 @@ compile/*/.fixture-scratch/
 /compile/*/
 !/compile/release-ritual/
 /compile/.auto-run.lock
+
+# 4.8.0: the atlas bank's derived outputs stay local; atlas/map.md and born-red.json are estate state and are tracked
+/atlas/snapshots/
+/atlas/board.json

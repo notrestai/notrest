@@ -1,9 +1,19 @@
 # The notrest harness in 10 minutes
 
 The session harness that makes a Codex task or Claude session **token-lean, verified, and
-continuous** — riding on thirty-two skills from intake to handoff.
+continuous** — riding on thirty-three skills from intake to handoff.
 
 ## 1. Install (once)
+
+**notrest is part of Atlas.** From v4.8.0 it ships to Atlas customers, and you need two things
+before the commands below do anything: **access to the private `notrestai/notrest` repository**
+(the marketplace command resolves only for a GitHub account the owner has granted), and an
+**access key the owner issues you**, saved at `~/.notrest/access-key` or set in
+`NOTREST_ACCESS_KEY`. Install without a valid key and the harness sits there inert — you get one
+SessionStart line telling you so, and nothing else. Ask at [do.not.rest](https://do.not.rest).
+
+Versions through v4.7.1 were released under the MIT License and stay that way for anyone
+holding them; v4.8.0 onward is the Atlas release.
 
 ### Claude
 
@@ -12,7 +22,20 @@ continuous** — riding on thirty-two skills from intake to handoff.
 /plugin install notrest@notrest
 ```
 
-**Renaming from `oracle-suite`?** Same harness, new id (the marketplace is still `notrest`, so the
+Then wire the estate onto the map, once per project — this is the Atlas half:
+
+```bash
+python3 plugins/notrest/skills/atlas/scripts/atlas.py wire   --root .   # the commit-time bank; idempotent
+python3 plugins/notrest/skills/atlas/scripts/atlas.py wire   --prove     # the born-red proof
+python3 plugins/notrest/skills/atlas/scripts/atlas.py status --root .    # HEAD vs last banked
+```
+
+`wire` installs a tracked post-commit hook that banks every commit; re-running it says
+*already wired* and it never overwrites a post-commit hook it did not write. `--prove` runs the
+**born-red proof** in a scratch repo — hook live → green, hook disabled → the map must go RED,
+hook restored → green — and an estate joins the map only when step two actually goes red.
+
+**Coming from `oracle-suite`?** Same harness, new id (the marketplace is still `notrest`, so the
 install id is `notrest@notrest` and skills invoke as `/notrest:<name>`). Install `notrest` as above,
 then `claude plugin uninstall oracle-suite`.
 
@@ -79,6 +102,8 @@ Prefer a picture? [oracle-skill-flow.html](oracle-skill-flow.html) is a one-page
 | Ask "what do we already know about X?" | "index the dossiers" → **archivist** |
 | See how the files connect (or every project at once) | "map the files" / "/graph" → **graph** |
 | Audit token spend / model routing | "spend report" → **spend** |
+| Make the project's map bank itself at every commit | "bank the map" / "/atlas" → **atlas** |
+| Ask whether HEAD is banked, or prove the bank works | "is this commit banked" / "born-red proof" → **atlas** |
 | Check the harness is healthy (or why a skill stopped firing) | "/doctor" / "health check" → **doctor** |
 | Check the harness still obeys its own laws (before a release) | "/eval" / "check the laws" / "conformance check" → **eval** |
 | How did we get here? | "recap the project" / "/recap" → **recap** |
@@ -116,13 +141,13 @@ what it found, what it learned — and those are filed as records automatically,
 survives as a dated open question with a recheck date instead of dissolving into a summary.
 The checks a job is judged by are written down before it starts and run when it claims to be
 finished. And work you have done three times gets compiled into a script — scanned and drafted in the
-background for free, then built, independently attacked, benchmarked against the old way and
+background at zero token cost, then built, independently attacked, benchmarked against the old way and
 adopted, all without waiting for you. What keeps that safe is not supervision but limits: a
 daily token cap you set and it refuses to exceed, a receipt in the spend ledger for every run
 it makes, one job at a time, and a quiet stop rather than a retry loop when something is
 wrong. That background half is entirely optional — you turn it on deliberately, and nothing
 else in the plugin ever asks for a credential. If you are already logged in to the CLI it needs
-nothing from you; if it ever cannot authenticate it keeps doing the free work, says so once a
+nothing from you; if it ever cannot authenticate it keeps doing the zero-token work, says so once a
 day, and gives you one command to fix it.
 
 ## 7. Costs, quick

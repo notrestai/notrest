@@ -6,6 +6,23 @@
 # (rule 1 is proven against a scratch git repo with stub instruments).
 
 SD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── THE ACCESS KEY (4.8). The harness only runs where the owner minted a key, so this
+# fixture mints its own and runs a KEYED COPY of the hooks: the committed keyring holds
+# the owner's hashes, which a fixture must never need (or be able) to add to. Same bytes
+# (cp -p), plus a keyring the verifier will find at <plugin>/.access/keys.sha256.
+NRK_WORK="$(mktemp -d)"
+NRK_KEY="fixture-access-key-$$-$RANDOM"
+NRK_SHA="$(printf '%s' "$NRK_KEY" | python3 -c 'import hashlib,sys;sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+mkdir -p "$NRK_WORK/plug/.access" "$NRK_WORK/home"
+cp -Rp "$SD/../../../hooks" "$NRK_WORK/plug/hooks"
+printf '# fixture keyring\n%s:fixture:2026-09-06\n' "$NRK_SHA" > "$NRK_WORK/plug/.access/keys.sha256"
+mkdir -p "$NRK_WORK/plug/skills/atlas/scripts"
+cp -p "$SD/../../../skills/atlas/scripts/atlas.py" "$NRK_WORK/plug/skills/atlas/scripts/atlas.py" 2>/dev/null
+export NOTREST_ACCESS_KEY="$NRK_KEY"
+export NOTREST_HOME="$NRK_WORK/home"
+NRK_HOOKS="$NRK_WORK/plug/hooks"
+trap 'rm -rf "$NRK_WORK"' EXIT
 GATE="$SD/../../../hooks/pretool-gate.sh"
 PASS=0
 FAIL=0
@@ -190,7 +207,7 @@ echo "── the SPAWN GATE: the offload law, enforced in code ─────�
 # asking the parent to remember. Payload shape verified against 87 real spawns in this
 # repo's own transcripts before the gate was written — tool_name "Agent" here, "Task"
 # on other surfaces, tool_input {description, model, prompt, subagent_type}.
-SG="$(cd "$(dirname "$0")/../../../hooks" && pwd)/spawn-gate.sh"
+SG="$NRK_HOOKS/spawn-gate.sh"
 
 # spawn <tool> <model|-> <subagent_type|-> → the gate's exit code.
 #
@@ -324,7 +341,7 @@ echo "── COMMISSION GATES: done-when prose turned into mechanism (docket 8a/
 # may carry executable CHECK:/EXPECT: blocks; gate-check.py RUNS them and records
 # EVIDENCE, and a Stop hook refuses a "done" claim while a declared gate is red. The
 # vacuous-pass killer applied to the CLAIM, not only to the ship.
-HD="$(cd "$(dirname "$0")/../../../hooks" && pwd)"
+HD="$NRK_HOOKS"
 GC="$HD/gate-check.py"
 CG="$HD/completion-gate.sh"
 GW="$TMP/gates"; mkdir -p "$GW"
@@ -494,6 +511,9 @@ esac
 
 # FAIL-OPEN: a broken instrument must never wedge a session.
 BH="$TMP/brokenhooks"; mkdir -p "$BH"
+mkdir -p "$TMP/.access" "$TMP/skills/atlas/scripts"
+cp -p "$NRK_WORK/plug/.access/keys.sha256" "$TMP/.access/keys.sha256" 2>/dev/null
+cp -p "$NRK_WORK/plug/skills/atlas/scripts/atlas.py" "$TMP/skills/atlas/scripts/atlas.py" 2>/dev/null
 cp "$CG" "$BH/" 2>/dev/null; cp "$HD/estate-root.sh" "$BH/" 2>/dev/null
 CGBIN="$BH/completion-gate.sh" fire_stop "$GE"
 chk "completion gate: a MISSING checker fails OPEN (exit 0)" 0 "$SRC"
@@ -548,6 +568,9 @@ chk "completion gate: …and emits a real Stop decision block" "block" "$DEC"
 
 # a checker that fails in some OTHER way is a malfunction, and a malfunction never blocks
 CH="$TMP/crashhooks"; mkdir -p "$CH"
+mkdir -p "$TMP/.access" "$TMP/skills/atlas/scripts"
+cp -p "$NRK_WORK/plug/.access/keys.sha256" "$TMP/.access/keys.sha256" 2>/dev/null
+cp -p "$NRK_WORK/plug/skills/atlas/scripts/atlas.py" "$TMP/skills/atlas/scripts/atlas.py" 2>/dev/null
 cp "$CG" "$CH/"; cp "$HD/estate-root.sh" "$CH/"
 printf '#!/usr/bin/env python3\nimport sys; sys.exit(9)\n' > "$CH/gate-check.py"
 CGBIN="$CH/completion-gate.sh" fire_stop "$GE"

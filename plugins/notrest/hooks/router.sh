@@ -4,6 +4,13 @@
 # Authority for the table: skills/oracle/SKILL.md (intake routing) — keep in step.
 # Fires on EVERY prompt: no set -e, every path exits 0, one nudge max, <=160 chars.
 
+# ── THE ACCESS KEY (4.8): no key, no harness — the routing nudge included. NR_SKIP_ROOT
+# keeps this to builtins: the verdict costs three file tests, while resolving the estate
+# root would fork `git` on every prompt. The estate hooks that need the root source the
+# resolver again, without the flag, further down.
+NR_SKIP_ROOT=1 . "${0%/*}/estate-root.sh" 2>/dev/null || true
+[ -n "${NR_ACCESS:-}" ] || exit 0
+
 # ── NR-STDIN (E2, 4.6.2) — BOUNDED READ: the payload or nothing, never a hang.
 # Contract, rationale and the bash-3.2 measurements live in hooks/pretool-gate.sh, which
 # owns the budget; the loop is copied rather than sourced because sourcing a sibling

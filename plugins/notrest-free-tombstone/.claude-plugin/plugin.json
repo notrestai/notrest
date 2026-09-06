@@ -1,0 +1,18 @@
+{
+  "name": "notrest-free",
+  "displayName": "notrest (now part of Atlas)",
+  "version": "4.7.1",
+  "description": "PART OF ATLAS → the notrest harness ships to Atlas customers from v4.8.0. This entry exists only to tell existing installs where the harness went and how to ask for access. Versions through v4.7.1 were released under the MIT License and remain so.",
+  "author": {
+    "name": "Not Rest Inc.",
+    "url": "https://do.not.rest"
+  },
+  "homepage": "https://do.not.rest",
+  "repository": "https://github.com/notrestai/notrest.git",
+  "license": "MIT",
+  "keywords": [
+    "atlas",
+    "moved"
+  ],
+  "hooks": "./hooks/hooks.json"
+}

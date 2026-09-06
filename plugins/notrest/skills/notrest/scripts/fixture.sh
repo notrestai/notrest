@@ -49,10 +49,65 @@ mode_of(){ python3 -c "import os,sys;print('%o' % (os.stat(sys.argv[1]).st_mode 
 # run sees, whatever the fixture's own caller was running under.
 NR_HOST=""
 # shellcheck disable=SC2086 — CLEAR_HOST/NR_HOST are token lists, split on purpose.
-est(){ env $CLEAR_HOST ${NR_HOST:-} python3 "$EST" "$@"; }
-pyest(){ env $CLEAR_HOST ${NR_HOST:-} python3 "$@"; }
+est(){ env $CLEAR_HOST ${NR_HOST:-} NOTREST_ATLAS_PY="$W/atlas/atlas.py" \
+       STUB_KEYRING="$W/.access/keys.sha256" NOTREST_ACCESS_KEY="$FIXTURE_KEY" \
+       python3 "$EST" "$@"; }
+pyest(){ env $CLEAR_HOST ${NR_HOST:-} NOTREST_ATLAS_PY="$W/atlas/atlas.py" \
+         STUB_KEYRING="$W/.access/keys.sha256" NOTREST_ACCESS_KEY="$FIXTURE_KEY" \
+         python3 "$@"; }
 
 # ── the sandboxed hooks (estate-root.sh included — it is what they all source) ────────
+# ⛔ 4.8: THE HOOKS ARE GATED ON AN ACCESS KEY. They resolve the keyring RELATIVE TO
+# THEMSELVES (`<hookdir>/../.access/keys.sha256`), so a sandbox that copies the hooks must
+# also mint a keyring beside them — otherwise every hook arm below is testing the gate
+# rather than the behaviour it was written for, and 65 arms go quietly red for the wrong
+# reason. The gate itself is armed deliberately further down, by REMOVING this key.
+mkdir -p "$W/.access" "$W/atlas"
+FIXTURE_KEY="fixture-access-key-1"
+# ⛔ THE FIXTURE OWNS ITS VERIFIER. establish.py resolves atlas.py by env, then the sibling
+# skill, then PATH — so once the real atlas.py shipped, every arm in this file started
+# being graded against THIS MACHINE's key instead of the sandbox's. A fixture that depends
+# on the operator holding a licence is not hermetic. NOTREST_ATLAS_PY points at a stub
+# implementing the same contract; the gate arms below drive it deliberately.
+cat > "$W/atlas/atlas.py" <<'STUBPY'
+#!/usr/bin/env python3
+import hashlib, os, sys
+kr = os.environ.get("STUB_KEYRING", "")
+if len(sys.argv) > 2 and sys.argv[1] == "key" and "--check" in sys.argv:
+    if not kr or not os.path.isfile(kr):
+        print("keyring absent"); sys.exit(3)
+    hashes = [l.split(":")[0] for l in open(kr)
+              if l.strip() and not l.startswith("#") and ":" in l]
+    if not hashes:
+        print("keyring empty"); sys.exit(4)
+    key = os.environ.get("NOTREST_ACCESS_KEY", "")
+    if key and hashlib.sha256(key.encode()).hexdigest() in hashes:
+        print("valid"); sys.exit(0)
+    print("no valid key"); sys.exit(1)
+if len(sys.argv) > 1 and sys.argv[1] == "wire":
+    open(os.environ.get("STUB_WIRED", os.devnull), "w").write("wired\n")
+    print("bank hook wired (stub)"); sys.exit(0)
+if len(sys.argv) > 1 and sys.argv[1] == "status":
+    print("bank hook: wired · last snapshot: 0.2h · hub: none configured"); sys.exit(0)
+sys.exit(2)
+STUBPY
+export NOTREST_ATLAS_PY="$W/atlas/atlas.py"
+export STUB_KEYRING="$W/.access/keys.sha256"
+export STUB_WIRED="$W/atlas/wired.flag"
+python3 -c "
+import hashlib
+open('$W/.access/keys.sha256','w').write(
+    '# notrest access keyring — sha256 of each minted key\n'
+    + hashlib.sha256(b'$FIXTURE_KEY').hexdigest() + ':fixture:2026-09-06\n')"
+export NOTREST_ACCESS_KEY="$FIXTURE_KEY"
+# Lane H's hooks now CALL `atlas.py key --check` and resolve it at
+# <hookdir>/../skills/atlas/scripts/atlas.py. The sandbox copies hooks to $W/hooks, so the
+# verifier goes one level up from there, and $NOTREST_KEYRING points it at THIS ring —
+# otherwise it reads the machine's own and the fixture depends on the operator's licence.
+mkdir -p "$W/skills/atlas/scripts"
+cp "$(cd "$(dirname "$EST")/../../atlas/scripts" && pwd)/atlas.py" \
+   "$W/skills/atlas/scripts/atlas.py" 2>/dev/null || true
+export NOTREST_KEYRING="$W/.access/keys.sha256"
 mkdir -p "$W/hooks"
 for h in session-start session-end coord-nudge agent-ledger estate-root; do
   cp "$HOOKS_SRC/$h.sh" "$W/hooks/$h.sh"
@@ -1467,6 +1522,130 @@ PY2
 t "COORD tail is capped at 25" \
   "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['coord_lines_shown'])" \
      <(est continuation --root "$CU" --json 2>/dev/null))" "25"
+
+# ── 4.8 · THE ACCESS GATE — notrest is part of Atlas ─────────────────────────────────
+# ⛔ THE VERIFIER IS CALLED, NEVER REIMPLEMENTED. These arms drive a STUB atlas.py that
+# implements the contract lane A is building to (`key --check` → 0 valid, non-zero not;
+# `wire` → installs the bank hook; `status` → one line). When the real script lands the
+# stub is deleted and these arms run against it unchanged — which is the point of testing
+# the seam rather than the implementation.
+echo "── 4.8 · the access gate (exit 7) and --atlas"
+AK="$W/atlas"
+# ⛔ ITS OWN RING. These arms REVOKE and re-mint keys; doing that on the fixture-wide
+# keyring silently un-keyed every later arm, and the packet arms went red for a reason
+# that had nothing to do with packets.
+SAVED_RING="$STUB_KEYRING"
+export STUB_KEYRING="$AK/gate-keys.sha256"
+printf '# notrest access keyring — sha256(key):label:date\n' > "$STUB_KEYRING"
+GATEROOT="$W/gated"; mkdir -p "$GATEROOT"; : > "$GATEROOT/README.md"
+# GKEY, not the fixture-wide key: these arms are ABOUT the key, so they must start from a
+# machine that has none and set it deliberately.
+GKEY=""
+gest() { env $CLEAR_HOST NOTREST_ATLAS_PY="$AK/atlas.py" STUB_KEYRING="$STUB_KEYRING" \
+         STUB_WIRED="$AK/wired.flag" NOTREST_ACCESS_KEY="$GKEY" \
+         python3 "$EST" "$@"; }
+
+# (1) an EMPTY keyring is a machine with no valid key
+gest establish --root "$GATEROOT" > "$W/g1" 2>&1
+t "establish without a key exits 7" "$?" "7"
+has "…naming the key file" "~/.notrest/access-key" "$W/g1"
+has "…and the env form" "NOTREST_ACCESS_KEY" "$W/g1"
+has "…and who mints one" "ask the owner to mint one" "$W/g1"
+t "…in exactly ONE line" "$(grep -c . "$W/g1")" "1"
+gest check --root "$GATEROOT" > "$W/g2" 2>&1
+t "check without a key exits 7 too" "$?" "7"
+t "…nothing was written into the project" \
+  "$([ -f "$GATEROOT/CLAUDE.md" ] && echo wrote || echo clean)" "clean"
+
+# (2) ⛔ THE PACKET REFUSES SILENTLY. SessionStart injects this; a licensing error printed
+# here would land in the model's context on every single session start.
+gest continuation --root "$GATEROOT" --brief > "$W/g3" 2>"$W/g3e"
+t "continuation --brief without a key exits 7" "$?" "7"
+t "…and emits NOTHING on stdout" "$(wc -c < "$W/g3" | tr -d ' ')" "0"
+t "…nor on stderr" "$(wc -c < "$W/g3e" | tr -d ' ')" "0"
+t "…so there is no terminator for a hook to gate on" \
+  "$(grep -c 'notrest BRIEF PACKET END' "$W/g3")" "0"
+gest continuation --root "$GATEROOT" > "$W/g4" 2>&1
+t "the full continuation is gated the same way" "$?" "7"
+t "…and is equally silent" "$(wc -c < "$W/g4" | tr -d ' ')" "0"
+
+# (3) a WRONG key is not a key
+GKEY="not-the-key"
+gest establish --root "$GATEROOT" >/dev/null 2>&1; t "a wrong key still exits 7" "$?" "7"
+
+# (4) a MINTED key opens every surface
+python3 -c "
+import hashlib,sys
+open('$STUB_KEYRING','a').write(hashlib.sha256(b'seat-key-1').hexdigest()+':seat:2026-09-06\n')"
+GKEY="seat-key-1"
+gest establish --root "$GATEROOT" >/dev/null 2>&1; t "a valid key lets establish run" "$?" "0"
+gest check --root "$GATEROOT" >/dev/null 2>&1;     t "…and check" "$?" "0"
+gest continuation --root "$GATEROOT" --brief > "$W/g5" 2>&1
+t "…and the packet is emitted again" "$?" "0"
+t "…with its terminator" "$(tail -1 "$W/g5")" "notrest BRIEF PACKET END"
+
+# (5) REVOCATION is deleting the hash line — and it bites immediately
+printf '# notrest access keyring — sha256 of each minted key\n' > "$STUB_KEYRING"
+gest check --root "$GATEROOT" >/dev/null 2>&1; t "revoking the hash line re-closes the gate" "$?" "7"
+python3 -c "
+import hashlib
+open('$STUB_KEYRING','a').write(hashlib.sha256(b'seat-key-1').hexdigest()+':seat:2026-09-06\n')"
+
+# (6) ⛔ THE GATE IS ACTIVE ONLY WHERE IT IS DEPLOYED. With no verifier on the machine it
+# cannot run, and bricking a harness because one FILE is missing — rather than because a
+# KEY is — would be the gate failing in the one direction it must not.
+# ⛔ A REAL "no verifier" MACHINE. Pointing the env at a missing file is not enough once
+# atlas.py ships beside establish.py — resolution falls through to the sibling. So the
+# script is copied somewhere with no sibling skill and no atlas.py on PATH.
+mkdir -p "$W/nosib"; cp "$EST" "$W/nosib/establish.py"
+env $CLEAR_HOST NOTREST_ATLAS_PY="$W/nope/atlas.py" PATH=/usr/bin:/bin \
+  NOTREST_ACCESS_KEY="" python3 "$W/nosib/establish.py" check --root "$GATEROOT" >/dev/null 2>&1
+t "with NO verifier present the gate is inert, not closed" "$?" "0"
+
+# (7) --atlas CALLS the script; the wiring lives there, never a copy here
+rm -f "$AK/wired.flag"
+gest establish --root "$GATEROOT" --atlas > "$W/g6" 2>&1
+t "establish --atlas exits 0" "$?" "0"
+has "…and reports the bank hook wired" "bank hook wired" "$W/g6"
+t "…because it actually ran atlas.py wire" \
+  "$([ -f "$AK/wired.flag" ] && echo ran || echo no)" "ran"
+gest establish --root "$GATEROOT" >/dev/null 2>&1
+rm -f "$AK/wired.flag"; gest establish --root "$GATEROOT" >/dev/null 2>&1
+t "…and plain establish does NOT wire it (opt-in)" \
+  "$([ -f "$AK/wired.flag" ] && echo ran || echo no)" "no"
+env $CLEAR_HOST NOTREST_ATLAS_PY="$W/nope/atlas.py" PATH=/usr/bin:/bin \
+  NOTREST_ACCESS_KEY="" python3 "$W/nosib/establish.py" establish --root "$GATEROOT" \
+  --atlas > "$W/g7" 2>&1
+t "--atlas with no atlas.py still exits 0" "$?" "0"
+has "…warning that the hook was NOT wired" "bank hook NOT wired" "$W/g7"
+# ⛔ RESTORE THE FIXTURE-WIDE KEY. Unsetting it here left every later hook arm running
+# keyless, so the hooks went (correctly) silent and one packet arm went red for a reason
+# that had nothing to do with what it tests.
+# ⛔ AND THE SAME SEAM AGAINST THE REAL atlas.py, WHEN IT IS PRESENT. The arms above use a
+# stub so this fixture stays hermetic on a machine with no licence; that is right, and it
+# is also exactly how a seam passes its tests and fails in production. This one drives the
+# SHIPPED verifier: it is skipped (not faked) where the script is absent.
+REAL_ATLAS="$(cd "$(dirname "$EST")/../../atlas/scripts" 2>/dev/null && pwd)/atlas.py"
+if [ -f "$REAL_ATLAS" ]; then
+  env NOTREST_ACCESS_KEY="definitely-not-a-minted-key" NOTREST_HOME="$W/nokey-home" \
+    python3 "$REAL_ATLAS" key --check >/dev/null 2>&1
+  t "real atlas.py key --check refuses a bogus key with exit 7" "$?" "7"
+  env $CLEAR_HOST NOTREST_ATLAS_PY="$REAL_ATLAS" NOTREST_ACCESS_KEY="definitely-not-a-minted-key" \
+    NOTREST_HOME="$W/nokey-home" python3 "$EST" check --root "$GATEROOT" > "$W/r1" 2>&1
+  t "…and establish.py turns that into its own exit 7" "$?" "7"
+  has "…with the one line naming the key file" "~/.notrest/access-key" "$W/r1"
+  env $CLEAR_HOST NOTREST_ATLAS_PY="$REAL_ATLAS" NOTREST_ACCESS_KEY="definitely-not-a-minted-key" \
+    NOTREST_HOME="$W/nokey-home" python3 "$EST" continuation --root "$GATEROOT" --brief \
+    > "$W/r2" 2>"$W/r2e"
+  t "…and the packet is silent against the REAL verifier too" \
+    "$(( $(wc -c < "$W/r2") + $(wc -c < "$W/r2e") ))" "0"
+else
+  ok "real atlas.py absent — the shipped-verifier arms are SKIPPED, never faked"
+  ok "real atlas.py absent — packet-silence arm skipped"
+fi
+
+export STUB_KEYRING="$SAVED_RING"
+export NOTREST_ACCESS_KEY="$FIXTURE_KEY"
 
 # ── v4.5: --brief, the COMPACT packet a SessionStart hook can afford to inject.
 # Everything the full packet promises — read-only, deterministic, contained — under a

@@ -67,3 +67,4 @@ plugins/notrest/skills/spend/scripts/fixture.sh
 plugins/notrest/skills/spend/scripts/spend.py
 docs/DOCKET-4.6.2.md
 docs/DOCKET-4.7.md
+docs/DOCKET-4.8.md

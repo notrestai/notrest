@@ -79,6 +79,10 @@ HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── estate root: the ONE resolver every estate hook shares. No root → not our estate.
 . "$HOOK_DIR/estate-root.sh" 2>/dev/null || true
+# ── THE ACCESS KEY (4.8): no key, no harness. This gate BLOCKS, and a block is the
+# loudest thing the suite does — an unlicensed machine gets none of it. The DENY rules of
+# spawn-gate.sh and pretool-gate.sh are the deliberate exception and stay armed.
+[ -n "${NR_ACCESS:-}" ] || exit 0
 ROOT="${NR_ESTATE_ROOT:-}"
 if [ -z "$ROOT" ]; then
   # RB-7 (refuter, 2026-09-01): this path was MUTE, and this file's own law says a gate

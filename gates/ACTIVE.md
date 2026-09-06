@@ -12,3 +12,7 @@ CHECK: python3 plugins/notrest/skills/doctor/scripts/doctor.py check >/dev/null 
 
 GATE: the routing law is clean
 CHECK: python3 plugins/notrest/skills/spend/scripts/spend.py report --root . >/dev/null
+
+GATE: the atlas bank derives status honestly
+CHECK: bash plugins/notrest/skills/atlas/scripts/fixture.sh
+EXPECT: 0 failed

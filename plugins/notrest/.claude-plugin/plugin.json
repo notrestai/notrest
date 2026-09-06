@@ -1,15 +1,15 @@
 {
   "name": "notrest",
   "displayName": "Not Rest Inc. — ORACLE session harness",
-  "version": "4.7.1",
-  "description": "A cross-runtime session harness by Not Rest Inc. — shared estate, instruments, and thirty-two skills, with native adapters for Claude and Codex. Claude keeps lifecycle hooks and explicit Opus lanes; Codex uses AGENTS.md, native packaging, explicit gpt-5.6-sol lanes when delegation is authorized, and honest post-checks where hooks do not exist.",
+  "version": "4.8.0",
+  "description": "A cross-runtime session harness by Not Rest Inc. — shared estate, instruments, and thirty-three skills, with native adapters for Claude and Codex. Claude keeps lifecycle hooks and explicit Opus lanes; Codex uses AGENTS.md, native packaging, explicit gpt-5.6-sol lanes when delegation is authorized, and honest post-checks where hooks do not exist.",
   "author": {
     "name": "Not Rest Inc.",
     "url": "https://do.not.rest"
   },
   "homepage": "https://do.not.rest",
   "repository": "https://github.com/notrestai/notrest.git",
-  "license": "MIT",
+  "license": "Proprietary",
   "keywords": [
     "research",
     "market-research",

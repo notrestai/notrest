@@ -424,6 +424,35 @@ echo "── L2 · the SessionStart hook reads the owner-private marker, and onl
 # clone in the background, and a fixture must never fire a git pull on this repo.
 HKS="$W/hooks"; mkdir -p "$HKS"
 cp "$(cd "$(dirname "$0")/../../../hooks" && pwd)"/*.sh "$HKS/" 2>/dev/null
+
+# ── THE ACCESS KEY (4.8). From this release every hook refuses to do anything on a machine
+# with no minted key: session-start prints one Atlas line and exits 0, BEFORE the nudge, the
+# AUTO-BUILD echo and the self-update. A scratch estate has no key by construction, so every
+# arm below would have been asserting the DARK path by accident — and passing an assertion
+# for a reason that has nothing to do with what it claims to test is worse than failing.
+#
+# The key is minted through atlas.py's own door (never a hand-rolled hash), lives only in
+# $W, and the keyring is stamped where the resolver looks: <plugin>/.access/keys.sha256,
+# which for a hooks copy at $W/hooks is $W/.access/. The keyless arm below unsets it
+# deliberately, so the dark path stays covered on purpose rather than by accident.
+# The gate does not read the keyring itself — it SHELLS OUT to the plugin's own verifier
+# (`<hookdir>/../skills/atlas/scripts/atlas.py key --check`), and refuses when that script
+# is absent: a gate that cannot ask must not answer yes. So the scratch plugin needs the
+# verifier beside the hooks, not just a keyring file. NOTREST_KEYRING points both the mint
+# and the verifier at the same scratch ring; the label is unique per run so a re-run never
+# trips the "label already minted" refusal.
+mkdir -p "$W/skills/atlas/scripts" "$W/nokey-home"
+cp "$(cd "$(dirname "$0")/../../atlas/scripts" && pwd)/atlas.py" "$W/skills/atlas/scripts/"
+export NOTREST_KEYRING="$W/.access/keys.sha256"
+FIXKEY="$(python3 "$W/skills/atlas/scripts/atlas.py" key --mint --label "fixture$$" \
+  2>&1 | grep -o 'nrk_[A-Za-z0-9_-]*' | head -1)"
+export NOTREST_ACCESS_KEY="$FIXKEY"
+t "the fixture minted an access key through atlas's own door" \
+  "$([ -n "$FIXKEY" ] && echo yes || echo no)" "yes"
+t "…into the scratch keyring the verifier will read" \
+  "$([ -s "$W/.access/keys.sha256" ] && echo yes || echo no)" "yes"
+t "…and the verifier itself sits beside the hooks under test" \
+  "$([ -f "$W/skills/atlas/scripts/atlas.py" ] && echo yes || echo no)" "yes"
 AB="$W/hookestate"; mkdir -p "$AB/compile"; ( cd "$AB" && git init -q ) >/dev/null 2>&1
 printf '{"candidates":[{"slug":"release-ritual","occurrences":7,"ripe":true,"status":"NEW"}]}\n' \
   > "$AB/compile/candidates.json"
@@ -472,6 +501,17 @@ ln -sfn "$W/elsewhere/planted.json" "$ABMARK"
 t "escaping-symlink marker → hook still exits 0" "$?" "0"
 hasnt "escaping-symlink marker claims NO authorization" "AUTO-BUILD opted in" "$W/o"
 rm -f "$ABMARK"
+
+# ⛔ THE DARK PATH, ARMED DELIBERATELY. Without a key the hook says one line and does
+# nothing else — no nudge, no AUTO-BUILD echo, no self-update. This is the arm that keeps
+# the mint above honest: if the key stopped being minted, the arms above would go red
+# rather than quietly passing against silence.
+( cd "$AB" && env -u NOTREST_ACCESS_KEY NOTREST_HOME="$W/nokey-home" \
+    bash "$HKS/session-start.sh" ) > "$W/o" 2>&1
+t "no access key → hook still exits 0" "$?" "0"
+has "…and says the harness is inactive here" "The harness is inactive here" "$W/o"
+hasnt "…granting no authorization at all" "AUTO-BUILD opted in" "$W/o"
+hasnt "…and not even the old nudge" "Ripe compile candidate" "$W/o"
 
 # an opt-in is not a licence to invent work: with nothing ripe, neither echo fires.
 AB2="$W/hookestate-noripe"; mkdir -p "$AB2/compile"; ( cd "$AB2" && git init -q ) >/dev/null 2>&1

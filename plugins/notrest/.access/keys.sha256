@@ -1,0 +1,22 @@
+# notrest access keyring — one line per key: sha256(key):label:YYYY-MM-DD
+#
+# notrest is part of Atlas from v4.8.0. A machine holds the harness only if its key
+# hashes to a line in this file; without one the SessionStart banner says so in a single
+# line and every other hook exits silently. The gate controls THE HARNESS ON A MACHINE,
+# not the source files — anyone holding a copy of this repo holds the source, and this
+# file never pretends otherwise.
+#
+# The key itself is NEVER stored here, only its sha256. Minting prints it exactly once:
+#
+#   python3 plugins/notrest/skills/atlas/scripts/atlas.py key --mint --label <who>
+#   python3 plugins/notrest/skills/atlas/scripts/atlas.py key --check      # 0 · 7
+#   python3 plugins/notrest/skills/atlas/scripts/atlas.py key --revoke <label>
+#
+# Revocation is deleting the line — a hash with no key behind it admits nobody, and a
+# holder whose line is gone is out at the next hook that asks. Labels are
+# [A-Za-z0-9._-]{1,64}: a ':' would break the line format, and the minter refuses one.
+#
+# The holder puts the key in ${NOTREST_HOME:-~/.notrest}/access-key (or NOTREST_ACCESS_KEY).
+# That store is resolved identically by atlas.py and by the hooks — one gate, one answer.
+# No key line below this header = no machine is admitted yet; the owner mints the first.
+30ac25e1e7ca404c6b30f30621480cefd1732928770911b69eb5aa5050bd3d0e:owner-mac:2026-09-06

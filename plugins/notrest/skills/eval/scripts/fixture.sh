@@ -104,8 +104,18 @@ description: "Session intake and resume — the suite's front door. Use on /orac
 - **Route to the right tool:** research a question → `/researcher` · write the memo → `/draft` — or say "no skill needed, working directly."
 EOF
 
+# 4.8: the base harness ships a keyring and a gate-obeying SessionStart, because
+# ACCESS-GATE now FAILS on an absent keyring (D4) — an unconfigured gate is a broken one.
+mkdir -p "$P/.access"
+printf '# notrest access keyring — sha256(key):label:date\n%s:fixture:2026-09-06\n' \
+  "$(python3 -c 'print("0"*64)')" > "$P/.access/keys.sha256"
 cat > "$P/hooks/session-start.sh" <<'EOF'
 #!/usr/bin/env bash
+# Without a key: ONE anchored Atlas notice and nothing else. With one: the discipline echo.
+if [ -z "${NOTREST_ACCESS_KEY:-}" ]; then
+  echo "[notrest] notrest is part of Atlas — no valid access key on this machine; ask the owner."
+  exit 0
+fi
 echo "[notrest] Fable discipline. Offload policy: every offloaded job runs on opus."
 exit 0
 EOF
@@ -558,6 +568,307 @@ grep -q '04:00Z' "$TMP/out" && bad "an ordinary line was audited as a trigger" \
 # a corrupt store line must not take the check down
 lloop "a corrupt store line does not break the check" 0 "" \
   "{ mkrec 2026-09-05T04:46:00Z '$LSTAMP'; echo 'not json'; mkrec 2026-09-05T04:48:00Z '[2026-09-05 04:47Z]'; } > \"\$W/archive/findings.jsonl\""
+
+# ── 4.8 · ACCESS-GATE · quiet without a key, but never permissive ────────────────────
+# ⛔ TWO FAILURE SHAPES, OPPOSITE IN DIRECTION. A hook that still writes or injects makes
+# the gate decorative; a hook that stops DENYING turns an expired licence into a security
+# downgrade. Both are driven for real — the hooks are RUN with the key removed. The stub
+# deny rule below uses a NEUTRAL phrase on purpose: the check derives its probe from the
+# hook's own `case "$NORM"` patterns, so no consumer-flow literal needs to exist here (one
+# that did would trip the real gate every time anyone edited this file).
+echo "── 4.8 · ACCESS-GATE"
+AGW="$TMP/accessgate"; rm -rf "$AGW"; cp -R "$BASE" "$AGW"
+AGP="$AGW/plugins/notrest"
+mkdir -p "$AGP/.access" "$AGP/hooks"
+ZERO="$(python3 -c 'print("0"*64)')"
+
+# ⛔ SUPERSEDED BY D4. This once expected a SKIP when the plugin shipped no keyring — and
+# that made deleting the keyring turn the whole gate green, which is the one mutation the
+# check most needs to catch. An absent keyring is not an unconfigured gate; it is a broken
+# one, and it FAILS.
+rm -f "$AGP/.access/keys.sha256"     # the base harness now ships one; this arm is about its ABSENCE
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag0" 2>&1
+grep -q 'FAIL  ACCESS-GATE' "$TMP/ag0" && ok "no keyring → ACCESS-GATE FAILS (it must not skip)" \
+  || bad "an absent keyring did not fail"
+grep -q 'ships no keyring' "$TMP/ag0" && ok "…naming what is missing" || bad "the finding has no reason"
+
+printf '%s:fixture:2026-09-06\n' "$ZERO" > "$AGP/.access/keys.sha256"
+cat > "$AGP/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# a hook that IGNORES the gate: injects on every session regardless of the key
+# (keeps the offload echo so OFFLOAD-POLICY is not collateral damage)
+echo "[notrest] lanes set model: \"opus\" explicitly; Codex uses gpt-5.6-sol"
+echo "[notrest] injected regardless of any key"
+exit 0
+HK
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag1" 2>&1
+rc=$?
+got="$(grep -E '^FAIL ' "$TMP/ag1" | awk '{print $2}' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+[ "$rc" -eq 6 ] && [ "$got" = "ACCESS-GATE" ] \
+  && ok "a keyless hook that still injects → ACCESS-GATE only, exit 6" \
+  || bad "keyless-injection -> got [$got] exit $rc"
+grep -q 'has no header line' "$TMP/ag1" && ok "…and the headerless keyring is named too" \
+  || bad "the keyring header rule did not fire"
+grep -q 'still wrote to stdout' "$TMP/ag1" && ok "…naming the noisy hook" || bad "the noisy hook is unnamed"
+
+printf '# notrest access keyring — sha256(key):label:date\n%s:fixture:2026-09-06\n' "$ZERO" \
+  > "$AGP/.access/keys.sha256"
+cat > "$AGP/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# gated: without a key this hook says nothing and still exits 0
+# offload echo lives in a comment so it is present without being printed:
+# lanes set model: "opus" explicitly; Codex uses gpt-5.6-sol
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || exit 0
+echo "[notrest] the estate is live"
+exit 0
+HK
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag2" 2>&1
+grep -q 'PASS  ACCESS-GATE' "$TMP/ag2" && ok "a gated, silent, exit-0 hook passes" \
+  || bad "a correctly gated hook did not pass"
+
+# ⛔ THE BANNER EXEMPTION, AND ITS BOUND. The docket gives SessionStart ONE line without a
+# key — a machine whose licence lapsed must not get a silent harness and a baffled
+# operator. Live-caught: the first cut of this check demanded total silence and reddened
+# the shipped hook for obeying the docket. The exemption is one line, and it must be the
+# Atlas notice; anything more is injection under cover of an announcement.
+cat > "$AGP/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# lanes set model: "opus" explicitly; Codex uses gpt-5.6-sol
+if [ -z "${NOTREST_ACCESS_KEY:-}" ]; then
+  echo "[notrest] notrest is part of Atlas — no valid access key on this machine; ask the owner. The harness is inactive here."
+  exit 0
+fi
+echo "[notrest] the estate is live"
+HK
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag2b" 2>&1
+grep -q 'PASS  ACCESS-GATE' "$TMP/ag2b"   && ok "SessionStart's ONE Atlas notice is allowed" || bad "the sanctioned banner was reddened"
+cat > "$AGP/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# lanes set model: "opus" explicitly; Codex uses gpt-5.6-sol
+if [ -z "${NOTREST_ACCESS_KEY:-}" ]; then
+  echo "[notrest] notrest is part of Atlas — no valid access key on this machine; ask the owner. The harness is inactive here."
+  echo "[notrest] AUTO-CONTINUATION: the estate tail follows"
+  exit 0
+fi
+HK
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag2c" 2>&1
+grep -q 'banner exemption is ONE Atlas notice' "$TMP/ag2c"   && ok "…but a SECOND line under cover of the banner is caught"   || bad "a hook injected a second line behind the banner exemption"
+cat > "$AGP/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# lanes set model: "opus" explicitly; Codex uses gpt-5.6-sol
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || { echo "[notrest] resuming the estate tail"; exit 0; }
+HK
+# the match is ANCHORED: a hook cannot print its own paragraph and END with the notice
+cat > "$AGP/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# lanes set model: "opus" explicitly; Codex uses gpt-5.6-sol
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || { echo "[notrest] tail: ... — notrest is part of Atlas; ask the owner."; exit 0; }
+HK
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag2e" 2>&1
+grep -q 'banner exemption is ONE Atlas notice' "$TMP/ag2e"   && ok "…and a line that merely ENDS with the notice is caught (the match is anchored)"   || bad "an unanchored banner slipped through"
+cat > "$AGP/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# lanes set model: "opus" explicitly; Codex uses gpt-5.6-sol
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || { echo "[notrest] resuming the estate tail"; exit 0; }
+HK
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag2d" 2>&1
+grep -q 'banner exemption is ONE Atlas notice' "$TMP/ag2d"   && ok "…and one line that is NOT the Atlas notice is caught too"   || bad "any single line passed as the banner"
+cat > "$AGP/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# lanes set model: "opus" explicitly; Codex uses gpt-5.6-sol
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || exit 0
+echo "[notrest] the estate is live"
+exit 0
+HK
+
+# ⛔ A LAPSED LICENCE MUST NOT BE A SECURITY DOWNGRADE.
+cat > "$AGP/hooks/pretool-gate.sh" <<HK
+#!/bin/bash
+# a deny rule that (wrongly) depends on the key: with none, it allows everything
+CMD="\$(cat)"
+NORM=" \$CMD "
+[ -n "\${NOTREST_ACCESS_KEY:-}" ] || exit 0
+case "\$NORM" in *" danger drop "*) echo deny >&2; exit 2 ;; esac
+exit 0
+HK
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag3" 2>&1
+grep -q 'ALLOWED a command its own rules deny' "$TMP/ag3" \
+  && ok "a deny rule that lapses with the key is caught" \
+  || bad "an expired licence silently became a security downgrade"
+cat > "$AGP/hooks/pretool-gate.sh" <<HK
+#!/bin/bash
+CMD="\$(cat)"
+NORM=" \$CMD "
+case "\$NORM" in *" danger drop "*) echo deny >&2; exit 2 ;; esac
+exit 0
+HK
+cat > "$AGP/hooks/coord-nudge.sh" <<'HK'
+#!/bin/bash
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || exit 3
+exit 0
+HK
+python3 "$EVAL" check --root "$AGW" > "$TMP/ag4" 2>&1
+grep -q 'did not exit 0' "$TMP/ag4" && ok "a keyless hook that FAILS is caught (quiet != broken)" \
+  || bad "a hook that breaks without a key was not caught"
+
+# ── D3/D4 (refuter) · the two mutations the `{}` payload could not see ───────────────
+# ⛔ THE FIRST CUT FED EVERY HOOK `{}`. That payload reaches no writing and no denying
+# path, so BOTH of these passed: deleting the gate from coord-nudge.sh, and adding a gate
+# to spawn-gate's deny so a keyless machine becomes LAWLESS. A gate check that never
+# reaches the gated code is a green light wired to nothing.
+echo "── 4.8 · ACCESS-GATE drives real events (D3) and demands the keyring (D4)"
+AG2="$TMP/gate-mut"; rm -rf "$AG2"; cp -R "$BASE" "$AG2"; AG2P="$AG2/plugins/notrest"
+mkdir -p "$AG2P/.access" "$AG2P/hooks"
+printf '# notrest access keyring — sha256(key):label:date\n%s:fixture:2026-09-06\n' \
+  "$(python3 -c 'print("0"*64)')" > "$AG2P/.access/keys.sha256"
+cat > "$AG2P/hooks/session-start.sh" <<'HK'
+#!/bin/bash
+# lanes set model: "opus" explicitly; Codex uses gpt-5.6-sol
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || {
+  echo "[notrest] notrest is part of Atlas — no valid access key on this machine; ask the owner."; exit 0; }
+echo "[notrest] the estate is live"
+HK
+# a writer that OBEYS the gate, and a deny rule that does not depend on it
+cat > "$AG2P/hooks/coord-nudge.sh" <<'HK'
+#!/bin/bash
+IN="$(cat)"
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || exit 0
+printf -- '- [2026-09-06 00:01Z] [nudge] %s -> noted | evidence: none\n' "$IN" >> COORD.md
+exit 0
+HK
+cat > "$AG2P/hooks/spawn-gate.sh" <<'HK'
+#!/bin/bash
+IN="$(cat)"
+case "$IN" in *'"tool_name": "Task"'*|*'"tool_name":"Task"'*)
+  case "$IN" in *model*) ;; *) echo "deny: a Task must name its model" >&2; exit 2 ;; esac ;;
+esac
+exit 0
+HK
+python3 "$EVAL" check --root "$AG2" > "$TMP/m0" 2>&1
+grep -q 'PASS  ACCESS-GATE' "$TMP/m0" && ok "the honest baseline passes (writer gated, deny unconditional)" \
+  || bad "the baseline did not pass: $(grep ACCESS-GATE "$TMP/m0" | head -1)"
+
+# MUTATION 1 — the gate DELETED from coord-nudge: it now appends to COORD.md keyless
+cp "$AG2P/hooks/coord-nudge.sh" "$TMP/cn.keep"
+cat > "$AG2P/hooks/coord-nudge.sh" <<'HK'
+#!/bin/bash
+IN="$(cat)"
+printf -- '- [2026-09-06 00:01Z] [nudge] %s -> noted | evidence: none\n' "$IN" >> COORD.md
+exit 0
+HK
+python3 "$EVAL" check --root "$AG2" > "$TMP/m1" 2>&1
+grep -q 'FAIL  ACCESS-GATE' "$TMP/m1" \
+  && ok "MUTATION: gate removed from coord-nudge → ACCESS-GATE FAILS" \
+  || bad "an ungated writer passed — the payload still reaches no writing path"
+grep -q 'CHANGED the estate' "$TMP/m1" && ok "…caught by the estate diff, not just stdout" \
+  || bad "the keyless write was not detected"
+cp "$TMP/cn.keep" "$AG2P/hooks/coord-nudge.sh"
+
+# MUTATION 2 — a gate ADDED to spawn-gate's deny: a keyless machine becomes LAWLESS
+cat > "$AG2P/hooks/spawn-gate.sh" <<'HK'
+#!/bin/bash
+IN="$(cat)"
+[ -n "${NOTREST_ACCESS_KEY:-}" ] || exit 0
+case "$IN" in *'"tool_name": "Task"'*|*'"tool_name":"Task"'*)
+  case "$IN" in *model*) ;; *) echo "deny: a Task must name its model" >&2; exit 2 ;; esac ;;
+esac
+exit 0
+HK
+python3 "$EVAL" check --root "$AG2" > "$TMP/m2" 2>&1
+grep -q 'ALLOWED a Task spawned with NO model' "$TMP/m2" \
+  && ok "MUTATION: deny gated on the key → caught (a lapsed licence is not a downgrade)" \
+  || bad "spawn-gate stopped denying without a key and the check missed it"
+
+# D4 — the committed keyring DELETED must FAIL, never skip
+rm -f "$AG2P/.access/keys.sha256"
+python3 "$EVAL" check --root "$AG2" > "$TMP/m3" 2>&1
+rc=$?
+grep -q 'FAIL  ACCESS-GATE' "$TMP/m3" && ok "D4: an absent keyring FAILS (it used to SKIP green)" \
+  || bad "deleting the keyring turned the gate green"
+[ "$rc" -eq 6 ] && ok "…and eval exits 6, not 0" || bad "eval exited $rc with no keyring"
+grep -q 'ships no keyring' "$TMP/m3" && ok "…naming what is missing" || bad "the finding is unnamed"
+
+# ── V3 (refuter) · the hardening clauses, each reverted and caught ───────────────────
+# ⛔ THE REFUTER REVERTED FOUR CLAUSES AND ACCESS-GATE STAYED GREEN FOR ALL FOUR. A gate
+# check that cannot see its own hardening disappear is a green light wired to nothing.
+# Each mutation below is that revert, applied to a COPY of the shipped hooks.
+echo "── 4.8 · ACCESS-GATE sees its own hardening (V3)"
+V3="$TMP/v3"; rm -rf "$V3"; cp -R "$BASE" "$V3"; V3P="$V3/plugins/notrest"
+RH="$(cd "$(dirname "$EVAL")/../../../hooks" 2>/dev/null && pwd)"
+RA="$(cd "$(dirname "$EVAL")/../../atlas/scripts" 2>/dev/null && pwd)/atlas.py"
+if [ -n "$RH" ] && [ -d "$RH" ] && [ -f "$RA" ]; then
+  rm -rf "$V3P/hooks"; cp -Rp "$RH" "$V3P/hooks"
+  mkdir -p "$V3P/skills/atlas/scripts"; cp -p "$RA" "$V3P/skills/atlas/scripts/atlas.py"
+  mkdir -p "$V3P/.access"
+  printf '# notrest access keyring — sha256(key):label:date\n%s:fixture:2026-09-06\n' \
+    "$(python3 -c 'print("0"*64)')" > "$V3P/.access/keys.sha256"
+  cp -p "$V3P/hooks/estate-root.sh" "$TMP/er.keep"
+  cp -p "$V3P/hooks/estate-pulse.sh" "$TMP/ep.keep"
+  python3 "$EVAL" check --root "$V3" > "$TMP/v0" 2>&1
+  grep -q 'PASS  ACCESS-GATE' "$TMP/v0" && ok "V3 baseline: the shipped hardened hooks pass" \
+    || bad "the shipped hooks did not pass: $(grep 'ACCESS-GATE' "$TMP/v0" | head -1)"
+
+  # (1) drop the /usr/bin/python3 preference → a stub on $PATH gets to answer
+  python3 - "$V3P/hooks/estate-root.sh" <<'MUT1'
+import sys
+p = sys.argv[1]; s = open(p, encoding="utf-8").read()
+old = 'nr_py="/usr/bin/python3"\n  [ -x "$nr_py" ] || nr_py="$(command -v python3 2>/dev/null)"'
+assert old in s, "python3-preference clause not found"
+open(p, "w", encoding="utf-8").write(s.replace(old, 'nr_py="$(command -v python3 2>/dev/null)"', 1))
+MUT1
+  python3 "$EVAL" check --root "$V3" > "$TMP/v1" 2>&1
+  grep -q 'stub python3 first on' "$TMP/v1" \
+    && ok "MUTATION: /usr/bin/python3 preference dropped → ACCESS-GATE FAILS" \
+    || bad "a stub python3 on PATH was believed and the check missed it"
+  cp -p "$TMP/er.keep" "$V3P/hooks/estate-root.sh"
+
+  # (2) delete the sentinel requirement → exit 0 with empty stdout reads as licensed
+  python3 - "$V3P/hooks/estate-root.sh" <<'MUT2'
+import re, sys
+p = sys.argv[1]; s = open(p, encoding="utf-8").read()
+# "the sentinel requirement" is BOTH shaped checks — the literal prefix and the ring
+# hash that makes it uncounterfeitable. Deleting one and leaving the other is not the
+# revert the refuter performed.
+new, n = re.subn(r'  case "\$nr_out" in\n    \*"notrest-access: ok ring="\*\) ;;\n'
+                 r'    \*\) NR_ACCESS_WHY="nosentinel"; return 0 ;;\n  esac\n', "", s, count=1)
+assert n == 1, "sentinel clause not found"
+new, n2 = re.subn(r'  if \[ -n "\$nr_ringhash" \]; then\n    case "\$nr_out" in\n'
+                  r'      \*"notrest-access: ok ring=\$\{nr_ringhash:0:12\}"\*\) ;;\n'
+                  r'      \*\) NR_ACCESS_WHY="ringmismatch"; return 0 ;;\n    esac\n  fi\n',
+                  "", new, count=1)
+assert n2 == 1, "ring-hash clause not found"
+new, n3 = re.subn(r'  if \[ -n "\$nr_ringcmp" \]; then\n    case "\$nr_out" in\n'
+                  r'      \*"path=\$nr_ring"\*\) ;;\n'
+                  r'      \*\) NR_ACCESS_WHY="ringpath"; return 0 ;;\n    esac\n  fi\n',
+                  "", new, count=1)
+assert n3 == 1, "ring-path clause not found"
+open(p, "w", encoding="utf-8").write(new)
+MUT2
+  python3 "$EVAL" check --root "$V3" > "$TMP/v2" 2>&1
+  grep -q 'sentinel stripped' "$TMP/v2" \
+    && ok "MUTATION: sentinel requirement deleted → ACCESS-GATE FAILS" \
+    || bad "a verifier that exits 0 saying nothing was believed"
+  cp -p "$TMP/er.keep" "$V3P/hooks/estate-root.sh"
+
+  # (3) ungate the pulse → a keyless writer runs
+  python3 - "$V3P/hooks/estate-pulse.sh" <<'MUT3'
+import sys
+p = sys.argv[1]; s = open(p, encoding="utf-8").read()
+old = '[ -n "${NR_ACCESS:-}" ] || exit 0'
+assert old in s, "pulse gate not found"
+open(p, "w", encoding="utf-8").write(s.replace(old, "# gate removed by the mutation arm", 1))
+MUT3
+  python3 "$EVAL" check --root "$V3" > "$TMP/v3o" 2>&1
+  grep -q 'keyless estate-pulse.sh did work' "$TMP/v3o" \
+    && ok "MUTATION: pulse ungated → ACCESS-GATE FAILS (files and/or forks)" \
+    || bad "an ungated keyless pulse writer was not caught"
+  cp -p "$TMP/ep.keep" "$V3P/hooks/estate-pulse.sh"
+  python3 "$EVAL" check --root "$V3" > "$TMP/v4" 2>&1
+  grep -q 'PASS  ACCESS-GATE' "$TMP/v4" && ok "…and restoring every clause returns it to green" \
+    || bad "the restored hooks did not pass again"
+else
+  ok "shipped hooks/atlas.py not reachable — the V3 mutation arms are SKIPPED, never faked"
+fi
 
 # THE SANDBOX LAW, now asserted: this fixture writes only inside its own mktemp dir.
 if [ -e /evals ] || [ -e /golden-release-surface.txt ]; then
