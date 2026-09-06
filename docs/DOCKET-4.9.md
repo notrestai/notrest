@@ -1,8 +1,9 @@
 # DOCKET 4.9 — the portal owns identity; the hub owns the plugin's git
 
-**STATUS: DRAFT v2 — wide-parallel cut, awaiting the owner's approval. No lane is dispatched until the owner says go.**
-*Drafted 2026-09-06 by the Director seat. Contract: Atlas `IDENTITY-CONTRACT.md` (received by message;
-text requested), beside `HUB-CONTRACT.md`, `hub/SCHEMA-v1.md`, `ATLAS-PLAYBOOK.md` v2.0, `WIRING.md`.
+**STATUS: DRAFT v3 — wide-parallel cut against the three received contract files, awaiting the owner's approval. No lane is dispatched until the owner says go.**
+*Drafted 2026-09-06 by the Director seat. Contract files, received verbatim and banked with provenance under `briefs/atlas-contract/`:
+`IDENTITY-CONTRACT.md` (192b6f5), `HUB-CONTRACT.md` (14fb684), `SCHEMA-v1.md`. Pending from Atlas: the
+verifier + fixture, `kit/to-wire.py`, `mcp/server.mjs`.
 Our ask: `briefs/ask-2026-09-06-atlas-identity-contract.md`.*
 
 ## The change in one paragraph
@@ -21,9 +22,10 @@ bootstrap text); a headless box logs in with the device flow.
 
 - **D1 — verification = signed token (Atlas ruling).** Atlas supplies the verifier + fixture; we
   vendor it. Recommend ACCEPT. (The cached-verdict alternative is dropped.)
-- **D2 — ship gate.** 4.9.0 ships only when the fixture's LIVE arm passes against
-  atlas.not.rest (hub phase I-A live). Until then the build is complete, gated green against the
-  mock hub, and labeled "hub I-A pending" — never claimed live. Recommend ACCEPT.
+- **D2 — ship gate, in two halves.** The PUSH half is provable live today (ingest secret): its
+  live arm is a ship condition now. The TOKEN half (login, verify, refresh, revoke, git helper)
+  is gated green against the mock and ships labeled "hub I-A pending" until its live arm passes;
+  the ring keeps admitting the fleet meanwhile. Recommend ACCEPT.
 - **D3 — hub phases.** Atlas has asked the owner for its own go on I-A → I-B → I-C. Our Phase A
   needs only the contract text; our live arm needs I-A.
 
@@ -50,7 +52,8 @@ bootstrap text); a headless box logs in with the device flow.
 | A2 token module | opus · judgment | `skills/atlas/scripts/atlas_token.py` (new) + vendored verifier | verify/claims/JWKS/cache per the interface; unit fixture: good, expired, wrong kid, bad sig, wrong aud/mid, revoked | 8–12M |
 | A3 auth client | opus · judgment | `skills/atlas/scripts/atlas_auth.py` (new) | device flow incl. 428/410/403/429 paths, refresh at <7 d, revoked cache; passes against A1 | 8–12M |
 | A4 git + helper | sonnet · bounded | `atlas.py credential-helper` subcommand, `login` writes the host-scoped helper config line from §9 | `git credential fill` returns username atlas / password = token for the hub host and nothing for others; no token in any URL or config (grep arm) | 1–2M |
-| A5 push adapter | opus · judgment | `push_http` in `atlas.py` | pushes to A1 per HUB-CONTRACT; idempotent replay; rejected-push error surfaced verbatim; `bank` exit codes unchanged | 6–10M |
+| A5 push adapter | opus · judgment | `push_http` + a snapshot→wire converter in `atlas.py` | wire atlas-hub/1 per SCHEMA-v1 with the HUB-CONTRACT §4 status/evidence table; bearer from the credential file by path; 201 → hub_commit = head; errors verbatim; **LIVE arm today** against atlas.not.rest with an ingest secret the Atlas seat mints for this estate (the push half does not wait on hub I-A) | 8–12M |
+| A9 MCP read server | opus · judgment | vendor Atlas `mcp/server.mjs` under `skills/atlas/mcp/`, plugin MCP registration, `doctor` node-presence check | server starts on this Mac with the token file; `atlas_relevant_context` answers for this estate; doctor names a missing `node` as one line, never a failure of the harness | 4–6M |
 | A6 hooks | opus · judgment (kernel) | `hooks/session-start.sh`, `hooks/estate-root.sh`, `hooks/atlas-bank-hook.sh`, hook fixture | SessionStart: refresh + revoked fetch bounded ≤2 s, silent on failure; banner names the login; hook fixture arms green; `eval check` 0 | 8–12M |
 | A7 connect text | opus · judgment | `docs/ATLAS-CONNECT.md` (new) — the bootstrap the hub serves verbatim | helper-before-marketplace order; every command runnable; NAS/headless variant; sent to Atlas | 4–6M |
 | A8 manifest + stamps | sonnet · bounded | `.claude-plugin/*.json`, `plugins/notrest/.claude-plugin/plugin.json`, flow-html stamps | versions match; both tombstones pinned 9.0.0 / 4.7.1 (asserted); `doctor check` ≤ 5 | 0.5–1M |
@@ -74,11 +77,19 @@ bootstrap text); a headless box logs in with the device flow.
 
 ## Totals
 
-- **Lanes:** 12 + fixes (9 opus, 4 sonnet). **Tokens:** 70–110M lane tokens (parallelism buys
+- **Lanes:** 13 + fixes (10 opus, 3 sonnet). **Tokens:** 75–115M lane tokens (parallelism buys
   wall-clock, not tokens: each lane carries its own context). Seat cost on top, about one refuter
   round. For scale: 4.7 receipted ~100M+ and hit the limit once; 4.8.0 ~25M in one morning.
 - **Wall-clock:** ~5.5 h of lane time in three waves; realistically ONE long window or TWO
   (Wave A in the first, B+C in the second). The ship itself waits on D2.
+
+## Open with Atlas (asked 2026-09-06; the lanes carry them as OPEN records until answered)
+
+- the machine fingerprint's inputs (§1/§2 `mid`) — both sides must compute the same hash;
+- the two `atlas-token` basenames with two meanings (`~/.notrest/atlas-token` = the JWT;
+  `~/.notrest/credentials/atlas-token` = the ingest secret) — proposed rename of the ingest file;
+- this estate's project id and its ingest + view secrets for the live push arm;
+- delivery of the verifier, `kit/to-wire.py` and `mcp/server.mjs` with their license lines.
 
 ## Bounds stated now
 
