@@ -5,7 +5,7 @@
 > (needs the access key at ~/.notrest/access-key; `python3 plugins/notrest/skills/atlas/scripts/atlas.py key --check` exits 0). Gates: `python3 plugins/notrest/skills/doctor/scripts/doctor.py check` exit 5 / 0 fail,
 > `python3 plugins/notrest/skills/eval/scripts/eval.py check --root .` exit 0 (17 checks), `python3 plugins/notrest/hooks/gate-check.py gates/ACTIVE.md --cwd .` 0 red, `python3 plugins/notrest/skills/atlas/scripts/atlas.py status --root .` GREEN.
 > Open for the owner: LICENSE counsel review · carry ~/.notrest/credentials/keys/nas-notrest.key and atlas-hub.key to the NAS ·
-> ATLAS-PLAYBOOK.md + WIRING.md for the hub push adapter (stub until then). Docketed 4.8.2: docs/DOCKET-4.8.md "Bounds stated at ship".
+> the Atlas playbook and wiring documents (not in this repo) for the hub push adapter, a stub until then. Docketed 4.8.2: docs/DOCKET-4.8.md "Bounds stated at ship".
 > Owner-owned untracked files at the root: NOTREST-ON-THE-NAS.md, WORKSHOP-SLIDES.md, WORKSHOP-SLIDES-live.js.
 
 
