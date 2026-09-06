@@ -288,3 +288,275 @@ def _json_object(raw, err="token: malformed"):
 
 
 def _str_claim(claims, name):
+    v = claims.get(name)
+    if not isinstance(v, str) or not v:
+        raise TokenError("token: malformed")
+    return v
+
+
+def _int_claim(claims, name):
+    v = claims.get(name)
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise TokenError("token: malformed")
+    return int(v)
+
+
+def _str_list_claim(claims, name):
+    v = claims.get(name)
+    if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+        raise TokenError("token: malformed")
+    return v
+
+
+def _revoked_sets(revoked):
+    """Accept a set/list of jti, or the hub's {jti:[...], sub:[...]} shape."""
+    if revoked is None:
+        return frozenset(), frozenset()
+    if isinstance(revoked, dict):
+        return (frozenset(revoked.get("jti") or ()),
+                frozenset(revoked.get("sub") or ()))
+    return frozenset(revoked), frozenset()
+
+
+def verify(token, keys, now=None, expect_mid=None, revoked=None):
+    """Verify an Atlas token. Returns the claims dict; raises TokenError.
+
+    keys        {kid: 32-byte raw Ed25519 public key}
+    now         epoch seconds (default: time.time())
+    expect_mid  this machine's fingerprint; skipped when None or when the
+                token's scp contains "roaming"
+    revoked     set of revoked jti, or {"jti": [...], "sub": [...]}
+
+    Order: structure -> alg -> kid -> signature -> iss -> aud -> exp -> iat
+    -> mid -> jti.  No claim is trusted before the signature is checked.
+    """
+    if not isinstance(token, str):
+        raise TokenError("token: malformed")
+    token = token.strip()
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise TokenError("token: malformed")
+    header_seg, payload_seg, sig_seg = parts
+
+    header = _json_object(_b64u_decode(header_seg))
+    if header.get("alg") != ALG:
+        # covers "none", "HS256" and every other algorithm-confusion attempt
+        raise TokenError("header: alg must be EdDSA")
+    typ = header.get("typ")
+    if typ is not None and typ != "JWT":
+        raise TokenError("header: typ must be JWT")
+
+    kid = header.get("kid")
+    if not isinstance(kid, str) or kid not in (keys or {}):
+        raise TokenError("kid: unknown")
+    public_key = keys[kid]
+    if not isinstance(public_key, (bytes, bytearray)) or len(public_key) != 32:
+        raise TokenError("kid: unknown")
+
+    signature = _b64u_decode(sig_seg)
+    if len(signature) != 64:
+        raise TokenError("signature: invalid")
+    signing_input = (header_seg + "." + payload_seg).encode("ascii")
+    if not ed25519_verify(bytes(public_key), signing_input, signature):
+        raise TokenError("signature: invalid")
+
+    # --- signature is good; only now may the payload be believed ------------
+    claims = _json_object(_b64u_decode(payload_seg))
+    iss = _str_claim(claims, "iss")
+    sub = _str_claim(claims, "sub")
+    _str_claim(claims, "seat")
+    mid = _str_claim(claims, "mid")
+    jti = _str_claim(claims, "jti")
+    _str_list_claim(claims, "prj")
+    scp = _str_list_claim(claims, "scp")
+    iat = _int_claim(claims, "iat")
+    exp = _int_claim(claims, "exp")
+    aud = claims.get("aud")
+    if not isinstance(aud, str) and not (
+            isinstance(aud, list) and all(isinstance(x, str) for x in aud)):
+        raise TokenError("token: malformed")
+
+    if iss != ISS:
+        raise TokenError("iss: mismatch")
+    if AUD != aud and not (isinstance(aud, list) and AUD in aud):
+        raise TokenError("aud: mismatch")
+
+    if now is None:
+        now = time.time()
+    now = int(now)
+    if now - SKEW >= exp:
+        raise TokenError("exp: expired")
+    if iat - SKEW > now:
+        raise TokenError("iat: in the future")
+
+    if expect_mid is not None and "roaming" not in scp and mid != expect_mid:
+        raise TokenError("mid: mismatch")
+
+    jti_revoked, sub_revoked = _revoked_sets(revoked)
+    if jti in jti_revoked:
+        raise TokenError("jti: revoked")
+    if sub in sub_revoked:
+        raise TokenError("sub: revoked")
+
+    return claims
+
+
+def keys_from_jwks(json_obj):
+    """JWKS -> {kid: 32-byte raw public key}. OKP/Ed25519 keys only.
+
+    Keys of another kty/crv are skipped (a JWKS may legitimately hold them);
+    an OKP/Ed25519 entry with a bad kid or x raises ValueError."""
+    if isinstance(json_obj, dict):
+        entries = json_obj.get("keys")
+    else:
+        entries = json_obj
+    if not isinstance(entries, list):
+        raise ValueError("jwks: no keys array")
+    keys = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("jwks: key is not an object")
+        if entry.get("kty") != "OKP" or entry.get("crv") != "Ed25519":
+            continue
+        kid = entry.get("kid")
+        if not isinstance(kid, str) or not kid:
+            raise ValueError("jwks: key has no kid")
+        x = entry.get("x")
+        if not isinstance(x, str) or not _B64URL_CHARS.issuperset(x):
+            raise ValueError("jwks: key %s has a bad x" % kid)
+        try:
+            raw = base64.urlsafe_b64decode(x + "=" * (-len(x) % 4))
+        except (binascii.Error, ValueError):
+            raise ValueError("jwks: key %s has a bad x" % kid)
+        if len(raw) != 32:
+            raise ValueError("jwks: key %s is not 32 bytes" % kid)
+        keys[kid] = raw
+    if not keys:
+        raise ValueError("jwks: no Ed25519 keys")
+    return keys
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def _read_text(path):
+    with open(path, "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _load_revoked(path):
+    raw = _read_text(path).strip()
+    if not raw:
+        return None
+    try:
+        obj = json.loads(raw)
+    except ValueError:
+        return set(line.strip() for line in raw.splitlines() if line.strip())
+    if isinstance(obj, dict):
+        return obj
+    if isinstance(obj, list):
+        return set(obj)
+    raise ValueError("revoked: unreadable")
+
+
+def _rfc_vectors(path):
+    """Verify the RFC 8032 section 7.1 vectors with the pure-python verify."""
+    data = json.loads(_read_text(path))
+    vectors = data["vectors"] if isinstance(data, dict) else data
+    failed = 0
+    for vec in vectors:
+        pub = bytes.fromhex(vec["public_key"])
+        msg = bytes.fromhex(vec["message"])
+        sig = bytes.fromhex(vec["signature"])
+        good = ed25519_verify(pub, msg, sig)
+        # a one-bit change to the message must not verify
+        tampered = bytearray(msg) or bytearray(b"\x00")
+        tampered[0] ^= 0x01
+        bad = ed25519_verify(pub, bytes(tampered), sig)
+        ok = good and not bad
+        print("%s %s" % ("ok  " if ok else "FAIL", vec.get("name", "?")))
+        if not ok:
+            failed += 1
+    print("rfc8032: %d/%d vectors verified" % (len(vectors) - failed, len(vectors)))
+    return 0 if failed == 0 else EXIT_NO_VALID_KEY
+
+
+def main(argv=None):
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        prog="verify-token.py",
+        description="Verify an Atlas token (Ed25519 compact JWT), offline.")
+    ap.add_argument("--token-file", help="file holding the compact JWT")
+    ap.add_argument("--jwks-file", help="file holding the JWKS JSON")
+    ap.add_argument("--now", type=int, default=None,
+                    help="epoch seconds to verify at (default: the clock)")
+    ap.add_argument("--mid", default=None,
+                    help="this machine's fingerprint")
+    ap.add_argument("--revoked-file", default=None,
+                    help="JSON list of revoked jti, or {jti:[],sub:[]}")
+    ap.add_argument("--bench", action="store_true",
+                    help="also print the mean verify time over 20 runs")
+    ap.add_argument("--rfc-file", default=None,
+                    help="verify the RFC 8032 7.1 vectors in this file and exit")
+    args = ap.parse_args(argv)
+
+    if args.rfc_file:
+        return _rfc_vectors(args.rfc_file)
+
+    if not args.token_file or not args.jwks_file:
+        print("RED token: --token-file and --jwks-file are required")
+        return EXIT_NO_VALID_KEY
+
+    try:
+        token = _read_text(args.token_file).strip()
+    except OSError:
+        print("RED token: unreadable")
+        return EXIT_NO_VALID_KEY
+    try:
+        jwks_obj = json.loads(_read_text(args.jwks_file))
+    except OSError:
+        print("RED jwks: unreadable")
+        return EXIT_NO_VALID_KEY
+    except ValueError:
+        print("RED jwks: not parseable JSON")
+        return EXIT_NO_VALID_KEY
+    try:
+        keys = keys_from_jwks(jwks_obj)
+    except ValueError as exc:
+        print("RED %s" % exc)
+        return EXIT_NO_VALID_KEY
+    revoked = None
+    if args.revoked_file:
+        try:
+            revoked = _load_revoked(args.revoked_file)
+        except (OSError, ValueError):
+            print("RED revoked: unreadable")
+            return EXIT_NO_VALID_KEY
+
+    try:
+        claims = verify(token, keys, now=args.now, expect_mid=args.mid,
+                        revoked=revoked)
+    except TokenError as exc:
+        print("RED %s" % exc.reason)
+        return EXIT_NO_VALID_KEY
+
+    if args.bench:
+        runs = 20
+        samples = []
+        for _ in range(runs):
+            t0 = time.perf_counter()
+            verify(token, keys, now=args.now, expect_mid=args.mid,
+                   revoked=revoked)
+            samples.append((time.perf_counter() - t0) * 1000.0)
+        print("bench: mean %.2f ms over %d runs (min %.2f, max %.2f)"
+              % (sum(samples) / runs, runs, min(samples), max(samples)))
+
+    print(json.dumps(claims, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

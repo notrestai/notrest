@@ -2,8 +2,9 @@
 
 **STATUS: DRAFT v4 — all four questions to Atlas ruled; awaiting the owner's approval. No lane is dispatched until the owner says go.**
 *Drafted 2026-09-06 by the Director seat. Contract files, received verbatim and banked with provenance under `briefs/atlas-contract/`:
-`IDENTITY-CONTRACT.md` (192b6f5), `HUB-CONTRACT.md` (14fb684), `SCHEMA-v1.md`. Pending from Atlas: the
-verifier + fixture, `kit/to-wire.py`, `mcp/server.mjs`.
+`IDENTITY-CONTRACT.md` (192b6f5), `HUB-CONTRACT.md` (14fb684), `SCHEMA-v1.md`. All vendorable files received and
+hash-verified (`briefs/atlas-contract/README.md`): `kit/to-wire.py`, `mcp/server.mjs`, `kit/verify-token.py` +
+suite + RFC fixture + README. The verifier's suite passes on this Mac: 38/38.
 Our ask: `briefs/ask-2026-09-06-atlas-identity-contract.md`.*
 
 ## The change in one paragraph
