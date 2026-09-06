@@ -1,5 +1,16 @@
 # Changelog — the notrest harness
 
+## 4.8.1 — 2026-09-06
+
+**The bank runs its tests in a clean environment.** The first live bank on the plugin's own
+estate went red: the atlas fixture, one of this repo's four Stop gates, failed inside the
+post-commit bank while passing everywhere else. Git exports its hook environment (`GIT_DIR`,
+`GIT_INDEX_FILE`, `GIT_PREFIX`) to hooks, the bank passed it on to every gate it ran, and a test
+that creates scratch repositories was quietly pointed at this repository's own `.git`. The bank
+and the hook shim now run gate and test subprocesses with git's hook variables unset and the
+estate root passed explicitly; an arm sets those variables and asserts the subprocess does not
+see them. The map went from RED to GREEN on the commit that carried the fix, banked by the hook.
+
 ## 4.8.0 — 2026-09-06
 
 **notrest is part of Atlas. From this release the harness is licensed with Atlas; versions

@@ -195,6 +195,13 @@ It is a belt beside the private-repo braces, and it is never described as more t
   never turns into a claim about the estate's parts. (Same law as watch's dead source.)
 - **Never rewrite a snapshot.** A wrong snapshot is corrected by the next commit's
   snapshot, the way the append-only ledgers correct with a new line. History stays.
+- **Every test and gate runs in a clean environment.** The bank strips every `GIT_*`
+  variable (allowlist: `GIT_TERMINAL_PROMPT`, `GIT_SSH_COMMAND`, `GIT_SSH`) and the
+  re-entrancy marker from the subprocesses it runs — including its own `git` calls — and
+  passes the estate root explicitly. A hook hands its children `GIT_DIR`/`GIT_WORK_TREE`,
+  and a `TEST:` that inherited them would read and *commit to* whichever repository fired
+  the hook rather than the one it was given. Write tests that take their repo from the
+  working directory, not from the environment.
 - **The bank never writes what it did not measure**, never commits, never stages, and
   never edits a file the estate authored.
 - **Say what did not run.** `--dry-run` and `--no-board` produce visibly incomplete boards

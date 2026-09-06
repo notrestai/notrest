@@ -1,6 +1,6 @@
 # MAP.md — the complete notrest plugin map
 
-**Version mapped:** v4.8.0 (`plugins/notrest/.claude-plugin/plugin.json`), commit: the v4.8.0 release commit (`git log -1 --grep "v4.8.0"`).
+**Version mapped:** v4.8.1 (`plugins/notrest/.claude-plugin/plugin.json`), commit: the v4.8.1 release commit (`git log -1 --grep "v4.8.1"`).
 **Mapped:** 2026-09-01, by probing the live tree — every claim below comes from a file read
 or a command run during the mapping session. Nothing here is recalled.
 

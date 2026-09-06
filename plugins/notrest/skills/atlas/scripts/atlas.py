@@ -171,11 +171,41 @@ def write_atomic(path, text, mode=0o644):
                 pass
 
 
+# GIT'S OWN HOOK ENVIRONMENT (live finding, commit b60816c; widened by the refuter after
+# the 03:03 incident). A post-commit hook is handed GIT_DIR, GIT_INDEX_FILE, GIT_PREFIX and
+# friends, and EVERY child inherits them — so `git` run with cwd=RB still read and WROTE RA:
+# a `bank --root RB` certified RA's HEAD into RB's snapshots, and `wire --prove --root RB`
+# committed its scratch repo into RA. Right directory, wrong repository.
+#
+# TWO RULES, both learned the hard way:
+#   · A DENYLIST IS THE WRONG SHAPE. The first cut named eleven variables and nine more
+#     walked straight through (GIT_OBJECT_DIRECTORY, GIT_COMMON_DIR, GIT_CONFIG_GLOBAL,
+#     GIT_CEILING_DIRECTORIES, GIT_NAMESPACE, …). Git's environment is open-ended and grows
+#     with every release, so the rule is a PREFIX with a named allowlist: strip every GIT_*
+#     that is not on it. A variable nobody has heard of yet is stripped by default.
+#   · EVERY subprocess, git() included. The root is always explicit (cwd=root); an estate
+#     root that is inherited is an estate root that can be wrong.
+# The re-entrancy marker goes too: it guards the hook path, not the work.
+GIT_KEEP = ("GIT_TERMINAL_PROMPT", "GIT_SSH_COMMAND", "GIT_SSH")
+
+
+def child_env():
+    env = dict(os.environ)
+    for k in list(env):
+        if k.startswith("GIT_") and k not in GIT_KEEP:
+            del env[k]
+    env.pop("NOTREST_ATLAS_BANKING", None)
+    return env
+
+
 def git(root, *args, **kw):
     """(rc, stdout). Never raises; a missing git is rc 127, like a shell would say."""
     try:
+        # env=child_env(): without it a GIT_DIR/GIT_WORK_TREE in the caller's environment
+        # overrides cwd, and this helper reads (and commits to) somebody else's repository.
         p = subprocess.run(["git"] + list(args), cwd=root, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, timeout=kw.get("timeout", 30))
+                           stderr=subprocess.PIPE, timeout=kw.get("timeout", 30),
+                           env=child_env())
         return p.returncode, p.stdout.decode("utf-8", "replace").strip()
     except (OSError, subprocess.SubprocessError):
         return 127, ""
@@ -449,7 +479,7 @@ def run_test(cmd, cwd, timeout):
             try:
                 p = subprocess.run([shutil.which("bash") or "/bin/bash", "-c", cmd],
                                    cwd=cwd, stdout=fh, stderr=subprocess.STDOUT,
-                                   timeout=timeout)
+                                   timeout=timeout, env=child_env())
                 rc = p.returncode
             except subprocess.TimeoutExpired:
                 rc = 124
@@ -517,7 +547,7 @@ def gate_parts(root, gates_file, timeout, budget):
         cmd += ["--budget", str(budget)]
     try:
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           timeout=timeout * 4 + 30)
+                           timeout=timeout * 4 + 30, env=child_env())
         blob = json.loads(p.stdout.decode("utf-8", "replace"))
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         return [], {"ok": False, "reason": "gate-check did not answer (%s)" % exc}
@@ -631,7 +661,7 @@ def summarize(parts):
 def _collector(cmd, timeout, cwd):
     try:
         p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           timeout=timeout)
+                           timeout=timeout, env=child_env())
         return p.returncode, p.stdout.decode("utf-8", "replace")
     except subprocess.TimeoutExpired:
         return 124, ""

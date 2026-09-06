@@ -13,6 +13,15 @@
 # must be shown to FAIL against the previous revision before it is trusted to pass
 # against this one.
 set -u
+# THE SAME LAW, APPLIED TO THIS HARNESS. This fixture builds scratch git repos, so a
+# GIT_DIR/GIT_INDEX_FILE it inherited would aim its own `git -C` calls at somebody else's
+# repository — which is exactly how it went red as a gate inside a post-commit hook while
+# passing in every clean shell. A fixture that only passes in a clean environment is a
+# fixture that lies wherever it matters most.
+unset GIT_DIR GIT_INDEX_FILE GIT_PREFIX GIT_WORK_TREE
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_AUTHOR_DATE
+unset GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_COMMITTER_DATE
+unset NOTREST_ATLAS_BANKING
 A="${ATLAS_PY:-$(cd "$(dirname "$0")" && pwd)/atlas.py}"
 W="$(mktemp -d)"
 # The plugin root is pinned to the REAL tree so an ATLAS_PY copy under test still finds
@@ -331,6 +340,51 @@ sys.exit(0 if ok_ else 1)' "$R2/atlas/board.json" \
   && ok "the real collectors produce a board" || no "no collector produced anything"
 hasnt "$R2/atlas/board.json" '"statement"' "the board carries COUNTS ONLY — no finding text on the wire"
 export NOTREST_ATLAS_NO_BOARD=1
+
+echo "── K · git's hook environment never reaches a gate or a test"
+# Live finding (commit b60816c): a post-commit hook is handed GIT_DIR/GIT_INDEX_FILE/
+# GIT_PREFIX and every child inherits them, so a gate that runs git was aimed at the
+# estate's own .git whatever directory it was given.
+cat > "$W/env-probe.sh" <<'PROBE'
+#!/bin/sh
+# Every GIT_* the child can see, minus the allowlist. A denylist arm would pass the day
+# git invents a twentieth variable; this one cannot.
+LEAK=$(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p' \
+       | grep -vE '^(GIT_TERMINAL_PROMPT|GIT_SSH_COMMAND|GIT_SSH)$' | tr '\n' ' ')
+[ -n "$LEAK" ] && { echo "LEAKED $LEAK"; exit 1; }
+[ -n "${NOTREST_ATLAS_BANKING:-}" ] && { echo "LEAKED the re-entrancy marker"; exit 1; }
+exit 0
+PROBE
+E="$W/envleak"; mkrepo "$E"; mkdir -p "$E/atlas" "$E/gates"
+printf 'PART: probe — the test sees a clean environment\nCLAIM: done\nTEST: sh %s/env-probe.sh\n' "$W" > "$E/atlas/map.md"
+printf 'GATE: the gate sees a clean environment\nCHECK: sh %s/env-probe.sh\n' "$W" > "$E/gates/ACTIVE.md"
+commit "$E" init
+
+# THE 03:03 INCIDENT, armed. RA is the repository whose hook environment is inherited;
+# RB is the estate atlas is told to work on. Everything below runs under RA's full env.
+RA="$W/incident-A"; mkrepo "$RA"; commit "$RA" a1
+RB="$W/incident-B"; mkrepo "$RB"; mkdir -p "$RB/atlas"
+printf 'PART: b — B is its own estate\nCLAIM: done\nTEST: true\n' > "$RB/atlas/map.md"
+commit "$RB" b1
+INH="GIT_DIR=$RA/.git GIT_WORK_TREE=$RA GIT_INDEX_FILE=$RA/.git/index GIT_PREFIX= \
+     GIT_OBJECT_DIRECTORY=$RA/.git/objects GIT_COMMON_DIR=$RA/.git \
+     GIT_ALTERNATE_OBJECT_DIRECTORIES=$RA/.git/objects GIT_CEILING_DIRECTORIES=$W \
+     GIT_NAMESPACE=leak GIT_EXEC_PATH=/nonexistent-exec-path GIT_EDITOR=false \
+     GIT_AUTHOR_NAME=inherited GIT_COMMITTER_NAME=inherited NOTREST_ATLAS_BANKING=1"
+eval env $INH python3 "$A" bank --root "$E" --no-board >/dev/null 2>&1
+t "a TEST and a GATE see no GIT_* at all beyond the allowlist" "$?" "0"
+ACOUNT="$(git -C "$RA" rev-list --count HEAD)"
+eval env $INH python3 "$A" bank --root "$RB" --no-board --no-gates >/dev/null 2>&1
+t "bank under RA's inherited env still exits on RB's own board" "$?" "0"
+BHEAD="$(headof "$RB")"
+[ -f "$RB/atlas/snapshots/$BHEAD.json" ] \
+  && ok "…and certifies RB's OWN head, not the inherited repository's" \
+  || no "the snapshot is not RB's HEAD — $(ls "$RB/atlas/snapshots" 2>/dev/null)"
+t "…so exactly one snapshot exists in B" "$(ls "$RB/atlas/snapshots" | wc -l | tr -d ' ')" "1"
+eval env $INH python3 "$A" wire --root "$RB" --prove --no-receipt >/dev/null 2>&1
+t "--prove under the inherited env still passes" "$?" "0"
+t "…and commits NOTHING into the inherited repository" \
+  "$(git -C "$RA" rev-list --count HEAD)" "$ACOUNT"
 
 echo "── J · --dry-run measures nothing and writes nothing"
 D="$W/dry"; mkrepo "$D"; mkdir -p "$D/atlas"

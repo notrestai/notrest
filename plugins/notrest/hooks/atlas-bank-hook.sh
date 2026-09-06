@@ -33,6 +33,19 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -n "$ROOT" ] || exit 0
 [ -d "$ROOT/atlas" ] || exit 0
 
+# ROOT was resolved with git's hook environment intact; from here it is passed EXPLICITLY
+# and that environment is dropped, so nothing atlas runs inherits a .git it was not given.
+# PREFIX RULE, not a denylist: git's environment is open-ended and a named list leaks
+# whatever the next release adds (GIT_OBJECT_DIRECTORY, GIT_COMMON_DIR, GIT_CONFIG_GLOBAL,
+# GIT_CEILING_DIRECTORIES, GIT_NAMESPACE, … all walked through the first cut). Strip every
+# GIT_* except the few that carry no repository identity.
+for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do
+    case "$_v" in
+        GIT_TERMINAL_PROMPT|GIT_SSH_COMMAND|GIT_SSH) : ;;
+        *) unset "$_v" 2>/dev/null || : ;;
+    esac
+done
+
 ATLAS="${NOTREST_ATLAS_PY:-}"
 if [ -z "$ATLAS" ]; then
     HOOKS_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
