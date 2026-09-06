@@ -359,9 +359,43 @@ run verdict8 verdict "$H1"
 
 # ---------------------------------------------------------------------- arm 9
 
-arm 9 "the secret never surfaced — grep every byte this fixture printed"
+arm 9 "NOTREST_HOME is EXPANDED, not taken literally (COMMON amendment)"
+# atlas.py, atlas_token.py and this client must resolve one home. `NOTREST_HOME=~/alt` read
+# without expanduser gives a literal `./~/alt` directory next to the CWD — the hook and the
+# script then answer the same gate question differently. HOME is redirected into the fixture's
+# own tree, and the whole run happens inside $WORK so a mutant's literal `~` dir cannot land
+# in the repo.
+FAKE="$WORK/fakehome"
+H9="$FAKE/atlas-alt"
+mkdir -p "$FAKE"
+cat >"$WORK/run-in.sh" <<'SH'
+#!/bin/sh
+cd "$1" || exit 1; shift
+HOME="$1"; export HOME; shift
+NOTREST_HOME='~/atlas-alt'; export NOTREST_HOME
+exec "$@"
+SH
+start_hub tilde ok 1 || bad "hub tilde did not start"
+run login9 sh "$WORK/run-in.sh" "$WORK" "$FAKE" "$PY" "$AUTH" login --base "$HUB"
+[ $RC -eq 0 ] && ok "exit 0 (no --home: the env is the only resolution)" || bad "exit $RC"
+if [ -f "$H9/atlas-token" ]; then
+    ok "token landed at the EXPANDED path (\$HOME/atlas-alt)"
+    m=$(mode_of "$H9/atlas-token")
+    [ "$m" = "600" ] && ok "and still 0600" || bad "mode $m"
+else
+    bad "no token at $H9/atlas-token — NOTREST_HOME was not expanded"
+fi
+[ -e "$WORK/~" ] && bad "a literal '~' directory was created: the env value was used verbatim" \
+    || ok "no literal '~' directory anywhere"
+run verdict9 verdict "$H9"
+[ $RC -eq 0 ] && ok "the real verdict on the expanded home: ok" \
+    || bad "verdict rc=$RC ($(cat "$WORK/verdict9.out"))"
+
+# ---------------------------------------------------------------------- arm 10
+
+arm 10 "the secret never surfaced — grep every byte this fixture printed"
 LEAK=0
-for h in "$H1" "$H6"; do
+for h in "$H1" "$H6" "$H9"; do
     tok=$(tr -d '\r\n' <"$h/atlas-token")
     len=${#tok}
     if [ "$len" -lt 40 ]; then bad "token at $h looks wrong ($len chars)"; continue; fi

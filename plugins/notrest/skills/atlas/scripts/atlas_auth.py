@@ -48,8 +48,11 @@ _TOKEN_MOD = None
 # ---------------------------------------------------------------- paths & env
 
 def notrest_home():
-    """`${NOTREST_HOME:-~/.notrest}` — the one resolution, shared with atlas.py and the hooks."""
-    return os.environ.get("NOTREST_HOME") or os.path.expanduser("~/.notrest")
+    """`${NOTREST_HOME:-~/.notrest}` — the one resolution, shared with atlas.py's notrest_home()
+    and A2's atlas_token. expanduser wraps the WHOLE expression on purpose: a machine that sets
+    `NOTREST_HOME=~/alt` must not get a literal `./~/alt` here and the real path in the hook —
+    two answers to one gate question (COMMON amendment, 4.9 wave A)."""
+    return os.path.expanduser(os.environ.get("NOTREST_HOME") or "~/.notrest")
 
 
 def default_base():
