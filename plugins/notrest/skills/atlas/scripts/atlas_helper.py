@@ -30,12 +30,15 @@ from urllib.parse import urlparse
 
 DEFAULT_HUB = "https://atlas.not.rest"
 
-# IDENTITY-CONTRACT.md §9 — verbatim. Do not edit: reads the same token file
-# §1/§10 write, at the moment git actually asks, in whatever shell git spawns
-# it in. Kept as one literal string so nothing here can drift from the ruling.
+# IDENTITY-CONTRACT.md §9 — verbatim (amended: declines silently, exit 0, when the
+# token file is absent, so git never sees an empty password and falls through to
+# terminal-prompt/other-helper handling instead of "succeeding" with nothing). Do
+# not edit: reads the same token file §1/§10 write, at the moment git actually
+# asks, in whatever shell git spawns it in. Kept as one literal string so nothing
+# here can drift from the ruling.
 HELPER_LINE = (
-    '!f(){ echo username=atlas; echo "password=$(tr -d "\\r\\n" < '
-    '"${NOTREST_HOME:-$HOME/.notrest}/atlas-token")"; }; f'
+    '!f(){ t="${NOTREST_HOME:-$HOME/.notrest}/atlas-token"; [ -r "$t" ] || exit 0; '
+    'echo username=atlas; echo "password=$(tr -d "\\r\\n" < "$t")"; }; f'
 )
 
 

@@ -1,10 +1,19 @@
 # ATLAS HUB CONTRACT — for the notrest plugin's `http` push adapter
 
-*Written 2026-09-06 by the atlas seat for the notrest Director seat. Every fact here is live on https://atlas.not.rest today and covered by the hub's own verify (hub/verify.sh, 345 validator + 343 worker arms). Read with hub/SCHEMA-v1.md (the wire, field by field) and ATLAS-PLAYBOOK.md v2.0 §2–3. No secret values appear here.*
+*Written 2026-09-06 by the atlas seat for the notrest Director seat. Every fact here is live on
+https://atlas.not.rest today and covered by the hub's own verify (hub/verify.sh, 345 validator +
+343 worker arms). Read with hub/SCHEMA-v1.md (the wire, field by field) and ATLAS-PLAYBOOK.md v2.0
+§2–3. No secret values appear here.*
 
 ## 1. The adapter in one paragraph
 
-`push(snapshot, board, credential) -> (ok, hub_commit, reason)`. Convert the estate snapshot to the **atlas-hub/1 wire** (§4), `POST` it to `/v1/snapshot/<project>` with the estate's ingest secret as a bearer read from the credential file (§3). A `201` means the hub stored it under the key it names; **`hub_commit` is the `head` you sent** — the hub stores the wire verbatim and later serves that `head` back on `GET /v1/snapshot/<project>` (§5). Then `POST` the board HTML to `/v1/board/<project>` with the same bearer. Any non-201 carries one fact in `{"error": …}`; return it as `reason`, never retry blind. Nothing else is required.
+`push(snapshot, board, credential) -> (ok, hub_commit, reason)`. Convert the estate snapshot to
+the **atlas-hub/1 wire** (§4), `POST` it to `/v1/snapshot/<project>` with the estate's ingest
+secret as a bearer read from the credential file (§3). A `201` means the hub stored it under the
+key it names; **`hub_commit` is the `head` you sent** — the hub stores the wire verbatim and later
+serves that `head` back on `GET /v1/snapshot/<project>` (§5). Then `POST` the board HTML to
+`/v1/board/<project>` with the same bearer. Any non-201 carries one fact in `{"error": …}`; return
+it as `reason`, never retry blind. Nothing else is required.
 
 ## 2. Endpoints
 
@@ -17,17 +26,33 @@
 | GET | `/v1/history/<project>?limit=N` · `/v1/diff/<project>?a=&b=` | view | — | history newest first; diff in the map's vocabulary |
 | GET | `/playbook` · `/playbook/version` · `/kit` · `/kit/<file>` | view | — | the current playbook (markdown), `{"playbook_current":"2.0"}`, the connect kit files |
 
-`<project>` matches `[a-z][a-z0-9-]{0,31}` and must equal the wire's `project`. Refusals, one fact each: `401 authorization: bad bearer` · `401 project: no ingest secret configured` (the owner or the atlas seat mints one) · `413 body: <bytes> bytes exceeds limit …` · `422 <path>: <fact>` from the validator · `400 body: not parseable JSON`. Unknown paths are a bare 404.
+`<project>` matches `[a-z][a-z0-9-]{0,31}` and must equal the wire's `project`; a name that does
+not match is refused `400 project: must match [a-z][a-z0-9-]{0,31}` on every `/v1/*` route (the
+bare 404 is for unknown PATHS only). Refusals, one fact each: `401 authorization: bad bearer` · `401 project: no ingest secret configured` (the owner or
+the atlas seat mints one) · `413 body: <bytes> bytes exceeds limit …` · `422 <path>: <fact>` from the
+validator · `400 body: not parseable JSON`. Unknown paths are a bare 404.
 
 ## 3. Credentials on a joined machine (read by path, never logged)
 
-The plugin's default credential path is `~/.notrest/credentials/atlas-token`. Contract:
+Ruling 2026-09-06 (plugin seat's question 2): the ingest secret and the Atlas identity token
+must never share a basename. Contract:
 
-- `~/.notrest/credentials/atlas-token` — **the ingest secret for THIS estate** (one line, 64 hex, mode 600). One per estate, minted by the atlas seat as the worker secret `ATLAS_INGEST_<PROJECT>`. If a machine hosts several estates, name them `atlas-token-<project>` and point `atlas/config.json` `"credential"` at the right one.
-- `~/.notrest/credentials/atlas-view` — the read secret (`ATLAS_VIEW`), for `status`/history/diff reads. Optional; without it `status` can only report the last push receipt.
+- `~/.notrest/credentials/atlas-ingest-<project>` — **the ingest secret for THAT estate** (one line,
+  64 hex, mode 600). One per estate, minted by the atlas seat as the worker secret
+  `ATLAS_INGEST_<PROJECT>` (hyphens in the project become underscores in the secret name).
+  `atlas/config.json` `"credential"` points at it. During transition the plugin may also read its
+  old default `~/.notrest/credentials/atlas-token` and warn once; that name retires with 4.9 because
+  the identity token (IDENTITY-CONTRACT §1) lives at `~/.notrest/atlas-token`.
+- `~/.notrest/credentials/atlas-view` — the read secret (`ATLAS_VIEW`), for `status`/history/diff
+  reads. Optional; without it `status` can only report the last push receipt.
 - Send it as `-H @file` / a header built in memory — never argv, never an env value, never a log.
 
-On this box (2026-09-06) the atlas seat has placed `atlas-token` (= ATLAS_INGEST_ATLAS) and `atlas-view` for the atlas estate. Other estates: ask for their token to be minted; `mend`, `uiagent`, `rig` already exist as worker secrets and 0600 files in the seat's store.
+On this box (2026-09-06) the atlas seat has placed `atlas-ingest-atlas`, `atlas-ingest-notrest-plugin`
+(the plugin's own estate, project id `notrest-plugin`) and `atlas-view`. Other estates: ask for a
+secret to be minted; `mend`, `uiagent`, `rig`, `kernel` exist as worker secrets and 0600 files in
+the seat's store. Project ids on the map today: `atlas`, `kernel` (the Rig kernel estate,
+/work/notrest-kernel — not the observatory), `uiagent`, `rig` (archived shells), `notrest-plugin`
+(minted, awaiting its first push).
 
 ## 4. Body: the plugin snapshot → wire atlas-hub/1
 
@@ -63,15 +88,26 @@ wire = {
 | wip / none | `wip` | `unverified` or omit | |
 | planned / * | `todo` | **omit** | todo carries no evidence key |
 | blocked / * | `wip` | `unverified` (or `failing` if a test failed) | the hub has no `blocked`; blocked is derived from journey refs, not declared |
+| * / not-run (test skipped) | `wip` if a check is bound, else `todo` | `unverified` (omit on `todo`) | a skipped test proves nothing; confirmed 2026-09-06 (plugin seat's defect 4) |
 
-Other rules the validator applies: no `.` in node or part ids; no edge between two parts of the same node; ids unique after trim; `evidence:"proven"` only with `status:"done"` and a check; every free string ≤ 4096 chars; ≤ 500 nodes, 5000 parts, 5000 edges. Reference implementation of a snapshot→wire converter: `kit/to-wire.py` (the kernel's), served at `GET /kit/to-wire.py`.
+Other rules the validator applies: no `.` in node or part ids; no edge between two parts of the
+same node; ids unique after trim; `evidence:"proven"` only with `status:"done"` and a check; every
+free string ≤ 4096 chars; ≤ 500 nodes, 5000 parts, 5000 edges. Reference implementation of a
+snapshot→wire converter: `kit/to-wire.py` (the kernel's), served at `GET /kit/to-wire.py`.
 
-**Board:** whatever HTML `atlas.py` builds — one document, inline script/CSS only (the hub serves it under `Content-Security-Policy: sandbox allow-scripts allow-popups`, no same-origin: no storage, no fetch of the hub with the owner's cookie). Boards MAY carry finding text (playbook §4); the snapshot wire may not.
+**Board:** whatever HTML `atlas.py` builds — one document, inline script/CSS only (the hub serves it
+under `Content-Security-Policy: sandbox allow-scripts allow-popups`, no same-origin: no storage,
+no fetch of the hub with the owner's cookie). Boards MAY carry finding text (playbook §4); the
+snapshot wire may not.
 
 ## 5. `hub_commit` and the connected verdict
 
-- On `201` return `hub_commit = wire["head"]`. Do **not** GET it back immediately: KV reads are edge-cached ~60 s, so a read within a minute returns the previous snapshot. The kit's `connected.sh` waits up to 120 s (`--wait`) before calling a mismatch RED; do the same in `status` or say "pushed <head>; hub will reflect it within ~2 min".
-- The hub's rollup reads `connected` when `head` is present and `taken_at` is ≤ 24 h old, `stale` otherwise. An estate that never pushes a `head` reads stale forever, honestly.
+- On `201` return `hub_commit = wire["head"]`. Do **not** GET it back immediately: KV reads are
+  edge-cached ~60 s, so a read within a minute returns the previous snapshot. The kit's
+  `connected.sh` waits up to 120 s (`--wait`) before calling a mismatch RED; do the same in
+  `status` or say "pushed <head>; hub will reflect it within ~2 min".
+- The hub's rollup reads `connected` when `head` is present and `taken_at` is ≤ 24 h old,
+  `stale` otherwise. An estate that never pushes a `head` reads stale forever, honestly.
 - Snapshot keys are `snap:<project>:<YYYYMMDDTHHMMSSmmmZ>`; every push is immutable history.
 
 ## 6. Worked example (secret by path)
@@ -88,4 +124,7 @@ rm -f "$HDR"
 
 ## 7. What the atlas seat does on its side
 
-Mints `ATLAS_INGEST_<PROJECT>` on request and places the 0600 file; keeps SCHEMA-v1 stable (additive changes only, announced in the playbook's version history); serves the playbook and the kit; answers `hub contract` questions. Questions and defects in this contract: message the atlas seat (`atlas-ce` on ListAgents) or append a line to /work/atlas/COORD.md.
+Mints `ATLAS_INGEST_<PROJECT>` on request and places the 0600 file; keeps SCHEMA-v1 stable
+(additive changes only, announced in the playbook's version history); serves the playbook and the
+kit; answers `hub contract` questions. Questions and defects in this contract: message the atlas
+seat (`atlas-ce` on ListAgents) or append a line to /work/atlas/COORD.md.

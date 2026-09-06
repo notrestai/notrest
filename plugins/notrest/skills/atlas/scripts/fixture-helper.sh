@@ -39,7 +39,7 @@ export GIT_TERMINAL_PROMPT=0
 
 HUB="https://atlas.not.rest"
 HUB_HOST="atlas.not.rest"
-EXPECT_LINE='!f(){ echo username=atlas; echo "password=$(tr -d "\r\n" < "${NOTREST_HOME:-$HOME/.notrest}/atlas-token")"; }; f'
+EXPECT_LINE='!f(){ t="${NOTREST_HOME:-$HOME/.notrest}/atlas-token"; [ -r "$t" ] || exit 0; echo username=atlas; echo "password=$(tr -d "\r\n" < "$t")"; }; f'
 TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 TOKEN_FILE="$NOTREST_HOME/atlas-token"
 printf '%s\n' "$TOKEN" > "$TOKEN_FILE"
@@ -93,8 +93,8 @@ esac
 echo "── E · missing token"
 mv "$TOKEN_FILE" "$TOKEN_FILE.bak"
 FILL_MISSING_REAL="$(printf 'protocol=https\nhost=%s\n\n' "$HUB_HOST" | timeout 5 git credential fill 2>/dev/null)"
-MPASS_LINE="$(echo "$FILL_MISSING_REAL" | grep '^password=')"
-t "installed helper: password is empty when the token file is missing" "$MPASS_LINE" "password="
+t "installed helper declines outright (no username, no password) when the token file is missing" \
+  "$FILL_MISSING_REAL" ""
 FILL_MISSING_CLI="$(printf 'protocol=https\nhost=%s\n\n' "$HUB_HOST" | python3 "$H" fill)"
 t "atlas_helper.py fill: missing token returns empty" "$FILL_MISSING_CLI" ""
 python3 "$H" check >/dev/null 2>&1
