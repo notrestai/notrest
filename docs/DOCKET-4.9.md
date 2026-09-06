@@ -64,8 +64,8 @@ bootstrap text); a headless box logs in with the device flow.
 | Lane | Model · tier | TOUCH-ONLY | Done-when | Tokens |
 |---|---|---|---|---|
 | B1 tester | opus · judgment | `skills/atlas/scripts/fixture.sh`, `evals/**` — never product code | red-first arms: expired, revoked, wrong machine, offline-with-cache, offline-without, helper protocol, token-in-URL refused, push replay, keyless deny rules still deny; LIVE arm skips with "I-A pending" | 6–9M |
-| B2 eval law + doctor | opus · judgment | `skills/eval/scripts/eval.py`, `skills/doctor/scripts/doctor.py` | new checks: token file mode 0600, helper host-scoped, verifier fixture present, no token literal anywhere; `eval check` 0 with the arms red-first | 5–8M |
-| B3 SKILL + workshop | opus · judgment | `skills/atlas/SKILL.md`, `WORKSHOP-SLIDES*.md` delta | every command in SKILL.md runs; exit-code table updated | 4–6M |
+| B2 eval law + doctor | opus · judgment | `skills/eval/scripts/eval.py`, `skills/doctor/scripts/doctor.py` | **AMEND NETWORK-EGRESS**: 4.9 deliberately changes the no-egress promise — the ONE permitted destination is `ATLAS_HUB_BASE` (default atlas.not.rest), only from the named atlas modules (`atlas_auth.py`, `atlas_wire.py`, and `atlas.py`'s push), never from a hook synchronously (SessionStart backgrounds it); loopback-bound servers (`mockhub.py`) allowlisted by their bind; the check names the rationale. New checks: token file mode 0600, helper host-scoped, verifier fixture present, no token literal anywhere; `eval check` 0 with the arms red-first | 6–9M |
+| B3 SKILL + workshop | opus · judgment | `skills/atlas/SKILL.md`, `WORKSHOP-SLIDES*.md` delta | every command in SKILL.md runs; exit-code table updated; **SKILL.md names every shipped script** (`atlas_token.py`, `atlas_auth.py`, `atlas_helper.py`, `atlas_wire.py`, `mockhub.py`, `vendor/verify_token.py`, the mcp wrapper) so SCRIPT-OWNS-SCANNING is green | 4–6M |
 | B4 docs mechanical | sonnet · bounded | `README.md` table, `CHANGELOG.md`, `NOTREST-ON-THE-NAS.md` v2 | `starthere_lint`-style dead-reference check exit 0 on each | 1–2M |
 
 ### Wave C — refute and ship (~1.5 h wall)
@@ -96,6 +96,12 @@ bootstrap text); a headless box logs in with the device flow.
 - **Live arm target:** project `notrest-plugin`; ingest + view secrets exist on the Atlas box and
   reach this Mac by the owner's hand (two files into `~/.notrest/credentials/`, 0600).
 - **Vendored files** carry the Atlas license line verbatim; node ≥ 22 is a soft dependency.
+
+## Board state during the build (honest, expected)
+
+This estate's own bank goes RED from the first wave-A commit: `gate:the-laws-hold` fails on NETWORK-EGRESS (the new
+atlas modules talk to the hub) and SCRIPT-OWNS-SCANNING (SKILL.md does not yet name the new scripts). Both are
+laws catching up with a deliberate change, fixed by B2 and B3; the ship gate requires the board GREEN again.
 
 ## Bounds stated now
 
