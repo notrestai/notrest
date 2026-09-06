@@ -9,6 +9,8 @@ Exit: 0 all pass · 5 warnings only · 6 any FAIL · 2 usage error.
 """
 
 import argparse
+import base64
+import binascii
 import glob
 import importlib.util
 import shutil
@@ -761,14 +763,64 @@ def check_route_conformance(root, _plug, _skills):
 # Adopted from cloudflare-os (Apache 2.0), whose sandbox pins globalOutbound:null so
 # "no egress" is a fact about the runtime rather than a promise in prose. Ours is prose
 # across many scripts; this makes it PROVABLE for our surfaces.
+#
+# ⛔ AMENDED IN 4.9 — THE PROMISE ITSELF CHANGED, AND THE CHECK SAYS SO OUT LOUD.
+# Through 4.8 the law read "no egress at all, except an allowlist of loopback-bound
+# callers". 4.9 opens ONE door on purpose: the plugin's identity now comes from the Atlas
+# hub (device login, refresh, JWKS, revocation) and the bank pushes its snapshot there. A
+# gate left enforcing the retired promise would either red the shipped tree forever or be
+# quietly deleted — and a gate enforcing a dead law is a gate that blocks the truth. So
+# the law is restated here, in the check's own text, with its rationale, and the door is
+# held at its edges by three separate bolts, each with its own arm in the fixture:
+#
+#   1. ONE DESTINATION. `$ATLAS_HUB_BASE`, default https://atlas.not.rest, and nothing
+#      else. Any OTHER script on the Atlas surface (or any hook) that NAMES a non-loopback,
+#      non-hub host is a FAIL — that is how a second destination would arrive: as a string
+#      in a file nobody re-read.
+#   2. THREE DOORWAYS. Only `atlas_auth.py` (identity), `atlas_wire.py` (the push) and
+#      `atlas.py` (the seat that calls them) may open a connection at all. Each is
+#      RE-PROVED to take its base from ATLAS_HUB_BASE rather than hard-coding a host —
+#      exactly as a loopback entry is re-proved to bind 127.0.0.1. An allowlist is a
+#      claim the check re-tests, never a pass it hands out.
+#   3. NO HOOK EVER WAITS ON THE NETWORK. A hook may INVOKE the auth client, but only in
+#      the background; a hook that curls or urlopens inline puts every session in the
+#      estate behind somebody else's DNS. SessionStart's
+#      `python3 "$NR_ATLAS_AUTH" sessionstart --budget-ms 2000 >/dev/null 2>&1 &` is the
+#      shape, and the trailing `&` is the law.
+#
+# Compiled runtimes are UNCHANGED by the amendment: they reach nothing at all, ever.
+#
+# ⛔ WHAT THIS CHECK DOES NOT SEE, stated where it is implemented:
+#   · Inside the three doorways it does not police individual URL literals. Those modules
+#     take their base from ATLAS_HUB_BASE at runtime; a host string in one of their
+#     docstrings is documentation, and judging it would be judging prose. What is proved
+#     there is that the module is ATLAS_HUB_BASE-driven; where it actually dials is
+#     behavior, and their own fixtures own it.
+#   · The scan surface is shell and python under `hooks/` and `skills/*/scripts/**`. The
+#     vendored node MCP server (`skills/atlas/mcp/server.mjs`) egresses to the hub with
+#     `fetch` and is NOT scanned by this check. That gap is named here so it is a known
+#     one rather than a silent one.
 # ---------------------------------------------------------------------------
-NET_RE = re.compile(r"^\s*(?:import|from)\s+(urllib\.request|urllib|socket|http\.client|"
-                    r"requests|httpx|ftplib|telnetlib|smtplib)\b", re.M)
+# `urllib.parse` and `urllib.error` cannot open a socket — a URL splitter is not a
+# caller, and treating it as one cost a false FAIL on the git credential helper, which
+# parses a host precisely so it can REFUSE every host but the hub.
+NET_RE = re.compile(r"^\s*(?:import|from)\s+(urllib\.request|urllib(?!\.)|socket|socketserver|"
+                    r"http\.client|http\.server|requests|httpx|ftplib|telnetlib|smtplib)\b", re.M)
 NET_SHELL_RE = re.compile(r"\b(curl|wget|nc)\s", re.M)
 # Loopback evidence: a literal address, OR consumption of render-check's URL — that
 # server's 127.0.0.1 binding is itself allowlisted and re-asserted here, so a client of
 # it is loopback-bound transitively rather than on trust.
 LOOPBACK_RE = re.compile(r"127\.0\.0\.1|localhost|render-check|RC_URL")
+# THE ONE DOOR (4.9). The env name is the contract; the default is the fallback.
+ATLAS_HUB_ENV = "ATLAS_HUB_BASE"
+ATLAS_HUB_HOST = "atlas.not.rest"
+HUB_BOUND_RE = re.compile(r"ATLAS_HUB_BASE")
+# host, with an optional port and bracketed IPv6, out of an http(s) URL literal.
+URL_HOST_RE = re.compile(r"https?://(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9._~%-]+)(?::\d+)?")
+# LOOPBACK IS 127.0.0.0/8, ::1 AND localhost — AND NOTHING ELSE. Not 0.0.0.0 (that is
+# "every interface", the opposite of private), and not a LAN range: a host on the office
+# network is a second destination, which is exactly what the amendment forbids.
+LOOPBACK_HOSTS = {"localhost", "::1", "[::1]"}
 # Every allowlisted use must be LOOPBACK-BOUND, and that is asserted, not trusted.
 # LOOPBACK: allowed, and each one is ASSERTED to bind 127.0.0.1 — the allowlist is not
 # a promise, it is a claim the check re-proves on every run.
@@ -782,6 +834,19 @@ NET_LOOPBACK = {
     "skills/graph/scripts/river-fixture.sh": "render-check client, loopback only",
     "skills/graph/scripts/journey-fixture.sh": "render-check client, loopback only",
     "skills/chatroom/scripts/fixture.sh": "loopback only",
+    # 4.9 — the mock hub and the clients that drive it. The hub the fixtures talk to is
+    # a stdlib http.server bound to 127.0.0.1: no fixture in this estate reaches Atlas.
+    "skills/atlas/scripts/mockhub.py": "binds 127.0.0.1 only (and its --selftest drives itself there)",
+    "skills/atlas/scripts/fixture-auth.sh": "reserves a free 127.0.0.1 port and runs mockhub on it",
+    "skills/atlas/scripts/fixture-wire.sh": "stub hub bound to ('127.0.0.1', 0) for the push arms",
+    "skills/watch/scripts/fixture.sh": "serves the fixture's own pages on ('127.0.0.1', 0)",
+}
+# THE ATLAS DOORWAYS (4.9): real egress to the ONE permitted destination, named with the
+# half of the product each one carries. Every entry is re-proved to be ATLAS_HUB_BASE-driven.
+ATLAS_EGRESS = {
+    "skills/atlas/scripts/atlas_auth.py": "identity — device login, refresh, JWKS, revocation",
+    "skills/atlas/scripts/atlas_wire.py": "the bank — the snapshot push",
+    "skills/atlas/scripts/atlas.py": "the seat that calls them (the push path)",
 }
 # EXTERNAL BY DESIGN: real egress, named with its reason. These are capabilities, not
 # leaks — but they are the complete list, so a NEW external caller cannot appear quietly.
@@ -791,19 +856,88 @@ NET_LOOPBACK = {
 NET_TEST_DATA = {
     "skills/eval/scripts/fixture.sh": "writes synthetic leaky scripts as test data",
 }
+# Host literals that are TEST DATA on the Atlas surface: a hostile host a fixture feeds
+# to the wire adapter to prove it is REFUSED. Named one by one, for the same reason as
+# above — a fixture is where a second destination would hide most comfortably.
+ATLAS_URL_TEST_DATA = {
+    "skills/atlas/scripts/fixture-wire.sh": "hostile-host arms (evil.example, hub.invalid) — asserted refused, never dialled",
+}
 NET_EXTERNAL = {
     "skills/watch/scripts/watch.py": "re-verifies cited sources — fetching IS the skill",
     "skills/fable-director/scripts/fable-launcher.sh": "probes api.anthropic.com for model availability",
 }
+# A hook that reaches the network SYNCHRONOUSLY blocks every session in the estate. The
+# verbs, minus `git push`: the pretool gate names "git push" as a TEXT PATTERN it guards,
+# and a check that cannot tell naming from running would red the very gate that stops a
+# push. Naming is not running; the shipped hooks push nothing.
+HOOK_EGRESS_RE = re.compile(r"\b(curl|wget|ncat|telnet|urlopen)\b|\burllib\b|\bfetch\s*\(|"
+                            r"\bnc\s+-|\bgit\s+(?:-C\s+\S+\s+)?(?:pull|fetch|clone|ls-remote)\b")
+# `command -v curl`, `[ -x /usr/bin/python3 ]` and friends ask WHETHER a tool exists.
+# A probe is not a call, and a gate that cannot tell them apart teaches people to delete it.
+PROBE_SHAPE_RE = re.compile(r"command\s+-v\b|\btype\s+-\w|\bwhich\s+\w|\[\s*-[a-zA-Z]\s|\[\[\s*-[a-zA-Z]\s")
+ASSIGN_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=")
+# An invocation is an interpreter ADJACENT to the client — `python3 "$NR_ATLAS_AUTH" …`.
+# Adjacency is the whole point: `[ -x /usr/bin/python3 ]` on a line that also tests
+# `[ -f "$NR_ATLAS_AUTH" ]` names both words and runs neither.
+# The whole next word is the target, whatever it is made of: a bare path, a variable, or
+# a variable spliced onto a path (`"$NR/skills/atlas/scripts/atlas_auth.py"` — the shape
+# that slipped the first cut of this regex, which stopped capturing at the `/`).
+PY_INVOKE_RE = re.compile(r"(?:^|[|;&(]|\s)(?:/\S*/)?python3?(?:\s+-[^\s]+)*\s+"
+                          r"[\"']?([^\s\"';|&]+)")
+
+
+def _is_loopback_host(host):
+    h = host.strip().lower()
+    return (h in LOOPBACK_HOSTS or h.startswith("127.") or h.endswith(".localhost")
+            or h == "[::1]")
+
+
+def _is_hub_host(host):
+    h = host.strip().lower()
+    return h == ATLAS_HUB_HOST or h.endswith("." + ATLAS_HUB_HOST)
+
+
+def _backgrounded(line):
+    """Does this shell line hand its command to the background?
+
+    Peels trailing redirections and closing parens so that both shapes in the shipped
+    hooks read as backgrounded: `… >/dev/null 2>&1 &` and `( … & ) 2>/dev/null`.
+    `&&` is a separator, not a fork, and never counts.
+    """
+    s, prev = line.strip(), None
+    while s != prev:
+        prev = s
+        s = re.sub(r"\s*(?:[0-9]*(?:>>|>|<)\s*\S+|\)|;|\}|\bfi\b|\bdone\b)\s*$", "", s).strip()
+    return s.endswith("&") and not s.endswith("&&")
+
+
+def _code_lines(txt):
+    """(lineno, line) for every line that is not a whole-line comment."""
+    for i, line in enumerate(txt.splitlines(), 1):
+        if line.lstrip().startswith("#"):
+            continue
+        yield i, line
 
 
 def check_network(root, plug, _skills):
+    """One door, one destination, and no hook that waits on it.
+
+    The 4.9 amendment is stated in `law` below so a reader of the OUTPUT — not only a
+    reader of this file — learns that the no-egress promise was deliberately changed and
+    what replaced it. Three halves: who may open a connection, what may be named, and
+    whether a hook ever blocks on one.
+    """
     ID = "NETWORK-EGRESS"
-    law = ("shipped hooks and scripts make no network calls except an allowlist of "
-           "loopback-bound ones; compiled runtimes make none at all")
-    out, checked, allowed, external = [], 0, [], []
-    targets = sorted(glob.glob(os.path.join(plug, "hooks", "*.sh")) +
-                     glob.glob(os.path.join(plug, "skills", "*", "scripts", "*")))
+    law = ("4.9: ONE destination — the Atlas hub ($ATLAS_HUB_BASE, default "
+           "https://atlas.not.rest) — reachable ONLY from atlas_auth.py, atlas_wire.py and "
+           "atlas.py; every other shipped script and hook is loopback-bound or silent, no "
+           "hook egresses synchronously, and compiled runtimes reach nothing at all")
+    out, checked, allowed, external, doors = [], 0, [], [], []
+    hooks = sorted(glob.glob(os.path.join(plug, "hooks", "*.sh")))
+    # RECURSIVE: `scripts/*` never saw `scripts/vendor/`, and a subdirectory is exactly
+    # where a caller would sit unread.
+    targets = sorted(hooks + glob.glob(os.path.join(plug, "skills", "*", "scripts", "**"),
+                                       recursive=True))
     for f in targets:
         if os.path.isdir(f):
             continue
@@ -813,34 +947,95 @@ def check_network(root, plug, _skills):
             continue
         checked += 1
         key = rel.replace(os.sep, "/")
+        # ---- half 1: WHO MAY OPEN A CONNECTION ------------------------------------
         # Shell-word scanning applies to SHELL files only: `curl` inside a python string
         # is a word in a vocabulary list, not a call — starthere_lint.py's command-head
         # set matched the naive rule and would have been a permanent false FAIL.
         hit = NET_RE.search(txt)
         if not hit and f.endswith(".sh"):
             hit = NET_SHELL_RE.search(txt)
-        if not hit:
-            continue
-        if key in NET_TEST_DATA:
-            continue
-        if key in NET_EXTERNAL:
-            external.append(key)
-            continue
-        if key in NET_LOOPBACK:
-            if LOOPBACK_RE.search(txt):
-                allowed.append(key)
+        if hit and key not in NET_TEST_DATA:
+            if key in NET_EXTERNAL:
+                external.append(key)
+            elif key in ATLAS_EGRESS:
+                # the allowlist is a claim, re-proved: a doorway takes its base from the
+                # env contract, never from a host baked into the file.
+                if HUB_BOUND_RE.search(txt):
+                    doors.append(key)
+                else:
+                    out.append(R(ID, "FAIL", law,
+                                 "%s:%d  named an Atlas doorway but nothing binds it to $%s"
+                                 % (rel_p(root, f), lineno(txt, hit.start()), ATLAS_HUB_ENV),
+                                 "take the base from $%s (default %s), or drop it from "
+                                 "ATLAS_EGRESS" % (ATLAS_HUB_ENV, ATLAS_HUB_HOST)))
+            elif key in NET_LOOPBACK:
+                if LOOPBACK_RE.search(txt):
+                    allowed.append(key)
+                else:
+                    out.append(R(ID, "FAIL", law,
+                                 "%s:%d  allowlisted as loopback but nothing binds it to "
+                                 "127.0.0.1" % (rel_p(root, f), lineno(txt, hit.start())),
+                                 "bind it to loopback, or move it to NET_EXTERNAL with a reason"))
             else:
                 out.append(R(ID, "FAIL", law,
-                             "%s:%d  allowlisted as loopback but nothing binds it to "
-                             "127.0.0.1" % (rel_p(root, f), lineno(txt, hit.start())),
-                             "bind it to loopback, or move it to NET_EXTERNAL with a reason"))
+                             "%s:%d  network use (%r) on no list"
+                             % (rel_p(root, f), lineno(txt, hit.start()), hit.group(0).strip()),
+                             "remove it, or list it in NET_LOOPBACK (and bind loopback) / "
+                             "ATLAS_EGRESS (a hub doorway) / NET_EXTERNAL (with the reason)"))
+        # ---- half 2: WHAT MAY BE NAMED (the one destination) ----------------------
+        # Scoped to the surface the amendment opened — the Atlas skill and the hooks.
+        # Elsewhere the older, stronger test still applies: no caller at all, so a host
+        # in a docstring cannot dial anything. Widening the string scan estate-wide would
+        # red an XML namespace and `example.invalid` test data, and an allowlist people
+        # pad to silence noise is an allowlist that has stopped meaning anything.
+        on_atlas_surface = key.startswith("skills/atlas/") or key.startswith("hooks/")
+        if on_atlas_surface and key not in ATLAS_EGRESS and key not in ATLAS_URL_TEST_DATA \
+                and key not in NET_TEST_DATA:
+            for m in URL_HOST_RE.finditer(txt):
+                host = m.group(1)
+                if _is_loopback_host(host) or _is_hub_host(host):
+                    continue
+                out.append(R(ID, "FAIL", law,
+                             "%s:%d  names %s — the only external destination this harness "
+                             "may name is the Atlas hub"
+                             % (rel_p(root, f), lineno(txt, m.start()), host),
+                             "point it at $%s (default %s) or 127.0.0.1; if it is test "
+                             "data, name the file in ATLAS_URL_TEST_DATA with its reason"
+                             % (ATLAS_HUB_ENV, ATLAS_HUB_HOST)))
+                break          # one row per file: the law is the file's, not the line's
+    # ---- half 3: NO HOOK WAITS ON THE NETWORK ---------------------------------
+    quiet_hooks = 0
+    for f in hooks:
+        txt = read(f)
+        if not txt:
             continue
-        out.append(R(ID, "FAIL", law,
-                     "%s:%d  network use (%r) on no list"
-                     % (rel_p(root, f), lineno(txt, hit.start()), hit.group(0).strip()),
-                     "remove it, or list it in NET_LOOPBACK (and bind loopback) / "
-                     "NET_EXTERNAL (with the reason it must reach the network)"))
-    # compiled runtimes claim ZERO network; hold them to it
+        # shell variables that hold the auth client's path, so `"$NR_ATLAS_AUTH"` reads
+        # as the client it is.
+        held = set(re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=[^\n]*atlas_auth\.py", txt, re.M))
+        blocking = []
+        for i, line in _code_lines(txt):
+            if ASSIGN_RE.match(line) or PROBE_SHAPE_RE.search(line):
+                continue           # naming a path, or asking whether a tool exists
+            m = HOOK_EGRESS_RE.search(line)
+            call = PY_INVOKE_RE.search(line)
+            target = (call.group(1) if call else "") or ""
+            invokes = bool(call) and ("atlas_auth.py" in target
+                                      or target.strip("\"'${}") in held)
+            if not (m or invokes):
+                continue
+            if _backgrounded(line):
+                continue
+            blocking.append((i, m.group(0).strip() if m else "atlas_auth.py"))
+        if blocking:
+            i, what = blocking[0]
+            out.append(R(ID, "FAIL", law,
+                         "%s:%d  a hook egresses SYNCHRONOUSLY (%r) — every session in the "
+                         "estate waits on it" % (rel_p(root, f), i, what),
+                         "background it (`… >/dev/null 2>&1 &`), the way SessionStart "
+                         "invokes atlas_auth.py sessionstart"))
+        else:
+            quiet_hooks += 1
+    # compiled runtimes claim ZERO network; hold them to it — UNCHANGED by the amendment.
     for f in sorted(glob.glob(os.path.join(root, "compile", "*", "**", "*.py"),
                               recursive=True)):
         txt = read(f)
@@ -852,9 +1047,296 @@ def check_network(root, plug, _skills):
                          "compiled runtimes are offline by law — remove the import"))
     if not any(r.status == "FAIL" for r in out):
         out.insert(0, R(ID, "PASS", law,
-                        "%d script(s) scanned · %d loopback-bound: %s · %d external-by-design: %s"
-                        % (checked, len(allowed), ", ".join(sorted(allowed)) or "-",
-                           len(external), ", ".join(sorted(external)) or "-")))
+                        "%d file(s) scanned · %d Atlas doorway(s) to $%s: %s · %d "
+                        "loopback-bound: %s · %d external-by-design: %s · %d/%d hook(s) "
+                        "never wait on the network"
+                        % (checked, len(doors), ATLAS_HUB_ENV, ", ".join(sorted(doors)) or "-",
+                           len(allowed), ", ".join(sorted(allowed)) or "-",
+                           len(external), ", ".join(sorted(external)) or "-",
+                           quiet_hooks, len(hooks))))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 4.9 · THE SECRET-HANDLING LAWS. Three of these guard one sentence of the docket —
+# "secrets by path, never by value" — at the three places a token can be lost: the mode
+# it is written with, the git config that hands it out, and the repo it must never be
+# typed into. The fourth guards the verifier's PROVENANCE: the file that decides whether
+# a machine is admitted is Atlas's own, byte for byte, or the admission decision is ours
+# to get wrong.
+# ---------------------------------------------------------------------------
+TOKEN_NAME = "atlas-token"
+# where the token lands: the helper that returns its path, or the name itself.
+TOKEN_TARGET_RE = re.compile(r"token_path\s*\(|[\"']atlas-token[\"']")
+# a write, in any of the shapes this estate actually uses.
+# ⛔ `.write(` IS NOT ON THIS LIST. `sys.stderr.write("… %s" % token_path)` is a file
+# write to nothing — it put atlas.py's "your token lives here" message inside the window
+# and FAILed a line that stores nothing. A write is a file being CREATED or REPLACED.
+WRITE_VERB_RE = re.compile(r"_write_private\s*\(|\bopen\s*\([^)]*[\"']w|os\.open\s*\(|"
+                           r"os\.replace\s*\(|os\.rename\s*\(|shutil\.copy")
+# private BY CREATION. `0o600` at the write, or a umask that makes it the default.
+PRIVATE_MODE_RE = re.compile(r"0o600|\b0600\b|umask\s*\(\s*0o?0?77")
+TOKEN_WINDOW = 8
+
+
+def check_token_store(root, plug, _skills):
+    """The identity token is created 0600, and the mode is stated AT the write.
+
+    ⛔ BOUND, STATED WHERE IT IS IMPLEMENTED: this is a grep-level fingerprint check over
+    a window of TOKEN_WINDOW lines, not a test of the file mode on disk (eval never runs
+    the code it judges). It therefore asserts something slightly stronger than "the file
+    ends up 0600": it asserts the mode is VISIBLE at the write. A 0600 that lives only in
+    a helper's default argument is secure today and silent tomorrow — a refactor that adds
+    a second caller inherits nothing and says nothing. Stating the mode at the write is
+    the fingerprint the law leaves; a fixture arm proves a write without one FAILs.
+    """
+    ID = "TOKEN-STORE"
+    law = ("every code path that writes the Atlas identity token states its 0600 mode at "
+           "the write — the token is private by creation, never private by afterthought")
+    out, sites = [], 0
+    for f in sorted(glob.glob(os.path.join(plug, "skills", "*", "scripts", "**", "*.py"),
+                              recursive=True)):
+        txt = read(f)
+        if not txt or TOKEN_NAME not in txt:
+            continue
+        lines = txt.splitlines()
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("#") or not TOKEN_TARGET_RE.search(line):
+                continue
+            lo, hi = max(0, i - TOKEN_WINDOW), min(len(lines), i + TOKEN_WINDOW + 1)
+            window = "\n".join(lines[lo:hi])
+            if not WRITE_VERB_RE.search(window):
+                continue          # the token is READ here, or only its path is built
+            sites += 1
+            if PRIVATE_MODE_RE.search(window):
+                continue
+            out.append(R(ID, "FAIL", law,
+                         "%s:%d  writes the identity token with no 0600 within %d lines"
+                         % (rel_p(root, f), i + 1, TOKEN_WINDOW),
+                         "write it 0600 at the write (mkstemp + os.chmod(path, 0o600) + "
+                         "os.replace), so the token is never briefly world-readable"))
+    if not sites:
+        return [R(ID, "SKIP", law, "no script writes %s in this tree" % TOKEN_NAME)]
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law,
+                        "%d token-write site(s), every one 0600 at the write" % sites))
+    return out
+
+
+# The git credential helper hands the token to git. Scoped to the hub host, git offers it
+# to the hub and to nobody else; configured BARE, git offers it to every host it is ever
+# pointed at — the same token, to a stranger, on the first `git clone`.
+CRED_HELPER_RE = re.compile(r"credential(\.[^\s\"'=]+?)?\.helper\b")
+# The hunter contains the quarry. A suite that names a forbidden shape in its own law
+# text, evidence strings and fixture arms would convict itself on every run — the same
+# reason NET_TEST_DATA exists, applied to the two files that ARE the suite.
+# Used by HELPER-SCOPE ONLY, and deliberately not by NO-TOKEN-LITERAL: a secret scan that
+# exempts a file is a secret scan with a hiding place. The fixture needs no exemption
+# there because it MINTS its decoy keys at run time instead of committing them — which is
+# what the docket asks of every fixture anyway.
+LAW_TEXT_EXEMPT = {
+    "skills/eval/scripts/eval.py": "the checker necessarily spells the shapes it hunts",
+    "skills/eval/scripts/fixture.sh": "writes synthetic violations as test data",
+}
+
+
+def check_helper_scope(root, plug, _skills):
+    """The only credential helper the plugin configures is host-scoped to the hub.
+
+    ⛔ Comment lines are skipped: a fixture that EXPLAINS why a machine-wide
+    `credential.helper` is dangerous must be able to say the words. What is judged is
+    config the plugin WRITES.
+    """
+    ID = "HELPER-SCOPE"
+    law = ("the only git credential helper the plugin configures is scoped to the Atlas "
+           "hub host — a bare credential.helper offers the token to every host git meets")
+    out, scoped = [], []
+    targets = sorted(glob.glob(os.path.join(plug, "hooks", "*.sh")) +
+                     glob.glob(os.path.join(plug, "skills", "*", "scripts", "**"),
+                               recursive=True))
+    for f in targets:
+        if os.path.isdir(f):
+            continue
+        txt = read(f)
+        if not txt or "credential" not in txt:
+            continue
+        if os.path.relpath(f, plug).replace(os.sep, "/") in LAW_TEXT_EXEMPT:
+            continue
+        hub_bound = bool(HUB_BOUND_RE.search(txt)) or ATLAS_HUB_HOST in txt
+        for i, line in _code_lines(txt):
+            for m in CRED_HELPER_RE.finditer(line):
+                scope = (m.group(1) or "").lstrip(".")
+                if not scope:
+                    out.append(R(ID, "FAIL", law,
+                                 "%s:%d  configures a BARE credential.helper"
+                                 % (rel_p(root, f), i),
+                                 "scope it to the hub: credential.<hub url>.helper, so git "
+                                 "offers the token to the hub and to nothing else"))
+                    continue
+                dynamic = bool(re.search(r"%s|\{\}|\$|%\(", scope))
+                if dynamic:
+                    # the scope is computed: re-prove the file computes it FROM the hub.
+                    if hub_bound:
+                        scoped.append("%s:%d" % (rel_p(root, f), i))
+                    else:
+                        out.append(R(ID, "FAIL", law,
+                                     "%s:%d  scopes the helper to a computed host, and the "
+                                     "file never names $%s or %s"
+                                     % (rel_p(root, f), i, ATLAS_HUB_ENV, ATLAS_HUB_HOST),
+                                     "compute the scope from $%s (default %s)"
+                                     % (ATLAS_HUB_ENV, ATLAS_HUB_HOST)))
+                elif _is_hub_host(re.sub(r"^https?://", "", scope).split("/")[0]):
+                    scoped.append("%s:%d" % (rel_p(root, f), i))
+                else:
+                    out.append(R(ID, "FAIL", law,
+                                 "%s:%d  scopes the helper to %r — not the Atlas hub"
+                                 % (rel_p(root, f), i, scope),
+                                 "scope it to %s" % ATLAS_HUB_HOST))
+    if not scoped and not out:
+        return [R(ID, "SKIP", law, "no credential helper config in this tree")]
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law,
+                        "%d credential helper config(s), every one hub-scoped: %s"
+                        % (len(scoped), ", ".join(scoped))))
+    return out
+
+
+# The verifier decides whether a machine is admitted. It is Atlas's file, not ours: we
+# vendor it byte-exact so the answer to "who may use this plugin" is one implementation
+# with one owner, and an edit to it — even a helpful one — is a fork of the admission rule.
+VENDORED_VERIFIER = "skills/atlas/scripts/vendor/verify_token.py"
+CONTRACT_VERIFIER = os.path.join("briefs", "atlas-contract", "kit", "verify-token.py")
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
+def check_verifier_vendored(root, plug, skills):
+    ID = "VERIFIER-VENDORED"
+    law = ("the token verifier is Atlas's own file, vendored byte-exact with its licence "
+           "line intact — the admission rule has one implementation and one owner")
+    if "atlas" not in skills:
+        return [R(ID, "SKIP", law, "no atlas skill in this tree — nothing admits anything")]
+    p = os.path.join(plug, *VENDORED_VERIFIER.split("/"))
+    if not os.path.isfile(p):
+        return [R(ID, "FAIL", law, "%s  (absent)" % rel_p(root, p),
+                  "vendor Atlas's kit/verify-token.py byte-exact to %s" % VENDORED_VERIFIER)]
+    first = (read(p).splitlines() or [""])[0]
+    out = []
+    if not (first.lstrip().startswith("#") and "Atlas" in first
+            and re.search(r"licens", first, re.I)):
+        out.append(R(ID, "FAIL", law,
+                     "%s:1  line 1 is not the Atlas licence line (%s)"
+                     % (rel_p(root, p), clip_line(first, 60)),
+                     "restore the vendored file's first line verbatim — it is the licence"))
+    contract = os.path.join(root, CONTRACT_VERIFIER)
+    got = _sha256(p)
+    if not os.path.isfile(contract):
+        # A consumer install ships no briefs/. Byte-equality is unprovable HERE, and
+        # saying so is the honest row — a PASS that quietly skipped half its own test is
+        # exactly the kind of claim this suite exists to refuse.
+        out.append(R(ID, "SKIP", law,
+                     "%s  present and licensed (sha256 %s) · %s not in this tree, so "
+                     "byte-equality against the contract copy was not proved here"
+                     % (VENDORED_VERIFIER, got[:12], CONTRACT_VERIFIER)))
+        return out
+    want = _sha256(contract)
+    if got != want:
+        out.append(R(ID, "FAIL", law,
+                     "%s sha256 %s != %s sha256 %s"
+                     % (VENDORED_VERIFIER, got[:12], CONTRACT_VERIFIER, want[:12]),
+                     "re-copy the contract file verbatim; never edit a vendored verifier"))
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law, "%s is byte-exact with %s (sha256 %s) and carries "
+                        "the licence line" % (VENDORED_VERIFIER, CONTRACT_VERIFIER, got[:12])))
+    return out
+
+
+# A secret in the repo is a secret that has been published. These two shapes are what our
+# secrets LOOK like: a signed Atlas token (three base64url segments whose header is JSON
+# naming an alg) and a ring key (`nrk_` + secrets.token_urlsafe(32)).
+JWT_SHAPE_RE = re.compile(r"\b([A-Za-z0-9_-]{12,})\.([A-Za-z0-9_-]{8,})\.([A-Za-z0-9_-]{20,})\b")
+RING_KEY_RE = re.compile(r"\bnrk_([A-Za-z0-9_-]{20,})")
+SKIP_SUFFIX = (".pyc", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".zip", ".gz", ".pdf", ".woff", ".woff2")
+
+
+def _looks_like_key_material(body):
+    """Is this the tail of a REAL minted key, or a hand-written placeholder?
+
+    A minted key is `secrets.token_urlsafe(32)` — 43 base64url characters. The chance
+    that such a string carries neither a digit nor a capital is about 1e-13, so
+    "has a digit or a capital" catches every real key that will ever exist. What it does
+    NOT catch is a real key that lost against those odds; what it DOES catch, and should,
+    is any placeholder written to look like key material. Both directions are stated
+    because the second is the one a fixture author actually meets: name your decoys in
+    lower-case words and this check stays quiet.
+    """
+    return bool(re.search(r"[0-9]", body) or re.search(r"[A-Z]", body))
+
+
+def check_no_token_literal(root, plug, _skills):
+    """No signed token and no ring key is ever committed.
+
+    ⛔ WHAT IT CANNOT SEE: a secret that does not look like ours (a password, an ingest
+    secret with no prefix) and a key that lost a 1e-13 coin flip. This is the shape check,
+    not a credential scanner; the estate's real defence is that secrets travel BY PATH.
+    """
+    ID = "NO-TOKEN-LITERAL"
+    law = ("no signed token and no ring key is committed anywhere under the plugin — "
+           "secrets travel by path, never by value")
+    out, scanned = [], 0
+    for dirpath, dirnames, filenames in os.walk(plug):
+        dirnames[:] = [d for d in dirnames if d not in (".git", "__pycache__", "node_modules")]
+        for name in sorted(filenames):
+            if name.endswith(SKIP_SUFFIX):
+                continue
+            f = os.path.join(dirpath, name)
+            try:
+                if os.path.getsize(f) > 4 * 1024 * 1024:
+                    continue
+            except OSError:
+                continue
+            txt = read(f)
+            if not txt:
+                continue
+            scanned += 1
+            for m in RING_KEY_RE.finditer(txt):
+                if not _looks_like_key_material(m.group(1)):
+                    continue
+                out.append(R(ID, "FAIL", law,
+                             "%s:%d  a committed nrk_ ring key literal"
+                             % (rel_p(root, f), lineno(txt, m.start())),
+                             "delete it, revoke the key, and read it from a file at "
+                             "runtime — a key in the repo is a key that is published"))
+                break
+            if "." not in txt:
+                continue
+            for m in JWT_SHAPE_RE.finditer(txt):
+                seg = m.group(1)
+                try:
+                    hdr = json.loads(base64.urlsafe_b64decode(
+                        seg + "=" * (-len(seg) % 4)).decode("utf-8", "strict"))
+                except (ValueError, binascii.Error, UnicodeDecodeError):
+                    continue
+                if not (isinstance(hdr, dict) and "alg" in hdr):
+                    continue
+                out.append(R(ID, "FAIL", law,
+                             "%s:%d  a committed signed token (header alg %r)"
+                             % (rel_p(root, f), lineno(txt, m.start()), hdr.get("alg")),
+                             "delete it and revoke the jti — fixtures mint their own "
+                             "throwaway tokens at run time"))
+                break
+    if not any(r.status == "FAIL" for r in out):
+        out.insert(0, R(ID, "PASS", law,
+                        "%d shipped file(s) carry no token and no ring key literal" % scanned))
     return out
 
 
@@ -1431,6 +1913,11 @@ def check_access_gate(root, plug, _skills):
 
 CHECKS = [check_network, check_kernel, check_release_surface, check_learning_loop,
           check_access_gate,
+          # 4.9 — the Atlas secret-handling laws: the mode the token is written with, the
+          # git config that hands it out, the verifier's provenance, and the repo it must
+          # never be typed into.
+          check_token_store, check_helper_scope, check_verifier_vendored,
+          check_no_token_literal,
           check_offload, check_labels, check_scripts, check_references,
           check_estate, check_selfcheck, check_triggers, check_safety,
           check_hooks, check_router, check_route_parity, check_route_conformance]

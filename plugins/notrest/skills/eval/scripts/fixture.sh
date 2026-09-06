@@ -412,6 +412,191 @@ passcase "a golden list whose surfaces all exist" \
   'mkdir -p "$W/evals" && printf "CHANGELOG.md\n" > "$W/evals/golden-release-surface.txt";
    printf "x\n" > "$W/CHANGELOG.md"'
 
+# ══ 4.9 · THE ATLAS SURFACE: one door, one destination, and the secrets ═══════════════
+# NETWORK-EGRESS was amended in 4.9: the estate's "no egress at all" promise was
+# deliberately broken ONCE, for the Atlas hub. A hole that big is only as good as its
+# edges, so these arms ARE the edges — the door opens for the three named modules and for
+# the one host, and for nothing else; a hook may start the client but never wait on it.
+# The three secret-handling checks and the verifier's provenance get a red arm each,
+# because a law with no red arm is a sentence, not a gate.
+#
+# Every decoy secret here is MINTED AT RUN TIME, never typed into this file: NO-TOKEN-
+# LITERAL scans plugins/notrest, this fixture lives there, and a suite that ships the
+# thing it forbids has already lost the argument. It is also what the docket asks of
+# every fixture — throwaway keys, generated, never committed.
+
+seed_atlas() {   # seed_atlas <plugin dir> — a LAWFUL miniature Atlas surface
+  A="$1/skills/atlas"
+  mkdir -p "$A/scripts/vendor"
+  cat > "$A/SKILL.md" <<'EOF'
+---
+name: atlas
+description: "Identity and the bank for this estate. Use on /atlas."
+---
+# atlas
+Scripts: `scripts/atlas_auth.py` (identity), `scripts/atlas_wire.py` (the push),
+`scripts/atlas_helper.py` (the git credential helper) and `scripts/mockhub.py`
+(the loopback mock the arms run against).
+## Self-check before finishing
+- the token verified offline; nothing secret was printed.
+EOF
+  cat > "$A/scripts/atlas_auth.py" <<'EOF'
+"""identity — device login and refresh, against the one hub."""
+import os
+import urllib.request
+
+BASE = os.environ.get("ATLAS_HUB_BASE") or "https://atlas.not.rest"
+
+
+def store(home, token):
+    p = os.path.join(home, "atlas-token")
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.write(fd, token.encode("utf-8"))
+    os.close(fd)
+EOF
+  cat > "$A/scripts/atlas_wire.py" <<'EOF'
+"""the bank — the snapshot push."""
+import os
+import urllib.request
+
+BASE = os.environ.get("ATLAS_HUB_BASE") or "https://atlas.not.rest"
+EOF
+  cat > "$A/scripts/atlas_helper.py" <<'EOF'
+"""the git credential helper — host-scoped to the hub, silent for every other host."""
+import os
+import subprocess
+from urllib.parse import urlparse
+
+HUB = os.environ.get("ATLAS_HUB_BASE") or "https://atlas.not.rest"
+
+
+def install(hub=HUB):
+    key = "credential.%s.helper" % hub
+    return subprocess.run(["git", "config", "--global", key, "!atlas-helper"]).returncode
+EOF
+  cat > "$A/scripts/mockhub.py" <<'EOF'
+"""the mock hub — bound to loopback, so no fixture in this estate reaches Atlas."""
+import http.server
+
+ADDR = ("127.0.0.1", 0)
+EOF
+  printf '%s\n' \
+    '# verify-token.py — Atlas token verifier (Ed25519). (c) 2026 Not Rest Inc. Part of Atlas; licensed with the notrest plugin.' \
+    'def verify(token, keys):' \
+    '    raise NotImplementedError' > "$A/scripts/vendor/verify_token.py"
+  : > "$A/scripts/vendor/__init__.py"
+}
+
+atlas_second_destination() {   # a NEW script on the Atlas surface, naming a second host
+  printf 'HUB = "https://example.com/ingest"\n' > "$1/skills/atlas/scripts/leak.py"
+  printf '\nAlso ships `scripts/leak.py`.\n' >> "$1/skills/atlas/SKILL.md"
+}
+atlas_hardcoded_host() {       # a doorway that stops taking its base from the env
+  printf 'import urllib.request\n\nBASE = "https://atlas.not.rest"\n' \
+    > "$1/skills/atlas/scripts/atlas_wire.py"
+}
+hook_curls_inline() {          # a hook that blocks the session on the network
+  printf 'curl -s https://atlas.not.rest/health >/dev/null\nexit 0\n' \
+    >> "$1/hooks/session-start.sh"
+}
+hook_waits_on_client() {       # the right call, made the wrong way: no `&`
+  printf 'python3 "$NR/skills/atlas/scripts/atlas_auth.py" sessionstart >/dev/null 2>&1\nexit 0\n' \
+    >> "$1/hooks/session-start.sh"
+}
+hook_backgrounds_client() {    # SessionStart's actual shape
+  printf 'python3 "$NR/skills/atlas/scripts/atlas_auth.py" sessionstart >/dev/null 2>&1 &\nexit 0\n' \
+    >> "$1/hooks/session-start.sh"
+}
+token_write_without_mode() {   # the token, created with whatever umask happens to be
+  cat > "$1/skills/atlas/scripts/atlas_auth.py" <<'EOF'
+"""identity — device login and refresh, against the one hub."""
+import os
+import urllib.request
+
+BASE = os.environ.get("ATLAS_HUB_BASE") or "https://atlas.not.rest"
+
+
+def store(home, token):
+    p = os.path.join(home, "atlas-token")
+    with open(p, "w") as fh:
+        fh.write(token)
+EOF
+}
+helper_configured_bare() {     # the token offered to every host git ever meets
+  cat > "$1/skills/atlas/scripts/atlas_helper.py" <<'EOF'
+"""the git credential helper."""
+import subprocess
+
+
+def install():
+    return subprocess.run(["git", "config", "--global",
+                           "credential.helper", "!atlas-helper"]).returncode
+EOF
+}
+mint_ring_key() {              # a REAL-shaped key, minted here and never committed
+  python3 - "$1" <<'EOF'
+import random, string, sys
+body = "".join(random.choice(string.ascii_letters + string.digits) for _ in range(43))
+open(sys.argv[1] + "/skills/graph/notes.md", "w").write("KEY=nrk_%s\n" % body)
+EOF
+}
+mint_signed_token() {          # three base64url segments, header {"alg": "EdDSA"}
+  python3 - "$1" <<'EOF'
+import base64, json, random, string, sys
+def seg(b): return base64.urlsafe_b64encode(b).decode().rstrip("=")
+rnd = lambda n: "".join(random.choice(string.ascii_letters + string.digits) for _ in range(n))
+tok = "%s.%s.%s" % (seg(json.dumps({"alg": "EdDSA", "kid": "k1"}).encode()),
+                    seg(json.dumps({"sub": "fixture", "exp": 0}).encode()), rnd(86))
+open(sys.argv[1] + "/skills/graph/notes.md", "w").write("token: %s\n" % tok)
+EOF
+}
+
+# ── bolt 1 · ONE DESTINATION ─────────────────────────────────────────────────────────
+inject "an Atlas script naming a SECOND destination" NETWORK-EGRESS \
+  'seed_atlas "$P"; atlas_second_destination "$P"'
+# …and the same host inside a DOORWAY is not a second destination: those three modules
+# take their base from $ATLAS_HUB_BASE at run time, and judging the prose around it would
+# be judging prose. The boundary is stated in the check; this arm pins it.
+passcase "the same host inside a doorway's own text is not a second destination" \
+  'seed_atlas "$P";
+   printf "\n# see also https://example.com/docs for the device-flow write-up\n" \
+     >> "$P/skills/atlas/scripts/atlas_auth.py"'
+
+# ── bolt 2 · THREE DOORWAYS, each re-proved to take the env base ─────────────────────
+inject "a doorway that hard-codes its host instead of taking the env base" NETWORK-EGRESS \
+  'seed_atlas "$P"; atlas_hardcoded_host "$P"'
+
+# ── bolt 3 · NO HOOK EVER WAITS ON THE NETWORK ───────────────────────────────────────
+inject "a hook that curls the hub inline" NETWORK-EGRESS \
+  'hook_curls_inline "$P"'
+inject "a hook that runs the auth client and WAITS for it" NETWORK-EGRESS \
+  'seed_atlas "$P"; hook_waits_on_client "$P"'
+passcase "the auth client started in the background, and a loopback-bound mock hub" \
+  'seed_atlas "$P"; hook_backgrounds_client "$P"'
+
+# ── the secret-handling laws ─────────────────────────────────────────────────────────
+inject "the identity token written with no 0600 at the write" TOKEN-STORE \
+  'seed_atlas "$P"; token_write_without_mode "$P"'
+inject "a BARE credential.helper — the token offered to every host" HELPER-SCOPE \
+  'seed_atlas "$P"; helper_configured_bare "$P"'
+inject "the vendored verifier deleted" VERIFIER-VENDORED \
+  'seed_atlas "$P"; rm -f "$P/skills/atlas/scripts/vendor/verify_token.py"'
+inject "the vendored verifier with its licence line stripped" VERIFIER-VENDORED \
+  'seed_atlas "$P";
+   printf "def verify(token, keys):\n    raise NotImplementedError\n" \
+     > "$P/skills/atlas/scripts/vendor/verify_token.py"'
+inject "a minted ring key committed to a shipped file" NO-TOKEN-LITERAL \
+  'mint_ring_key "$P"'
+inject "a signed token committed to a shipped file" NO-TOKEN-LITERAL \
+  'mint_signed_token "$P"'
+# The other direction, and the reason this check can live beside real fixtures: a
+# hand-written placeholder in lower-case words is not key material. Say it in words and
+# the scanner stays quiet; give it a digit or a capital and it is called a key.
+passcase "a word-shaped placeholder is not a key literal" \
+  'printf "decoy: nrk_the-plain-copy-that-must-not-be-read\n" > "$P/skills/graph/notes.md"'
+passcase "a lawful Atlas surface: one door, one destination, secrets by path" \
+  'seed_atlas "$P"'
+
 # ── RELEASE-SURFACE · a DELETION is not an unagreed surface ───────────────────────────
 # `git diff --name-only HEAD` lists REMOVED paths as well as changed ones, so retiring a
 # golden-surface file could never be green before the commit: delist it and the "touched

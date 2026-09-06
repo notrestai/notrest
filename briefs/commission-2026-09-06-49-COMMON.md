@@ -83,3 +83,8 @@ CARD: TESTS <n ran, n passed> · OPEN <n> · FINDINGS <n> · LEARNINGS <one line
 - **Login command name (A6 defect, RULED):** the canonical user-facing command is the contract's `atlas.py login`
   (I1 adds it). `atlas_auth.py login` remains the module's own CLI. After I1 lands: A6 re-points the banner's remedy to
   `python3 <hookdir>/../skills/atlas/scripts/atlas.py login` and A7 resyncs docs/ATLAS-CONNECT.md (steps B5 and the banner quote).
+- **Egress law (B2 defects, RULED):** destination-rule (which host may be NAMED anywhere on the Atlas surface and in hooks:
+  only `$ATLAS_HUB_BASE`, default atlas.not.rest, plus loopback) + module-rule (who may OPEN a connection: the doorways, each
+  re-proved to take its base from `$ATLAS_HUB_BASE`) — accepted as B2 resolved it. The vendored MCP read server
+  `skills/atlas/mcp/server.mjs` is the FOURTH doorway: the law polices `skills/*/mcp/**` (`fetch(`, URLs) the same way.
+  `skills/eval/SKILL.md` is the law's own document and B2's to correct (the table row and the check count).
