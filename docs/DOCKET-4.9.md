@@ -1,86 +1,88 @@
 # DOCKET 4.9 — the portal owns identity; the hub owns the plugin's git
 
-**STATUS: DRAFT — awaiting the owner's approval. No lane is dispatched until the owner says go.**
-*Drafted 2026-09-06 by the Director seat. Contract ask to Atlas: `briefs/ask-2026-09-06-atlas-identity-contract.md`.*
+**STATUS: DRAFT v2 — wide-parallel cut, awaiting the owner's approval. No lane is dispatched until the owner says go.**
+*Drafted 2026-09-06 by the Director seat. Contract: Atlas `IDENTITY-CONTRACT.md` (received by message;
+text requested), beside `HUB-CONTRACT.md`, `hub/SCHEMA-v1.md`, `ATLAS-PLAYBOOK.md` v2.0, `WIRING.md`.
+Our ask: `briefs/ask-2026-09-06-atlas-identity-contract.md`.*
 
 ## The change in one paragraph
 
 4.8.1 admits a machine by a key the owner mints and carries by hand, hashed against a ring
-committed to the repo. 4.9 admits a machine by an Atlas token the portal issues to a paying seat.
-The same token authenticates the bank's push and the clone / self-update of the plugin from the
-hub's own git. The ring shrinks to the owner's break-glass key. A consumer starts from the Atlas
-MCP server (Claude Code's native OAuth login) because no plugin exists on their machine yet; a
-headless box logs in with a device flow.
+committed to the repo. 4.9 admits a machine by an Atlas token the portal issues to a paying seat:
+ONE Ed25519-signed JWT (alg EdDSA, kid; claims iss/aud/sub/seat/mid/prj/scp/jti/iat/exp, 30 d)
+that also authenticates the bank's push and the clone / self-update of the plugin from the hub's
+git mirror. The plugin verifies OFFLINE with the RFC 8032 verifier Atlas supplies; refresh when
+exp−now < 7 d; the revoked list is cached at SessionStart; offline holders die at exp. The token
+lives at `${NOTREST_HOME:-~/.notrest}/atlas-token` (access-key accepted as an alias in transition).
+A consumer starts from the Atlas MCP server (OAuth 2.1, `atlas_connect` returns token + OUR
+bootstrap text); a headless box logs in with the device flow.
 
-## Decision the owner must make at approval (D1)
+## Decisions for the owner at approval
 
-How hooks verify a token OFFLINE. Stdlib Python has no asymmetric crypto, and the hooks may not
-depend on anything else.
+- **D1 — verification = signed token (Atlas ruling).** Atlas supplies the verifier + fixture; we
+  vendor it. Recommend ACCEPT. (The cached-verdict alternative is dropped.)
+- **D2 — ship gate.** 4.9.0 ships only when the fixture's LIVE arm passes against
+  atlas.not.rest (hub phase I-A live). Until then the build is complete, gated green against the
+  mock hub, and labeled "hub I-A pending" — never claimed live. Recommend ACCEPT.
+- **D3 — hub phases.** Atlas has asked the owner for its own go on I-A → I-B → I-C. Our Phase A
+  needs only the contract text; our live arm needs I-A.
 
-- **D1-a (recommended): opaque token, hub-verified, verdict cached.** `atlas.py login` and the
-  SessionStart hook verify with the hub when online (one bounded call, ≤2 s, silent) and write a
-  verdict cache under `~/.notrest/` bound to the token hash + expiry + machine. Every other hook
-  checks the cache, offline, in the same ~100 ms as today. Revocation is instant when online and
-  ≤ expiry offline. No crypto ships in the plugin. A user who forges their own cache defeats only
-  their own gate — the push still needs a valid token at the hub, and the gate controls the
-  harness on a machine, not the source.
-- **D1-b: signed token (Ed25519), verified locally.** Ships a pure-Python RFC 8032 verifier
-  (~150 lines, ~20–50 ms per verify, so verify once per token and cache). Stronger offline
-  guarantee, more kernel surface to refute, and the hub must run a signing key. Can be added
-  later as an upgrade of D1-a without changing the store.
+## Interfaces the seat fixes BEFORE dispatch (so lanes never wait on each other)
 
-## Phases
+- `atlas_token.py`: `verify(token_str, keys) -> Claims | raise TokenError(reason)`;
+  `load_keys()` (pinned + JWKS cache); `read_token(home) -> str|None` (atlas-token, alias
+  access-key); `verdict_cache(home)` read/write `{jti, exp, mid, checked_at}`.
+- `atlas_auth.py`: `device_login(base_url, home) -> Claims`; `refresh(home)`; `fetch_revoked(home)`.
+- `mockhub.py`: one stdlib http.server implementing device/start, activate, poll (428/200/410/403/429),
+  refresh, revoked, jwks, snapshot push — from the contract, with a test signing key.
+- Hook contract: every hook calls `atlas.py key --check --quiet` exactly as today; the verdict
+  comes from the cache + offline verify; exit codes unchanged (0 / 7).
+- Push: `push_http(snapshot, board, credential)` keeps its signature; bearer = the token;
+  idempotent by head + body hash; hub_commit = the head we sent; error texts verbatim from the contract.
 
-**Phase 0 — contract-independent, can start on approval.** Login client (device flow) against a
-MOCK hub the fixture runs; the token store; the credential helper; `key --check` accepting a
-cached verdict beside the ring; SessionStart refresh; the keyless banner reworded to name the
-login; fixture arms red-first; the marketplace manifest and bootstrap text. Transport lives in
-one adapter module so the Atlas reply changes one file.
+## Waves and lanes (tiered swarm: seat → opus lanes → sonnet workers as tools, depth ≤ 3)
 
-**Phase 1 — after the Atlas reply.** The http push adapter to the real contract; token/endpoint
-alignment; the MCP projection pointer in lane briefs (agentswarm); the bootstrap text finalized
-to what the MCP tool returns.
+### Wave A — all in parallel on the go (~2.5 h wall)
 
-**Phase 2 — ship.** Refuter round on the kernel surfaces (LAW), eval law arms, doctor check for
-the helper, docs (README, CHANGELOG, NAS handoff v2, SKILL.md), stamp with the pin-asserting
-script (both tombstones untouched), gates green, ship 4.9.0.
+| Lane | Model · tier | TOUCH-ONLY | Done-when (runnable) | Tokens |
+|---|---|---|---|---|
+| A1 mockhub | sonnet · bounded | `skills/atlas/scripts/mockhub.py` (new) | serves every endpoint in the contract; `python3 mockhub.py --selftest` exit 0 | 1–2M |
+| A2 token module | opus · judgment | `skills/atlas/scripts/atlas_token.py` (new) + vendored verifier | verify/claims/JWKS/cache per the interface; unit fixture: good, expired, wrong kid, bad sig, wrong aud/mid, revoked | 8–12M |
+| A3 auth client | opus · judgment | `skills/atlas/scripts/atlas_auth.py` (new) | device flow incl. 428/410/403/429 paths, refresh at <7 d, revoked cache; passes against A1 | 8–12M |
+| A4 git + helper | sonnet · bounded | `atlas.py credential-helper` subcommand, `login` writes the host-scoped helper config line from §9 | `git credential fill` returns username atlas / password = token for the hub host and nothing for others; no token in any URL or config (grep arm) | 1–2M |
+| A5 push adapter | opus · judgment | `push_http` in `atlas.py` | pushes to A1 per HUB-CONTRACT; idempotent replay; rejected-push error surfaced verbatim; `bank` exit codes unchanged | 6–10M |
+| A6 hooks | opus · judgment (kernel) | `hooks/session-start.sh`, `hooks/estate-root.sh`, `hooks/atlas-bank-hook.sh`, hook fixture | SessionStart: refresh + revoked fetch bounded ≤2 s, silent on failure; banner names the login; hook fixture arms green; `eval check` 0 | 8–12M |
+| A7 connect text | opus · judgment | `docs/ATLAS-CONNECT.md` (new) — the bootstrap the hub serves verbatim | helper-before-marketplace order; every command runnable; NAS/headless variant; sent to Atlas | 4–6M |
+| A8 manifest + stamps | sonnet · bounded | `.claude-plugin/*.json`, `plugins/notrest/.claude-plugin/plugin.json`, flow-html stamps | versions match; both tombstones pinned 9.0.0 / 4.7.1 (asserted); `doctor check` ≤ 5 | 0.5–1M |
 
-## Lanes
+### Wave B — after the seat integrates A2/A3/A4/A5 into `atlas.py` (~30 min seat) (~1.5 h wall)
 
-| Lane | Model · tier | Scope (TOUCH-ONLY) | Done-when | Tokens | Wall-clock |
-|---|---|---|---|---|---|
-| K · kernel builder | opus · judgment | `skills/atlas/scripts/atlas.py`, `skills/atlas/SKILL.md` | `login` (device flow vs mock hub), token store, credential helper, verdict cache, `key --check` accepts cache or ring; fixture arms green | 18–22M | 2.5–3 h |
-| H · hooks builder | opus · judgment | `hooks/session-start.sh`, `hooks/estate-root.sh`, `hooks/atlas-bank-hook.sh`, hook fixture | SessionStart refresh (bounded, silent), banner text, call sites read the cache; hook fixture arms green; `eval check` 0 | 10–14M | 2 h |
-| T · tester | opus · judgment | `skills/atlas/scripts/fixture.sh`, `evals/**` only — never product code | Red-first arms: expired, revoked, wrong machine, offline-with-cache, offline-without, helper protocol, token-in-URL refused; report only | 6–9M | 1.5 h |
-| K (resumed) · push adapter | opus · judgment | same as K | `push_http` to the Atlas contract, JWKS/verify endpoint, rejected-push error surfaced, `bank` exit codes unchanged | 8–12M | 1.5 h |
-| R · refuter | opus · judgment | read-only on the tree | Attacks K+H+push before ship; two rounds budgeted (last two rounds here came back NOT CLEAN first) | 10–16M | 1–2 h |
-| D · docs | opus · judgment | `README.md`, `CHANGELOG.md`, `NOTREST-ON-THE-NAS.md` → v2, `docs/ATLAS-CONNECT.md` (bootstrap text), workshop deck delta | Every command in the docs runs (`starthere_lint`-style check on the connect doc) | 8–12M | 1.5 h |
-| M · manifest + stamps | sonnet · bounded | `.claude-plugin/*.json`, `plugins/notrest/.claude-plugin/plugin.json`, `docs/oracle-skill-flow.html` stamps | Runnable: versions match, both tombstones pinned (9.0.0 / 4.7.1), `doctor check` ≤ 5 | 0.5–1.5M | 20 min |
+| Lane | Model · tier | TOUCH-ONLY | Done-when | Tokens |
+|---|---|---|---|---|
+| B1 tester | opus · judgment | `skills/atlas/scripts/fixture.sh`, `evals/**` — never product code | red-first arms: expired, revoked, wrong machine, offline-with-cache, offline-without, helper protocol, token-in-URL refused, push replay, keyless deny rules still deny; LIVE arm skips with "I-A pending" | 6–9M |
+| B2 eval law + doctor | opus · judgment | `skills/eval/scripts/eval.py`, `skills/doctor/scripts/doctor.py` | new checks: token file mode 0600, helper host-scoped, verifier fixture present, no token literal anywhere; `eval check` 0 with the arms red-first | 5–8M |
+| B3 SKILL + workshop | opus · judgment | `skills/atlas/SKILL.md`, `WORKSHOP-SLIDES*.md` delta | every command in SKILL.md runs; exit-code table updated | 4–6M |
+| B4 docs mechanical | sonnet · bounded | `README.md` table, `CHANGELOG.md`, `NOTREST-ON-THE-NAS.md` v2 | `starthere_lint`-style dead-reference check exit 0 on each | 1–2M |
 
-Seat (Fable): commissions banked before dispatch, gates exit-code-checked, merges, ship — the
-seat's own context cost is not receipted per lane; expect it in the same order as one refuter round.
+### Wave C — refute and ship (~1.5 h wall)
 
-**Totals:** 60–86M lane tokens · roughly ONE full usage window for Phase 0 (K, H, T in
-parallel, ~3 h wall) and a SECOND for Phases 1–2 (~4 h wall, gated on the Atlas reply).
-For scale: the 4.7 build receipted ~100M+ across its lanes and hit the limit once; 4.8.0 shipped
-inside one morning at ~25M.
+| Lane | Model · tier | Scope | Done-when | Tokens |
+|---|---|---|---|---|
+| C1 refuter | opus · judgment | read-only on the tree (LAW: kernel surfaces) | verdict; two rounds budgeted — the last two rounds here came back NOT CLEAN first | 10–16M |
+| fixes | resume A2/A3/A5/A6 | same lanes, never respawned | refuter clean | 4–8M |
+| ship | seat | stamps, gates, CHANGELOG, tag | `doctor` ≤ 5 · `eval` 0 · `gate-check` 0 red · atlas fixture 0 failed · D2 satisfied or labeled | — |
 
-## Parallelism and order
+## Totals
 
-1. On go: commission K, H, T together (interfaces declared in the briefs: the verdict-cache file
-   format and the helper's name are fixed by the seat before dispatch so K and H do not wait on
-   each other). M runs any time before the stamp.
-2. K resumes (never respawns) when Atlas answers. If Atlas has not answered by the end of Phase
-   0, the seat gates Phase 0 and the estate waits — nothing ships half-wired.
-3. R after K-resume lands; K/H resume for fixes; R again if the first round is not clean.
-4. D in parallel with R. Stamp, gates, ship.
+- **Lanes:** 12 + fixes (9 opus, 4 sonnet). **Tokens:** 70–110M lane tokens (parallelism buys
+  wall-clock, not tokens: each lane carries its own context). Seat cost on top, about one refuter
+  round. For scale: 4.7 receipted ~100M+ and hit the limit once; 4.8.0 ~25M in one morning.
+- **Wall-clock:** ~5.5 h of lane time in three waves; realistically ONE long window or TWO
+  (Wave A in the first, B+C in the second). The ship itself waits on D2.
 
 ## Bounds stated now
 
-- Repo access for consumers = the hub's git. Until the hub serves it, this repo's marketplace
-  entry keeps working for the fleet (skills-dir on this Mac, clone on the NAS).
-- The device flow and push are built against a mock until the contract arrives; the transport
-  adapter is the only file expected to change.
-- D1-b (signing) is not in this docket unless the owner picks it at approval.
-- No lane spawns before the owner's go; no lane spawns while the owner has said the window is
-  near its limit.
+- Built against the mock until I-A is live; the transport base URL and the signing key are the
+  only things the live arm changes. Nothing claims "live" without the live arm's exit code.
+- Vendored verifier carries Atlas authorship and the license line Atlas names.
+- No lane spawns before the owner's go; no lane spawns while the owner has said the window is near its limit.
