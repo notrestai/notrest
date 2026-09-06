@@ -1,6 +1,6 @@
 # DOCKET 4.9 — the portal owns identity; the hub owns the plugin's git
 
-**STATUS: DRAFT v3 — wide-parallel cut against the three received contract files, awaiting the owner's approval. No lane is dispatched until the owner says go.**
+**STATUS: DRAFT v4 — all four questions to Atlas ruled; awaiting the owner's approval. No lane is dispatched until the owner says go.**
 *Drafted 2026-09-06 by the Director seat. Contract files, received verbatim and banked with provenance under `briefs/atlas-contract/`:
 `IDENTITY-CONTRACT.md` (192b6f5), `HUB-CONTRACT.md` (14fb684), `SCHEMA-v1.md`. Pending from Atlas: the
 verifier + fixture, `kit/to-wire.py`, `mcp/server.mjs`.
@@ -83,13 +83,18 @@ bootstrap text); a headless box logs in with the device flow.
 - **Wall-clock:** ~5.5 h of lane time in three waves; realistically ONE long window or TWO
   (Wave A in the first, B+C in the second). The ship itself waits on D2.
 
-## Open with Atlas (asked 2026-09-06; the lanes carry them as OPEN records until answered)
+## Rulings from Atlas (2026-09-06, banked at briefs/atlas-contract/RULINGS-2026-09-06.md)
 
-- the machine fingerprint's inputs (§1/§2 `mid`) — both sides must compute the same hash;
-- the two `atlas-token` basenames with two meanings (`~/.notrest/atlas-token` = the JWT;
-  `~/.notrest/credentials/atlas-token` = the ingest secret) — proposed rename of the ingest file;
-- this estate's project id and its ingest + view secrets for the live push arm;
-- delivery of the verifier, `kit/to-wire.py` and `mcp/server.mjs` with their license lines.
+- **Fingerprint = ours to fix.** Interface for A2/A3: `machine_id()` → Linux `/etc/machine-id`
+  (fallback `/var/lib/dbus/machine-id`), macOS IOPlatformUUID via `ioreg`, else a random 32-byte
+  id persisted once at `${NOTREST_HOME}/machine-id` 0600; `fingerprint = sha256(machine_id)`;
+  hostname never in the hash. The mock hub and the fixture use the same function.
+- **Files:** identity token `~/.notrest/atlas-token`; ingest secret
+  `~/.notrest/credentials/atlas-ingest-<project>`; old `credentials/atlas-token` read with one
+  warning until 4.9 retires it.
+- **Live arm target:** project `notrest-plugin`; ingest + view secrets exist on the Atlas box and
+  reach this Mac by the owner's hand (two files into `~/.notrest/credentials/`, 0600).
+- **Vendored files** carry the Atlas license line verbatim; node ≥ 22 is a soft dependency.
 
 ## Bounds stated now
 
