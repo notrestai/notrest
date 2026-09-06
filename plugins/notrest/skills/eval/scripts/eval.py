@@ -796,10 +796,16 @@ def check_route_conformance(root, _plug, _skills):
 #     docstrings is documentation, and judging it would be judging prose. What is proved
 #     there is that the module is ATLAS_HUB_BASE-driven; where it actually dials is
 #     behavior, and their own fixtures own it.
-#   · The scan surface is shell and python under `hooks/` and `skills/*/scripts/**`. The
-#     vendored node MCP server (`skills/atlas/mcp/server.mjs`) egresses to the hub with
-#     `fetch` and is NOT scanned by this check. That gap is named here so it is a known
-#     one rather than a silent one.
+#   · The scan surface is shell, python AND javascript under `hooks/`,
+#     `skills/*/scripts/**` and `skills/*/mcp/**`. The MCP read server was the FOURTH
+#     doorway hiding behind a file extension — this check first shipped naming that gap
+#     instead of closing it, and the seat ruled it closed (2026-09-06): a `fetch(` in a
+#     vendored .mjs is the same door as a `urlopen` in a .py, and it is held to the same
+#     destination rule and the same $ATLAS_HUB_BASE re-proof. The vendored file itself is
+#     never EDITED to satisfy the check — it already takes its base from the env.
+#   · It reads text, not behavior. A doorway that takes its base from $ATLAS_HUB_BASE can
+#     still be handed a hostile base by whoever sets the env; that is the operator's
+#     surface, not a fingerprint, and the wire adapter's own arms own it.
 # ---------------------------------------------------------------------------
 # `urllib.parse` and `urllib.error` cannot open a socket — a URL splitter is not a
 # caller, and treating it as one cost a false FAIL on the git credential helper, which
@@ -807,6 +813,12 @@ def check_route_conformance(root, _plug, _skills):
 NET_RE = re.compile(r"^\s*(?:import|from)\s+(urllib\.request|urllib(?!\.)|socket|socketserver|"
                     r"http\.client|http\.server|requests|httpx|ftplib|telnetlib|smtplib)\b", re.M)
 NET_SHELL_RE = re.compile(r"\b(curl|wget|nc)\s", re.M)
+# The node surface. `fetch(` is the door the MCP server actually uses; the rest are the
+# doors it would use instead if someone wanted this check to miss one.
+JS_SUFFIX = (".mjs", ".cjs", ".js", ".ts")
+JS_NET_RE = re.compile(r"\bfetch\s*\(|\bXMLHttpRequest\b|\baxios\b|"
+                       r"from\s+[\"']node:(?:http|https|net|dgram|tls)[\"']|"
+                       r"require\s*\(\s*[\"'](?:node:)?(?:http|https|net|dgram|tls)[\"']", re.M)
 # Loopback evidence: a literal address, OR consumption of render-check's URL — that
 # server's 127.0.0.1 binding is itself allowlisted and re-asserted here, so a client of
 # it is loopback-bound transitively rather than on trust.
@@ -847,6 +859,10 @@ ATLAS_EGRESS = {
     "skills/atlas/scripts/atlas_auth.py": "identity — device login, refresh, JWKS, revocation",
     "skills/atlas/scripts/atlas_wire.py": "the bank — the snapshot push",
     "skills/atlas/scripts/atlas.py": "the seat that calls them (the push path)",
+    # the FOURTH doorway, by the seat's ruling of 2026-09-06. Vendored from Atlas and
+    # never edited: it reads `process.env.ATLAS_HUB_BASE` at its line 51, which is the
+    # same re-proof every other doorway passes.
+    "skills/atlas/mcp/server.mjs": "the MCP read server — answers a consumer's questions from the hub",
 }
 # EXTERNAL BY DESIGN: real egress, named with its reason. These are capabilities, not
 # leaks — but they are the complete list, so a NEW external caller cannot appear quietly.
@@ -874,6 +890,9 @@ HOOK_EGRESS_RE = re.compile(r"\b(curl|wget|ncat|telnet|urlopen)\b|\burllib\b|\bf
                             r"\bnc\s+-|\bgit\s+(?:-C\s+\S+\s+)?(?:pull|fetch|clone|ls-remote)\b")
 # `command -v curl`, `[ -x /usr/bin/python3 ]` and friends ask WHETHER a tool exists.
 # A probe is not a call, and a gate that cannot tell them apart teaches people to delete it.
+# Any skill's MCP directory is Atlas-surface for the destination rule: an MCP server is a
+# thing that TALKS to somewhere, so a second host in one is exactly the shape being guarded.
+MCP_PATH_RE = re.compile(r"skills/[^/]+/mcp/")
 PROBE_SHAPE_RE = re.compile(r"command\s+-v\b|\btype\s+-\w|\bwhich\s+\w|\[\s*-[a-zA-Z]\s|\[\[\s*-[a-zA-Z]\s")
 ASSIGN_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=")
 # An invocation is an interpreter ADJACENT to the client — `python3 "$NR_ATLAS_AUTH" …`.
@@ -929,15 +948,19 @@ def check_network(root, plug, _skills):
     """
     ID = "NETWORK-EGRESS"
     law = ("4.9: ONE destination — the Atlas hub ($ATLAS_HUB_BASE, default "
-           "https://atlas.not.rest) — reachable ONLY from atlas_auth.py, atlas_wire.py and "
-           "atlas.py; every other shipped script and hook is loopback-bound or silent, no "
-           "hook egresses synchronously, and compiled runtimes reach nothing at all")
+           "https://atlas.not.rest) — through FOUR doorways and no others (atlas_auth.py, "
+           "atlas_wire.py, atlas.py's push, mcp/server.mjs), each re-proved to take its base "
+           "from the env; every other shipped script, hook and MCP file is loopback-bound or "
+           "silent, no hook egresses synchronously, and compiled runtimes reach nothing")
     out, checked, allowed, external, doors = [], 0, [], [], []
     hooks = sorted(glob.glob(os.path.join(plug, "hooks", "*.sh")))
     # RECURSIVE: `scripts/*` never saw `scripts/vendor/`, and a subdirectory is exactly
     # where a caller would sit unread.
-    targets = sorted(hooks + glob.glob(os.path.join(plug, "skills", "*", "scripts", "**"),
-                                       recursive=True))
+    targets = sorted(hooks +
+                     glob.glob(os.path.join(plug, "skills", "*", "scripts", "**"),
+                               recursive=True) +
+                     glob.glob(os.path.join(plug, "skills", "*", "mcp", "**"),
+                               recursive=True))
     for f in targets:
         if os.path.isdir(f):
             continue
@@ -954,6 +977,8 @@ def check_network(root, plug, _skills):
         hit = NET_RE.search(txt)
         if not hit and f.endswith(".sh"):
             hit = NET_SHELL_RE.search(txt)
+        if not hit and f.endswith(JS_SUFFIX):
+            hit = JS_NET_RE.search(txt)
         if hit and key not in NET_TEST_DATA:
             if key in NET_EXTERNAL:
                 external.append(key)
@@ -988,7 +1013,8 @@ def check_network(root, plug, _skills):
         # in a docstring cannot dial anything. Widening the string scan estate-wide would
         # red an XML namespace and `example.invalid` test data, and an allowlist people
         # pad to silence noise is an allowlist that has stopped meaning anything.
-        on_atlas_surface = key.startswith("skills/atlas/") or key.startswith("hooks/")
+        on_atlas_surface = (key.startswith("skills/atlas/") or key.startswith("hooks/")
+                            or MCP_PATH_RE.match(key))
         if on_atlas_surface and key not in ATLAS_EGRESS and key not in ATLAS_URL_TEST_DATA \
                 and key not in NET_TEST_DATA:
             for m in URL_HOST_RE.finditer(txt):

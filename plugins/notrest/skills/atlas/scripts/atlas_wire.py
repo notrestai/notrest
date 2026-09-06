@@ -85,7 +85,10 @@ _LEGACY_WARNED = False           # the legacy credential name warns ONCE per pro
 # small helpers
 # ---------------------------------------------------------------------------
 def notrest_home():
-    return os.environ.get("NOTREST_HOME") or os.path.expanduser("~/.notrest")
+    """COMMON Amendment (A2 defect, accepted): the ENV VALUE is expanded too, matching
+    atlas.py's notrest_home(). A machine that sets NOTREST_HOME=~/store must not get one
+    answer from the hook and another from the script."""
+    return os.path.expanduser(os.environ.get("NOTREST_HOME") or "~/.notrest")
 
 
 def child_env():
@@ -338,6 +341,11 @@ def to_wire(snapshot, project, board_url=None, root=None):
         "tests": "available" if ran else "unknown",
         "map": "available" if isinstance(msrc, dict) and msrc.get("ok") else "unknown",
     }
+    # …and `gates` ONLY when this estate runs that collector (COMMON Amendment). A
+    # freshness reading for a collector the snapshot never mentions would be invented.
+    gsrc = (snap.get("sources") or {}).get("gates")
+    if isinstance(gsrc, dict):
+        wire["sources"]["gates"] = "available" if gsrc.get("ok") else "unknown"
     wire["nodes"] = nodes
 
     # findings: COUNTS ONLY. /1 is an allowlist — count and recurring, nothing else, ever.

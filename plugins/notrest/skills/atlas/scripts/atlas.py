@@ -943,15 +943,83 @@ def build_board(root, commit, summary, args):
 # ---------------------------------------------------------------------------
 # push adapters — push(snapshot, board, credential) -> (ok, hub_commit, reason)
 # ---------------------------------------------------------------------------
-def credential_for(cfg, adapter):
+# The hub's project id, its base URL, and the one HTML document the board endpoint takes.
+# HUB-CONTRACT §2 names the shape; §4 names the board; the RULING of 2026-09-06 §2 names
+# the per-estate ingest secret. All three are read HERE so the adapter itself holds no
+# policy — it is a seam.
+PROJECT_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+BOARD_HTML = ("atlas/board/index.html", "atlas/board/river.html", "atlas/board/graph.html")
+PUSH_FRESH_S = 120
+
+
+def hub_project(cfg, root=None):
+    """atlas/config.json "project", else the estate slug, conformed to [a-z][a-z0-9-]{0,31}
+    — the hub refuses anything else, and refusing here names the reason instead."""
+    p = str(cfg.get("project") or "").strip()
+    if not p:
+        p = str(cfg.get("estate") or (estate_name(root) if root else "")).lower()
+        p = re.sub(r"[^a-z0-9-]+", "-", p)
+    p = re.sub(r"^[^a-z]+", "", p).strip("-")[:32]
+    return p
+
+
+def config_hub_url(cfg):
+    """The hub URL atlas/config.json declares, or "" — "hub_url" first, then "hub", which
+    doubles as the FILE adapter's DIRECTORY and is therefore taken only when it is
+    URL-shaped. The env/default layers stay in hub_base(), which login already owns: one
+    resolution of "which hub", not two that can disagree."""
+    for candidate in (cfg.get("hub_url"), cfg.get("hub")):
+        c = str(candidate or "").strip()
+        if c.startswith("http://") or c.startswith("https://"):
+            return c.rstrip("/")
+    return ""
+
+
+def board_html_path(root):
+    """The board the hub stores is ONE self-contained document (HUB-CONTRACT §4).
+    index.html is the contract's own name; river.html is what graph.py writes here."""
+    for name in BOARD_HTML:
+        p = os.path.join(root or "", name)
+        if root and os.path.isfile(p):
+            return p
+    return ""
+
+
+def push_receipt_path(project):
+    """Machine state, not estate history: what THIS box last sent. It lives beside the
+    token, never in the tree — a snapshot is immutable and must not learn things later."""
+    return os.path.join(notrest_home(), "atlas-push-%s.json" % (project or "estate"))
+
+
+def credential_for(cfg, adapter, root=None):
     """Presence, never contents. A token this script does not read is a token this
-    script cannot leak into a snapshot, a log line, or an error message."""
+    script cannot leak into a snapshot, a log line, or an error message.
+
+    For http it also carries what the seam needs and nothing more: the project, the base,
+    and the board document's PATH. The secret is resolved by NAME per the RULING —
+    credentials/atlas-ingest-<project>, with the 4.8 credentials/atlas-token still read
+    during the transition (atlas_wire warns once, to stderr, naming the new file)."""
     if adapter == "file":
         return {"kind": "file", "hub": cfg.get("hub") or "", "present": bool(cfg.get("hub"))}
     if adapter == "http":
-        p = os.path.expanduser(cfg.get("credential")
-                               or os.path.join(notrest_home(), "credentials", "atlas-token"))
-        return {"kind": "token", "path": p, "present": os.path.isfile(p),
+        project = hub_project(cfg, root)
+        # default_config still ships the 4.8 default path; that is a DEFAULT, not a
+        # choice, so it must not out-rank the ruling. Only a config that names something
+        # else is an override.
+        explicit = os.path.expanduser(str(cfg.get("credential") or ""))
+        if explicit == os.path.join(notrest_home(), "credentials", "atlas-token"):
+            explicit = ""
+        try:
+            p, legacy = sibling("atlas_wire").credential_path_for(
+                project, home=notrest_home(), explicit=explicit or None)
+        except ImportError:
+            p = explicit or os.path.join(notrest_home(), "credentials",
+                                         "atlas-ingest-%s" % project)
+            legacy = os.path.basename(p) == "atlas-token"
+        return {"kind": "token", "path": p, "present": os.path.isfile(p), "legacy": legacy,
+                "project": project, "base": hub_base(config_hub_url(cfg)),
+                "board": board_html_path(root),
+                "snapshots": os.path.join(root, "atlas", "snapshots") if root else "",
                 "hub_url": cfg.get("hub_url") or ""}
     return {"kind": "none", "present": False}
 
@@ -984,17 +1052,59 @@ def push_file(snapshot, board, credential):
 
 
 def push_http(snapshot, board, credential):
-    """THE STUB, and the ONLY function that would ever speak to the hub.
+    """THE REAL ADAPTER (4.9), and still the only function here that speaks to a hub.
 
-    It does not send. It cannot send: this file imports no network module at all, and
-    eval's NETWORK-EGRESS check re-proves that on every run, so the claim in this
-    docstring is not something you have to believe. The body shape, the auth header, the
-    idempotency key and the error contract are all defined by the hub, and this estate
-    has not verified any of them — writing a plausible POST here would be inventing a
-    protocol and calling it an integration.
+    It speaks by DELEGATION: the wire (HUB-CONTRACT §4), the bearer and the transport all
+    live in atlas_wire.py, which fixture-wire.sh arms against a hub on 127.0.0.1. This
+    file still imports no network module — eval's NETWORK-EGRESS check re-proves that on
+    every run — so the seam is exactly one hand-off and the estate keeps one place where
+    the protocol can be wrong.
 
-    [unverified — awaiting ATLAS-PLAYBOOK/WIRING]"""
-    return (False, None, "hub contract unverified — awaiting ATLAS-PLAYBOOK/WIRING")
+    The secret is passed BY PATH and never read here. A 201 is receipted under
+    ${NOTREST_HOME} so `status` can say what this machine sent without a view secret and
+    without a GET the edge cache would answer stale (HUB-CONTRACT §5).
+
+    `board` (the dict) is the estate's own board.json; the hub's board endpoint takes the
+    HTML document, whose path the credential carries."""
+    project = credential.get("project") or ""
+    base = credential.get("base") or ATLAS_HUB
+    path = credential.get("path") or ""
+    if not PROJECT_RE.match(project):
+        return (False, None, "http adapter: project %r does not match [a-z][a-z0-9-]{0,31} "
+                             "(set atlas/config.json \"project\")" % project)
+    # (the missing-secret refusal is atlas_wire.push_http's, by path and by name — a
+    # second copy of that rule here would be a second rule)
+    try:
+        wire = sibling("atlas_wire")
+    except ImportError as exc:
+        return (False, None, "http adapter: %s" % exc)
+    # THE BANKED SNAPSHOT IS WHAT THE HUB GETS. A snapshot is immutable: when this commit
+    # already has one, bank itself reports "the banked snapshot stands" — pushing today's
+    # re-derivation instead would give the operator and the hub two different answers to
+    # one question, and would make a replay of the same commit look like new news.
+    banked = os.path.join(credential.get("snapshots") or "",
+                          "%s.json" % (snapshot.get("commit") or ""))
+    if credential.get("snapshots") and os.path.isfile(banked):
+        try:
+            snapshot = json.loads(read(banked) or "") or snapshot
+        except ValueError:
+            pass                      # an unreadable snapshot file: push what we derived
+    board_path = credential.get("board") or ""
+    board_html = read(board_path) if board_path else None
+    ok, hub_commit, reason = wire.push_http(
+        snapshot, board_html, path, base, project,
+        board_url="%s/v1/board/%s" % (base, project), report_to=sys.stderr)
+    if not board_path:
+        reason += " · board: no HTML document under atlas/board/ to send"
+    try:
+        write_atomic(push_receipt_path(project),
+                     json.dumps({"project": project, "head": snapshot.get("commit"),
+                                 "hub_commit": hub_commit, "ok": bool(ok), "reason": reason,
+                                 "base": base, "ts": utcnow()},
+                                indent=1, sort_keys=True) + "\n", 0o600)
+    except OSError:
+        pass            # a receipt we could not write is one status will not read; never fatal
+    return (ok, hub_commit, reason)
 
 
 def push_none(snapshot, board, credential):
@@ -1114,7 +1224,7 @@ def cmd_bank(args):
                      json.dumps(board, indent=1, sort_keys=True) + "\n")
 
     adapter = cfg["adapter"]
-    cred = credential_for(cfg, adapter)
+    cred = credential_for(cfg, adapter, root)
     if args.dry_run:
         ok, hub_commit, reason = (False, None, "dry-run: nothing pushed")
     else:
@@ -1210,6 +1320,42 @@ def wired_state(root):
     return (False, p, "a post-commit hook exists that atlas did not write")
 
 
+def receipt_age_s(ts):
+    try:
+        return (datetime.now(timezone.utc) - datetime.strptime(
+            str(ts), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)).total_seconds()
+    except (ValueError, TypeError):
+        return None
+
+
+def http_hub_line(cred, commit):
+    """What this machine can honestly say about the hub WITHOUT a view secret: its own
+    last push receipt.
+
+    THE FRESH-MISMATCH LAW (HUB-CONTRACT §5). Hub reads are edge-cached ~60 s, and the
+    kit's connected.sh waits up to 120 s before calling a mismatch RED. We do not read the
+    hub at all here, so we do not guess in either direction: a 201 for THIS head inside
+    that window is reported as pushed, with the delay named, rather than as a hub that is
+    behind. Calling that red would be crying wolf at a cache."""
+    project = cred.get("project") or ""
+    try:
+        blob = json.loads(read(push_receipt_path(project)) or "{}")
+    except ValueError:
+        blob = {}
+    if not blob:
+        return "never pushed from this machine (no receipt for project %s)" % (project or "?")
+    if not blob.get("ok"):
+        return "last push FAILED: %s" % (blob.get("reason") or "no reason recorded")
+    head = str(blob.get("hub_commit") or blob.get("head") or "")
+    if head != commit:
+        return ("BEHIND — last push was %s, HEAD is %s"
+                % (head[:12] or "nothing", commit[:12]))
+    age = receipt_age_s(blob.get("ts"))
+    if age is not None and 0 <= age < PUSH_FRESH_S:
+        return "pushed %s; the hub reflects it within ~2 min" % head[:12]
+    return "pushed %s at %s" % (head[:12], blob.get("ts") or "an unrecorded time")
+
+
 def cmd_status(args):
     root = os.path.abspath(args.root)
     rc, _ = git(root, "rev-parse", "--is-inside-work-tree")
@@ -1239,14 +1385,14 @@ def cmd_status(args):
             blob = {}
     summary = blob.get("summary") or {}
     cfg = load_config(root, args)
-    cred = credential_for(cfg, cfg["adapter"])
+    cred = credential_for(cfg, cfg["adapter"], root)
     if cfg["adapter"] == "file" and cred.get("hub"):
         stored = (read(os.path.join(os.path.expanduser(cred["hub"]),
                                     estate_name(root), "HEAD")) or "").strip()
         hub = ("in sync (%s)" % stored[:12]) if stored == commit else (
             "BEHIND — hub holds %s, HEAD is %s" % (stored[:12] or "nothing", commit[:12]))
     elif cfg["adapter"] == "http":
-        hub = "unverified — the http adapter never sent (hub contract unverified)"
+        hub = http_hub_line(cred, commit)
     else:
         hub = "no hub configured"
     is_wired, hook_path, hook_why = wired_state(root)

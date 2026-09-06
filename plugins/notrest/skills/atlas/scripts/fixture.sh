@@ -22,6 +22,10 @@ unset GIT_DIR GIT_INDEX_FILE GIT_PREFIX GIT_WORK_TREE
 unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_AUTHOR_DATE
 unset GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_COMMITTER_DATE
 unset NOTREST_ATLAS_BANKING
+# EGRESS GUARD (4.9): the http adapter is real now. Every arm that does not point at the
+# mock hub itself points at a port nothing listens on, so no run of this fixture can reach
+# atlas.not.rest even on a machine that holds a live ingest secret.
+export ATLAS_HUB_BASE="http://127.0.0.1:1"
 A="${ATLAS_PY:-$(cd "$(dirname "$0")" && pwd)/atlas.py}"
 W="$(mktemp -d)"
 # The plugin root is pinned to the REAL tree so an ATLAS_PY copy under test still finds
@@ -250,14 +254,15 @@ t "the hub's HEAD is the estate's HEAD" "$(cat "$HUB/redfirst/HEAD" 2>/dev/null)
 python3 "$A" bank --root "$R2" --no-board --no-gates --hub "$HUB" >/dev/null 2>&1
 t "re-pushing the same commit is not a failure" "$?" "0"
 HTTPHUB="$W/never-written"
-OUT="$(python3 "$A" bank --root "$R2" --no-board --no-gates --adapter http 2>&1)"
-echo "$OUT" | grep -q "hub contract unverified — awaiting ATLAS-PLAYBOOK/WIRING" \
-  && ok "http adapter reports the unverified contract, by name" \
-  || no "http adapter did not name the unverified hub contract"
+OUT="$(NOTREST_HOME="$W/nohub" python3 "$A" bank --root "$R2" --no-board --no-gates --adapter http 2>&1)"
+t "http adapter with no ingest secret exits 4" "$?" "4"
+echo "$OUT" | grep -q "no ingest secret at $W/nohub/credentials/atlas-ingest-redfirst" \
+  && ok "…naming the file it wants, by PATH and by the ruling's name" \
+  || no "http adapter did not name the ingest file it wants — [$OUT]"
 [ -e "$HTTPHUB" ] && no "the http adapter wrote something" || ok "the http adapter wrote nothing"
 grep -qE '^[[:space:]]*(import|from)[[:space:]]+(urllib|socket|http\.client|requests|httpx|ftplib|telnetlib|smtplib)\b' "$A" \
-  && no "atlas.py imports a network module — the http stub COULD send" \
-  || ok "atlas.py imports no network module — the http stub cannot send"
+  && no "atlas.py imports a network module — the seam is supposed to delegate" \
+  || ok "atlas.py still imports no network module — the transport lives in atlas_wire.py"
 OUT="$(python3 "$A" bank --root "$R2" --no-board --no-gates --adapter none 2>&1)"
 echo "$OUT" | grep -q "no hub configured" && ok "'no hub configured' is a state, not a failure" \
   || no "the none adapter did not say 'no hub configured'"
@@ -540,6 +545,96 @@ else
   t "helper --uninstall exits 0" "$?" "0"
   (unset NOTREST_ACCESS_KEY; NOTREST_HOME="$LH" python3 "$A" helper --check --hub "$HTTPS_HUB" >/dev/null 2>&1)
   t "…and --check then says 1" "$?" "1"
+fi
+kill "$HUBPID" 2>/dev/null; wait "$HUBPID" 2>/dev/null
+fi
+
+echo "── L3 · the http adapter really pushes (4.9), against the mock hub"
+if [ ! -f "$MOCKHUB" ]; then
+  no "mockhub.py is missing from this install — the http push arms cannot run"
+else
+PH="$W/pushhome"; mkdir -p "$PH/credentials"
+PR="$W/pushed-estate"; mkrepo "$PR"; mkdir -p "$PR/atlas/board"
+printf 'PART: wire — the estate declares one part\nCLAIM: done\nTEST: [ -f atlas/map.md ]\n' \
+  > "$PR/atlas/map.md"
+printf '<!doctype html><title>board</title><p>the estate board</p>\n' > "$PR/atlas/board/index.html"
+printf '{"schema":"notrest.atlas.config/1","adapter":"http","project":"pushed-estate"}\n' \
+  > "$PR/atlas/config.json"
+commit "$PR" init
+PSEC="mock-ingest-pushed-estate"
+PCRED="$PH/credentials/atlas-ingest-pushed-estate"
+printf '%s\n' "$PSEC" > "$PCRED"; chmod 600 "$PCRED"
+python3 "$MOCKHUB" --port 0 --print-port > "$W/hub2.port" 2>"$W/hub2.log" &
+HUBPID=$!
+HUBURL=""; i=0
+while [ $i -lt 150 ]; do
+  p="$(head -n1 "$W/hub2.port" 2>/dev/null)"
+  case "$p" in ''|*[!0-9]*) ;; *) HUBURL="http://127.0.0.1:$p"; break ;; esac
+  sleep 0.1; i=$((i + 1))
+done
+L3LOG="$W/l3.log"; : > "$L3LOG"
+# every push in this section, with its whole output banked for the leak arm below
+pushbank(){ NOTREST_HOME="$PH" ATLAS_HUB_BASE="$HUBURL" python3 "$A" bank --root "$PR" \
+              --no-board --no-gates "$@" >"$W/p.out" 2>"$W/p.err"; PRC=$?
+            cat "$W/p.out" "$W/p.err" >> "$L3LOG"; return $PRC; }
+J(){ python3 -c 'import json,sys
+b = json.load(open(sys.argv[1]))
+print(b["push"][sys.argv[2]])' "$W/p.out" "$1" 2>/dev/null; }
+if [ -z "$HUBURL" ]; then
+  no "mockhub never printed a port — $(head -n2 "$W/hub2.log" 2>/dev/null)"
+else
+PHEAD="$(headof "$PR")"
+pushbank --json; t "bank with the http adapter exits 0" "$?" "0"
+t "…the hub took it" "$(J ok)" "True"
+t "…and hub_commit IS the head we sent" "$(J hub_commit)" "$PHEAD"
+grep -qF "stored snap:pushed-estate" "$W/p.out" \
+  && ok "…reporting the hub's own stored key" || no "no stored key — [$(J reason)]"
+grep -qF "board stored" "$W/p.out" \
+  && ok "…and the board document landed too" || no "the board never landed — [$(J reason)]"
+# A SECOND APART, DELIBERATELY: the snapshot's ts has second resolution, so two banks
+# inside one second are byte-identical for the wrong reason and would pass this arm even
+# if the adapter pushed today's re-derivation instead of the banked snapshot.
+sleep 1.1
+pushbank --json; t "re-banking the same commit exits 0" "$?" "0"
+grep -qF "idempotent" "$W/p.out" \
+  && ok "…and the hub calls the replay idempotent, not new news" \
+  || no "the replay was not idempotent — [$(J reason)]"
+t "…still the same hub_commit" "$(J hub_commit)" "$PHEAD"
+SOUT="$(NOTREST_HOME="$PH" python3 "$A" status --root "$PR" 2>&1)"; echo "$SOUT" >> "$L3LOG"
+printf '%s' "$SOUT" | grep -qF "pushed ${PHEAD:0:12}; the hub reflects it within ~2 min" \
+  && ok "status reads a fresh 201 as pushed, never as a hub that is behind" \
+  || no "status did not name the ~2 min reflection — [$SOUT]"
+printf 'not-the-ingest-secret\n' > "$PCRED"
+pushbank; t "a bad bearer exits 4" "$?" "4"
+grep -qF "401 authorization: bad bearer" "$W/p.out" \
+  && ok "…with the hub's one fact, verbatim" || no "the hub's fact was not passed through"
+grep -q "^PUSH    : http — 401 authorization: bad bearer" "$W/p.out" \
+  && ok "…on the bank's own PUSH line" || no "the PUSH line did not carry it"
+SOUT="$(NOTREST_HOME="$PH" python3 "$A" status --root "$PR" 2>&1)"; echo "$SOUT" >> "$L3LOG"
+printf '%s' "$SOUT" | grep -qF "last push FAILED: 401 authorization: bad bearer" \
+  && ok "…and status says the last push failed, with the reason" \
+  || no "status hid the failed push — [$SOUT]"
+rm -f "$PCRED"
+printf '%s\n' "$PSEC" > "$PH/credentials/atlas-token"; chmod 600 "$PH/credentials/atlas-token"
+pushbank; t "the legacy credential name still pushes, and exits 0" "$?" "0"
+t "…warning EXACTLY once" "$(grep -c 'legacy ingest secret' "$W/p.err")" "1"
+grep -qF "credentials/atlas-ingest-pushed-estate" "$W/p.err" \
+  && ok "…and naming the file it should be renamed to" || no "the warning named no new file"
+rm -f "$PH/credentials/atlas-token"
+pushbank; t "with no credential at all, bank exits 4 (push failed, not red)" "$?" "4"
+grep -qF "no ingest secret at" "$W/p.out" \
+  && ok "…naming the path it looked for" || no "no path named"
+printf '%s\n' "$PSEC" > "$PCRED"; chmod 600 "$PCRED"
+printf 'PART: red — a done whose test fails\nCLAIM: done\nTEST: exit 3\n' >> "$PR/atlas/map.md"
+commit "$PR" "go red"
+pushbank; t "a RED estate still exits 5, never the push's 4" "$?" "5"
+grep -q "^RED: red — claims done" "$W/p.out" \
+  && ok "…and says which part is red" || no "the red part was not named"
+if [ -z "$PSEC" ]; then no "no secret to grep for"
+elif grep -qF -- "$PSEC" "$L3LOG"; then no "the ingest secret value appeared in the output"
+else ok "the ingest secret value never appears in any output of these arms"; fi
+grep -qiF "authorization: bearer" "$L3LOG" \
+  && no "a Bearer header was printed" || ok "no Bearer header was ever printed"
 fi
 kill "$HUBPID" 2>/dev/null; wait "$HUBPID" 2>/dev/null
 fi

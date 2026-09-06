@@ -88,3 +88,8 @@ CARD: TESTS <n ran, n passed> · OPEN <n> · FINDINGS <n> · LEARNINGS <one line
   re-proved to take its base from `$ATLAS_HUB_BASE`) — accepted as B2 resolved it. The vendored MCP read server
   `skills/atlas/mcp/server.mjs` is the FOURTH doorway: the law polices `skills/*/mcp/**` (`fetch(`, URLs) the same way.
   `skills/eval/SKILL.md` is the law's own document and B2's to correct (the table row and the check count).
+- **I2 decisions (A5), RATIFIED:** the hub receives the BANKED snapshot for a commit that has one (one answer to one
+  question; replay is idempotent); the push receipt lives at `${NOTREST_HOME}/atlas-push-<project>.json` 0600 (machine
+  state, never in the tree); board document precedence `atlas/board/index.html` → `river.html` → `graph.html`; the
+  board link is https-only and dropped with a report against an http mock. `cmd_bank` passing `root` to `credential_for`
+  is accepted (right directory, wrong repository is the bug class the GIT_* allowlist exists for).

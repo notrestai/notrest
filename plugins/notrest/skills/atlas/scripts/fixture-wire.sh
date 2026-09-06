@@ -425,6 +425,13 @@ WIRE="$W/wire-table.json"
 t "convert exits 0" "$?" "0"
 cat "$W/report.txt" >> "$LOG"
 q(){ "$PY" "$W/q.py" "$WIRE" "$@"; }
+"$PY" - "$SNAP" "$W/snap-nogates.json" <<'PY'
+import json, sys
+snap = json.load(open(sys.argv[1])); snap["sources"].pop("gates", None)
+json.dump(snap, open(sys.argv[2], "w"))
+PY
+"$PY" "$AW" convert "$W/snap-nogates.json" --project "$PROJ" --root "$W" \
+  > "$W/w-bh-nogates.json" 2>/dev/null
 
 t "done/passed          -> status done"        "$(q t row-done-passed status)"    "done"
 t "done/passed          -> evidence proven"    "$(q t row-done-passed evidence)"  "proven"
@@ -497,6 +504,10 @@ t "playbook is declared"          "$("$PY" "$W/top.py" "$WIRE" playbook)" "2.0"
 t "taken_at is the snapshot's ts" "$("$PY" "$W/top.py" "$WIRE" taken_at)" "2026-09-06T12:00:00Z"
 t "sources.git reads available"   "$("$PY" "$W/top.py" "$WIRE" sources git)" "available"
 t "sources.tests reads available" "$("$PY" "$W/top.py" "$WIRE" sources tests)" "available"
+t "sources.gates rides along when the snapshot has that collector" \
+  "$("$PY" "$W/top.py" "$WIRE" sources gates)" "unknown"
+t "…and is ABSENT when the snapshot never mentions gates" \
+  "$("$PY" "$W/top.py" "$W/w-bh-nogates.json" sources gates)" "ABSENT"
 [ -n "$("$PY" "$W/top.py" "$WIRE" stamp)" ] && ok "a stamp is always present" \
   || no "the wire has no stamp"
 t "no board_url means no links key" "$("$PY" "$W/top.py" "$WIRE" links)" "ABSENT"
