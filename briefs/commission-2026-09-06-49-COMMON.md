@@ -77,3 +77,6 @@ CARD: TESTS <n ran, n passed> · OPEN <n> · FINDINGS <n> · LEARNINGS <one line
 - `verdict` reason on success is the string `"ok"`.
 - `PINNED_JWKS` stays empty until Atlas publishes its signing key (hub phase I-A); the seat fills it at the ship.
   Until then a machine with no JWKS cache reads `keys: none pinned or cached` — that is the truthful state.
+- **PART GROUP rule (A5 judgment, RATIFIED by the seat on this estate's real snapshot):** wire node id = the part id's prefix
+  up to the first `:` or `/`, else the estate slug; the part id is the remainder. `gate:the-laws-hold` → node `gate`, part
+  `the-laws-hold`; `example` → node `<estate-slug>`. The `sources` map may also carry `gates` when the snapshot has that collector.
