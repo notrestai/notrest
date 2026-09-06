@@ -80,3 +80,6 @@ CARD: TESTS <n ran, n passed> · OPEN <n> · FINDINGS <n> · LEARNINGS <one line
 - **PART GROUP rule (A5 judgment, RATIFIED by the seat on this estate's real snapshot):** wire node id = the part id's prefix
   up to the first `:` or `/`, else the estate slug; the part id is the remainder. `gate:the-laws-hold` → node `gate`, part
   `the-laws-hold`; `example` → node `<estate-slug>`. The `sources` map may also carry `gates` when the snapshot has that collector.
+- **Login command name (A6 defect, RULED):** the canonical user-facing command is the contract's `atlas.py login`
+  (I1 adds it). `atlas_auth.py login` remains the module's own CLI. After I1 lands: A6 re-points the banner's remedy to
+  `python3 <hookdir>/../skills/atlas/scripts/atlas.py login` and A7 resyncs docs/ATLAS-CONNECT.md (steps B5 and the banner quote).

@@ -15,6 +15,15 @@
 # so, in one line, at EVERY SessionStart — this hook has no memory across sessions and
 # does not try to build one; the line is cheap and a keyless machine should be told each
 # time it starts, not once and then silently.
+#
+# THE HOOK DIRECTORY, ABSOLUTE, ONCE (4.9). Two things below need it — the remedy the
+# keyless line prints, and the identity client the keyed path fires — and both of them
+# NAME A SCRIPT. estate-root.sh's V5c ruling applies verbatim: a relative hook dir
+# resolves against whatever cwd the caller chose, so a planted tree under that cwd would
+# be the thing the owner is told to run (and the thing this hook executes). `cd`+`pwd`
+# returns an absolute path or nothing; nothing degrades both users of it, never guesses.
+NR_HOOKDIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+case "${NR_HOOKDIR:-}" in /*) ;; *) NR_HOOKDIR="" ;; esac
 . "${0%/*}/estate-root.sh" 2>/dev/null || true
 if [ -z "${NR_ACCESS:-}" ]; then
   case "${NR_ACCESS_WHY:-nokey}" in
@@ -24,8 +33,57 @@ if [ -z "${NR_ACCESS:-}" ]; then
     noverifier) NR_ACCESS_TAIL=" (the key verifier is missing from this install — reinstall the plugin)" ;;
     *)          NR_ACCESS_TAIL="" ;;
   esac
-  echo "[notrest] notrest is part of Atlas — no valid access key on this machine; ask the owner. The harness is inactive here.${NR_ACCESS_TAIL}"
+  # 4.9: the line NAMES THE REMEDY. "ask the owner" was true and useless — an Atlas
+  # identity is now something the holder mints for themselves at the portal, so the one
+  # line a keyless machine gets is the command that fixes it. The absolute path is the
+  # point: a bare `atlas_auth.py login` is not runnable from wherever the session opened.
+  # Without an absolute hook dir there is no honest command to print, so the sentence
+  # says where to look instead of printing a path that would resolve somewhere else.
+  if [ -n "$NR_HOOKDIR" ]; then
+    NR_ACCESS_FIX="Log in:  python3 $NR_HOOKDIR/../skills/atlas/scripts/atlas_auth.py login   (or place the owner's access key)."
+  else
+    NR_ACCESS_FIX="Log in with skills/atlas/scripts/atlas_auth.py login in this plugin (or place the owner's access key)."
+  fi
+  echo "[notrest] notrest is part of Atlas — no Atlas identity on this machine. ${NR_ACCESS_FIX} The harness is inactive here.${NR_ACCESS_TAIL}"
   exit 0
+fi
+
+# ── THE ATLAS IDENTITY REFRESH (4.9). IDENTITY-CONTRACT §2: a token inside 7 days of exp
+# is refreshed silently while online, JWKS is re-fetched so a rotated kid still verifies;
+# §4: the revoked list is cached HERE, because "online sessions learn it at SessionStart"
+# is the only moment the plugin is promised a network. All three are one bounded call —
+# `atlas_auth.py sessionstart` — that always exits 0 and prints nothing.
+#
+# IT RUNS IN THE BACKGROUND, AND THAT IS THE WHOLE DESIGN. This hook's wall clock is
+# session-start latency the owner pays on every single session; a network call inside it
+# would put a hub outage (or a captive-portal hang) directly in front of every session on
+# the machine. So the hook FIRES AND FORGETS: the work lands in ~/.notrest before the NEXT
+# session start, which is exactly when a refresh is needed, and this session pays a fork.
+#   · stdout and stderr both to /dev/null — SessionStart stdout is injected as session
+#     context, so one stray line from the client would become tokens the owner pays for;
+#     and a background job holding the hook's stdout open can hold the session open.
+#   · a WATCHDOG, because macOS ships no `timeout(1)`: --budget-ms is the client's own
+#     promise, and a promise is not a bound. A backgrounded process that hangs forever is
+#     leaked, not harmless, so a sleeper kills it and is itself killed when it is not
+#     needed. 6 s is 3x the budget — long enough that the watchdog never wins a race with
+#     an honest client, short enough that a wedged one is gone before the next session.
+#   · NO-OP UNTIL IT IS REAL: no token file (nobody has logged in) or no client on disk
+#     (A3 has not landed / an older install) and nothing runs at all.
+#   · a SYMLINKED client is refused, never followed — estate-root.sh refuses a symlinked
+#     atlas.py for the same reason, and this one is EXECUTED.
+NR_ATLAS_HOME="${NOTREST_HOME:-$HOME/.notrest}"
+NR_ATLAS_AUTH="$NR_HOOKDIR/../skills/atlas/scripts/atlas_auth.py"
+if [ -n "$NR_HOOKDIR" ] && [ -f "$NR_ATLAS_HOME/atlas-token" ] \
+   && [ -f "$NR_ATLAS_AUTH" ] && [ ! -L "$NR_ATLAS_AUTH" ] && [ -x /usr/bin/python3 ]; then
+  (
+    /usr/bin/python3 "$NR_ATLAS_AUTH" sessionstart --budget-ms 2000 >/dev/null 2>&1 &
+    NR_ATLAS_PID=$!
+    ( sleep 6; kill -9 "$NR_ATLAS_PID" 2>/dev/null ) >/dev/null 2>&1 &
+    NR_ATLAS_DOG=$!
+    wait "$NR_ATLAS_PID" 2>/dev/null
+    kill "$NR_ATLAS_DOG" 2>/dev/null
+  ) >/dev/null 2>&1 &
+  disown 2>/dev/null || true
 fi
 
 # ── self-update: if this plugin lives in a git clone, quietly pull latest.

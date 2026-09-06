@@ -1491,6 +1491,166 @@ else
   FAIL=$((FAIL+1))
 fi
 
+echo "── 4.9 · THE ATLAS IDENTITY: the remedy line, and a refresh the hook never waits for"
+# IDENTITY-CONTRACT §2 (refresh + JWKS at SessionStart) and §4 (the revoked list cached at
+# SessionStart) are ONE background call the hook fires and forgets. Two halves have to be
+# proven TOGETHER, because either one alone is a lie:
+#   · a timing arm alone passes with the feature deleted — a call that never happens is
+#     always fast. So the client is a STUB THAT RECORDS ITS ARGV, and firing is asserted.
+#   · a firing arm alone passes with a blocking call — so the same stub is then made to
+#     HANG, and the hook's own wall clock is measured against the dormant case.
+# And the third thing a fire-and-forget owes: the hung child must be REAPED, not leaked.
+A9P="$WORK/a9plug"; mkdir -p "$A9P"; cp -Rp "$HSRC" "$A9P/hooks"; mkring "$A9P"
+A9SCR="$A9P/skills/atlas/scripts"            # mkring made it, with the real atlas.py in it
+# The pattern the running client is found by. It is NOT "$A9SCR/atlas_auth.py": the hook
+# builds its path as <hookdir>/../skills/…, so that is the argv on the process, and a
+# pgrep for the tidy path matched NOTHING — the reaping arm below passed against a client
+# that was never looked for. Anchored on this fixture's own scratch plugin, so it can
+# never see a real atlas_auth.py running elsewhere on the machine.
+A9PAT="$A9P/hooks/../skills/atlas/scripts/atlas_auth.py"
+A9HD="$(cd "$A9P/hooks" && pwd)"             # the hook computes its dir exactly this way
+A9HOME="$WORK/a9home"; mkdir -p "$A9HOME"; printf '%s' "$FIXKEY" > "$A9HOME/access-key"
+A9NOKEY="$WORK/a9nokey"; mkdir -p "$A9NOKEY" # keyed ring, but no key in the store
+A9EST="$WORK/a9est"; mkdir -p "$A9EST/archive" "$A9EST/pulse"
+printf '# COORD.md\n\n- x\n' > "$A9EST/COORD.md"; : > "$A9EST/archive/findings.jsonl"
+: > "$WORK/a9-empty"
+A9MARK="$WORK/a9-fired"
+a9run() {   # a9run [extra env…] — a KEYED session-start; RB_RC / RB_SEC_F carry the verdict
+  run_bounded "$CAP" "$A9EST" "$WORK/a9-empty" "$A9P/hooks/session-start.sh" \
+    -u NOTREST_ACCESS_KEY "NOTREST_HOME=$A9HOME" "A9_MARK=$A9MARK" "$@"
+}
+# a recording stub: it is the client A3 ships, reduced to "what was I asked, and when".
+a9stub() {  # a9stub <seconds to hang>
+  printf '%s\n%s\n%s\n%s\n' \
+    '#!/usr/bin/env python3' \
+    'import os, sys, time' \
+    'open(os.environ["A9_MARK"], "w").write(" ".join(sys.argv[1:]))' \
+    "time.sleep($1)" > "$A9SCR/atlas_auth.py"
+}
+
+# ── the keyless line NAMES THE REMEDY, absolutely, and is still exactly one line
+A9EXP="[notrest] notrest is part of Atlas — no Atlas identity on this machine. Log in:  python3 $A9HD/../skills/atlas/scripts/atlas_auth.py login   (or place the owner's access key). The harness is inactive here."
+run_bounded "$CAP" "$A9EST" "$WORK/a9-empty" "$A9P/hooks/session-start.sh" \
+  -u NOTREST_ACCESS_KEY "NOTREST_HOME=$A9NOKEY"
+A9GOT="$(cat "$WORK/out")"
+if [ "$A9GOT" = "$A9EXP" ]; then
+  ok "4.9: the keyless line is EXACTLY the remedy line — one line, and the path is absolute"
+else no "4.9: the keyless line names the login command verbatim" "got: $A9GOT"; fi
+# the ONE sanctioned exemption is still bounded: eval's _is_dark anchors on this prefix
+case "$A9GOT" in
+  "[notrest] notrest is part of Atlas"*) ok "4.9: the remedy line still OPENS with the anchored Atlas sentence (eval's dark test)" ;;
+  *) no "4.9: the keyless line keeps its anchored opening" "starts: $(printf '%s' "$A9GOT" | head -c 40)" ;;
+esac
+# and the install-fault distinction survives the rewrite
+A9NOATLAS="$WORK/a9noatlas"; mkdir -p "$A9NOATLAS/.access"; cp -Rp "$HSRC" "$A9NOATLAS/hooks"
+cp -p "$A9P/.access/keys.sha256" "$A9NOATLAS/.access/"
+run_bounded "$CAP" "$A9EST" "$WORK/a9-empty" "$A9NOATLAS/hooks/session-start.sh" \
+  -u NOTREST_ACCESS_KEY "NOTREST_HOME=$A9NOKEY"
+case "$(cat "$WORK/out")" in
+  *"no Atlas identity on this machine"*"the key verifier is missing from this install"*)
+      ok "4.9: a missing verifier is STILL named as an install fault, on the new line" ;;
+  *) no "4.9: the noverifier tail survives the new banner" "got: $(head -c 100 "$WORK/out")" ;;
+esac
+
+# ── DORMANT: no token, no client — nothing runs, nothing is said. This is the baseline
+# every other arm is measured against, and the state every machine is in until A3 lands.
+rm -f "$A9MARK"
+a9run
+A9_RC0="$RB_RC"; A9_T0="$RB_SEC_F"; cp "$WORK/out" "$WORK/a9-out-dormant"
+A9_E0="$(wc -c < "$WORK/err" | tr -d ' ')"
+if [ "$A9_RC0" = "0" ] && [ ! -e "$A9MARK" ] && [ "$A9_E0" = "0" ]; then
+  ok "4.9: no atlas-token and no client -> the hook is byte-for-byte its old self (rc=0, ${A9_T0}s)"
+else no "4.9: the dormant case is untouched" "rc=$A9_RC0 err=${A9_E0}B mark=$([ -e "$A9MARK" ] && echo fired || echo none)"; fi
+
+# ── the client on disk but NO TOKEN: still nothing. The token is the trigger — a machine
+# that has never logged in must not start calling a hub every session.
+a9stub 0
+rm -f "$A9MARK"
+a9run
+sleep 0.5
+if [ "$RB_RC" = "0" ] && [ ! -e "$A9MARK" ]; then
+  ok "4.9: a client with NO token fires nothing (login, not installation, is the trigger)"
+else no "4.9: no token -> no call" "rc=$RB_RC mark=$([ -e "$A9MARK" ] && echo fired || echo none)"; fi
+
+# ── IT REALLY FIRES, with the contract's own arguments. Without this arm every timing
+# arm below would pass against a deleted feature.
+printf 'fake.token.value' > "$A9HOME/atlas-token"
+rm -f "$A9MARK"
+a9run
+A9_W=0
+while [ ! -e "$A9MARK" ] && [ "$A9_W" -lt 40 ]; do sleep 0.1; A9_W=$((A9_W + 1)); done
+A9ARGV="$(cat "$A9MARK" 2>/dev/null)"
+if [ "$A9ARGV" = "sessionstart --budget-ms 2000" ]; then
+  ok "4.9: with a token the hook fires 'atlas_auth.py sessionstart --budget-ms 2000' (§2 refresh + §4 revoked)"
+else no "4.9: the hook fires the sessionstart call" "argv=${A9ARGV:-<never fired>}"; fi
+
+# ── AND NEVER WAITS FOR IT. The stub now hangs for a minute; the hook must cost the same
+# as the dormant case (a fork), not a minute. Best-of-3 each way — a single sample on a
+# loaded box measures the box, not the hook.
+a9best() {  # a9best -> the fastest of three keyed runs, in seconds, on stdout
+  local b="" i=0
+  while [ "$i" -lt 3 ]; do
+    i=$((i + 1)); a9run
+    b="$(python3 -c 'import sys;a,b=sys.argv[1:3];print(b if a=="" else min(a,b,key=float))' "$b" "$RB_SEC_F")"
+  done
+  printf '%s' "$b"
+}
+rm -f "$A9HOME/atlas-token"; a9stub 0
+A9_BEFORE="$(a9best)"
+printf 'fake.token.value' > "$A9HOME/atlas-token"; a9stub 60
+rm -f "$A9MARK"
+A9_AFTER="$(a9best)"
+A9_DELTA="$(python3 -c 'import sys;print("%.3f" % (float(sys.argv[2])-float(sys.argv[1])))' "$A9_BEFORE" "$A9_AFTER")"
+if [ "$RB_RC" = "0" ] && python3 -c 'import sys;sys.exit(0 if float(sys.argv[1]) < 0.5 else 1)' "$A9_DELTA"; then
+  ok "4.9: a client that HANGS FOR 60s costs the hook ${A9_DELTA}s (dormant ${A9_BEFORE}s -> live ${A9_AFTER}s) — fire-and-forget, not wait-and-see"
+else no "4.9: a hanging client must not grow the hook's wall clock" "rc=$RB_RC dormant=${A9_BEFORE}s live=${A9_AFTER}s delta=${A9_DELTA}s"; fi
+# nothing the client does reaches the session: stdout is byte-identical to the dormant run
+if cmp -s "$WORK/out" "$WORK/a9-out-dormant" && [ "$(wc -c < "$WORK/err" | tr -d ' ')" = "0" ]; then
+  ok "4.9: with the client live, stdout is byte-identical to the dormant run and stderr is empty"
+else no "4.9: the identity call injects nothing into the session" "$(cmp "$WORK/out" "$WORK/a9-out-dormant" 2>&1 | head -c 90)"; fi
+
+# ── A SYMLINKED CLIENT IS REFUSED, NOT FOLLOWED. This path is EXECUTED; estate-root.sh
+# refuses a symlinked atlas.py for exactly this reason and the rule cannot stop here.
+mv "$A9SCR/atlas_auth.py" "$WORK/a9-elsewhere.py"
+ln -sf "$WORK/a9-elsewhere.py" "$A9SCR/atlas_auth.py"
+rm -f "$A9MARK"
+a9run
+sleep 0.5
+if [ "$RB_RC" = "0" ] && [ ! -e "$A9MARK" ]; then
+  ok "4.9: a SYMLINKED atlas_auth.py is refused, never followed (the hook executes this path)"
+else no "4.9: a symlinked client is refused" "rc=$RB_RC mark=$([ -e "$A9MARK" ] && echo fired || echo none)"; fi
+rm -f "$A9SCR/atlas_auth.py"
+
+# ── the client GONE with a token still in the store: no error, nothing said. An install
+# that predates A3 — or a partial update — must not start printing to every session.
+rm -f "$A9MARK"
+a9run
+A9_E1="$(wc -c < "$WORK/err" | tr -d ' ')"
+if [ "$RB_RC" = "0" ] && [ "$A9_E1" = "0" ] && cmp -s "$WORK/out" "$WORK/a9-out-dormant"; then
+  ok "4.9: a token with NO client on disk is silent — no error, stdout unchanged"
+else no "4.9: a missing client is a no-op" "rc=$RB_RC err=${A9_E1}B stdout differs=$(cmp -s "$WORK/out" "$WORK/a9-out-dormant" || echo yes)"; fi
+
+# ── THE WATCHDOG REAPS. Fire-and-forget owes one more thing than speed: a client that
+# wedges must DIE, not be leaked to sit in the process table until the machine reboots.
+# macOS ships no timeout(1), so the hook carries its own sleeper-killer, and this is the
+# only arm that proves it. Watched from BIRTH TO DEATH — an arm that only checks "nothing
+# is running by now" is the same vacuous pass as one that never fires anything at all.
+A9_W=0                                        # drain what the arms above left mid-flight
+while pgrep -f "$A9PAT" >/dev/null 2>&1 && [ "$A9_W" -lt 120 ]; do sleep 0.1; A9_W=$((A9_W + 1)); done
+a9stub 60; rm -f "$A9MARK"; a9run             # one fresh client, hung for a minute
+A9_W=0
+while ! pgrep -f "$A9PAT" >/dev/null 2>&1 && [ "$A9_W" -lt 30 ]; do sleep 0.1; A9_W=$((A9_W + 1)); done
+A9_BORN=""; pgrep -f "$A9PAT" >/dev/null 2>&1 && A9_BORN=1
+A9_W=0
+while pgrep -f "$A9PAT" >/dev/null 2>&1 && [ "$A9_W" -lt 150 ]; do sleep 0.1; A9_W=$((A9_W + 1)); done
+if [ -n "$A9_BORN" ] && ! pgrep -f "$A9PAT" >/dev/null 2>&1; then
+  ok "4.9: a wedged client is REAPED — alive after the hook returned, killed ~$((A9_W / 10))s later, of its 60"
+else
+  A9_STILL="$(pgrep -f "$A9PAT" >/dev/null 2>&1 && echo yes || echo no)"   # BEFORE the pkill
+  pkill -f "$A9PAT" 2>/dev/null
+  no "4.9: a wedged client is killed, not leaked" "born=${A9_BORN:-no (the arm never saw it — vacuous)} still-alive-after-15s=$A9_STILL"
+fi
+
 echo "── syntax: every shipped hook still parses"
 SYNBAD=""
 for f in "$H"/*.sh; do
