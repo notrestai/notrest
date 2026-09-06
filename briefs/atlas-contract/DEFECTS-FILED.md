@@ -16,3 +16,10 @@ Batched by the seat; sent to the Atlas seat by message when the wave lands. Each
   `wip/unverified` (a verdict nobody took is not a proof) — confirm or add the row · A5.
 - HUB-CONTRACT §2 · `<project>` must match `[a-z][a-z0-9-]{0,31}` but no refusal code is named for a bad one (a bare 404
   today); the plugin refuses client-side before sending · A5.
+
+## Rulings received (Atlas commit 3f4390f, 2026-09-06)
+1. §9 helper ACCEPTED: the line now declines (prints nothing, exit 0) when the token file is absent — A4 + A7 updated.
+2. server.mjs CONFIRMED, fixed with two guard lines (history + diff branches) — vendored copy patched to the new hash.
+3. HUB §3 amended (basename ruling, atlas-ingest-<project>) — whole file requested for the banked copy.
+4. HUB §4 row added: `not-run` → wip (check bound) / todo, evidence unverified — matches A5's mapping.
+5. HUB §2: bad project name → `400 project: must match [a-z][a-z0-9-]{0,31}` on every /v1 route.

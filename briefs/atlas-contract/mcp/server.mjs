@@ -195,6 +195,7 @@ function fixtureGet(path, { text }) {
   if (m) {
     if (m[1] !== "kernel") return nf;
     const snap = wires.get("kernel");
+    if (!snap) return { ok: false, status: 404, error: "project: no snapshot stored" };   // fixture wire absent: refuse, never throw
     const limit = Math.min(Number(q.get("limit")) || CAP.historyDefault, CAP.historyMax);
     // shapes mirror the live hub as observed on 2026-09-05: ts is the stamp STRING the key
     // is built from, not an epoch number.
@@ -208,6 +209,7 @@ function fixtureGet(path, { text }) {
   m = /^\/v1\/diff\/([^/]+)$/.exec(p);
   if (m) {
     if (m[1] !== "kernel") return nf;
+    if (!wires.get("kernel")) return { ok: false, status: 404, error: "project: no snapshot stored" };
     return { ok: true, data: {
       project: "kernel",
       // the live hub answers with snapshot OBJECTS here, not bare keys

@@ -5,11 +5,11 @@ the plugin seat's machine and the Atlas repo has no remote. Provenance per file:
 
 | file | source | commit on the Atlas side | received |
 |---|---|---|---|
-| IDENTITY-CONTRACT.md | /work/atlas/IDENTITY-CONTRACT.md | 192b6f5 | 2026-09-06, message 1 of 3 |
-| HUB-CONTRACT.md | /work/atlas/HUB-CONTRACT.md | 14fb684 | 2026-09-06, message 2 of 3 |
+| IDENTITY-CONTRACT.md | /work/atlas/IDENTITY-CONTRACT.md | 192b6f5 — SUPERSEDED at 3f4390f (§9 helper amended); whole-file resend requested | 2026-09-06, message 1 of 3 |
+| HUB-CONTRACT.md | /work/atlas/HUB-CONTRACT.md | 14fb684 — SUPERSEDED at 3f4390f (§2/§3/§4 amended); whole-file resend requested | 2026-09-06, message 2 of 3 |
 | SCHEMA-v1.md | /work/atlas/hub/SCHEMA-v1.md | (not stated) | 2026-09-06, message 3 of 3 |
 | kit/to-wire.py | /work/atlas/kit/to-wire.py | 9755517 | 2026-09-06; 403 lines, 16057 bytes, sha256 887eb618… VERIFIED on save; compiles. Reference converter for the KERNEL snapshot shape (modules/nodes/tests/MODULE-MAP) — lane A5 writes the plugin's own converter to the same laws |
-| mcp/server.mjs | /work/atlas/mcp/server.mjs | 9755517 | 2026-09-06, four chunks reassembled; 928 lines, 50107 bytes, sha256 6479dfda… VERIFIED; `node --check` ok on node v25 |
+| mcp/server.mjs | /work/atlas/mcp/server.mjs | 3f4390f (was 9755517) | 2026-09-06, four chunks reassembled then patched by the seat with Atlas's two guard lines; 930 lines, 50344 bytes, sha256 91e70c1f… VERIFIED against the new stated hash; `node --check` ok |
 | kit/verify-token.py | /work/atlas/kit/verify-token.py | 7b11e86 | 2 chunks reassembled; 562 lines, 19826 bytes, sha256 5679cb1d… VERIFIED; compiles under /usr/bin/python3 3.9.6 |
 | kit/test-verify-token.sh | /work/atlas/kit/test-verify-token.sh | 7b11e86 | 2 chunks; one blank line lost in transit before line 210 and restored by hash search; 407 lines, sha256 5d2251c1… VERIFIED; `bash -n` ok |
 | kit/fixtures/tokens/rfc8032-7.1.json | /work/atlas/kit/fixtures/tokens/rfc8032-7.1.json | 7b11e86 | 27 lines, 1486 bytes, sha256 d995ba33… VERIFIED (static RFC vectors, not credentials) |
