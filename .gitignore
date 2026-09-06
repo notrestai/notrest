@@ -41,3 +41,7 @@ compile/*/.fixture-scratch/
 /atlas/snapshots/
 /atlas/board.json
 /atlas/board/
+
+# python bytecode caches (hooks import the atlas modules on consumer machines)
+__pycache__/
+*.pyc

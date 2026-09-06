@@ -103,6 +103,13 @@ This estate's own bank goes RED from the first wave-A commit: `gate:the-laws-hol
 atlas modules talk to the hub) and SCRIPT-OWNS-SCANNING (SKILL.md does not yet name the new scripts). Both are
 laws catching up with a deliberate change, fixed by B2 and B3; the ship gate requires the board GREEN again.
 
+## Open records from wave A (carried to the ship)
+
+- A2: the Linux `/etc/machine-id` branch is unexercised here (no Linux box); the NAS exercises it first — the
+  fingerprint's container branch is proven by stubbing. `PINNED_JWKS` is empty until Atlas publishes its key
+  (I-A); the seat fills the pin at the ship. Measured on this Mac: import 7.6 ms, fingerprint 15.3 ms (one
+  `ioreg`), verdict 0.1 ms with no token — inside the 100 ms hook budget.
+
 ## Bounds stated now
 
 - Built against the mock until I-A is live; the transport base URL and the signing key are the

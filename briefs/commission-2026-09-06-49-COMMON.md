@@ -69,3 +69,11 @@ DEFECTS IN THE CONTRACT: <section: one fact> … or none
 OPEN: <what you could not verify and why> … or none
 CARD: TESTS <n ran, n passed> · OPEN <n> · FINDINGS <n> · LEARNINGS <one line each, or none>
 ```
+
+## Amendments (seat, during the wave — every lane applies them at its gate)
+
+- **HOME (A2 defect, accepted):** `HOME = os.path.expanduser(os.environ.get("NOTREST_HOME") or "~/.notrest")` —
+  the env value is expanded too, matching atlas.py's `notrest_home()`. One home for the hook and the script.
+- `verdict` reason on success is the string `"ok"`.
+- `PINNED_JWKS` stays empty until Atlas publishes its signing key (hub phase I-A); the seat fills it at the ship.
+  Until then a machine with no JWKS cache reads `keys: none pinned or cached` — that is the truthful state.
