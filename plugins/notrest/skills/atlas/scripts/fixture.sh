@@ -395,6 +395,193 @@ t "--dry-run exits 0" "$?" "0"
 [ -e "$D/SIDE-EFFECT" ] && no "--dry-run ran a test" || ok "--dry-run ran no test"
 [ -d "$D/atlas/snapshots" ] && no "--dry-run wrote a snapshot" || ok "--dry-run wrote no snapshot"
 
+echo "── L · the identity token, beside the ring (4.9)"
+# THE SHAPE IS THE CONTRACT, not the exit code. estate-root.sh matches the substring
+# `notrest-access: ok ring=<12hex>` and atlas-bank-hook.sh matches the prefix, so a TOKEN
+# admission has to emit that same line with the same ring hash — a second shape would be a
+# hook change nobody asked for — plus ` via=token` so a human reading the stream can still
+# tell which credential opened the gate. Every arm here asserts the LINE.
+TOKMOD="$NOTREST_PLUGIN_ROOT/skills/atlas/scripts/atlas_token.py"
+MOCKHUB="$NOTREST_PLUGIN_ROOT/skills/atlas/scripts/mockhub.py"
+if ! command -v node >/dev/null 2>&1; then
+  # Not a skip. A token gate that could not be exercised is not a green token gate, and
+  # the wave's other fixtures (fixture-auth) refuse the same way.
+  no "the token arms need node to sign fixtures — none on PATH, so this gate is not green"
+elif [ ! -f "$TOKMOD" ]; then
+  no "atlas_token.py is missing from this install — key --check cannot admit a token"
+else
+TH="$W/tokhome"; mkdir -p "$TH"
+TFP="$(python3 "$TOKMOD" fingerprint --home "$TH" 2>/dev/null)"
+RINGHASH="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()[:12])' "$KR")"
+cat > "$W/mktoken.js" <<'JSEOF'
+// node (OpenSSL Ed25519) signs; atlas.py -> atlas_token.py -> the vendored verifier
+// checks. Two implementations must agree. Fresh key each run, public half only.
+const crypto = require('crypto'), fs = require('fs');
+const HOME = process.argv[2], MID = process.argv[3], KIND = process.argv[4];
+const b64u = (b) => Buffer.from(b).toString('base64')
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const k = crypto.generateKeyPairSync('ed25519');
+fs.writeFileSync(HOME + '/atlas-jwks.json', JSON.stringify(
+  { keys: [Object.assign({ kid: 'fixture-kid' }, k.publicKey.export({ format: 'jwk' }))] }));
+const now = Math.floor(Date.now() / 1000);
+const over = KIND === 'expired' ? { iat: now - 40 * 86400, exp: now - 86400 } : {};
+const c = Object.assign({
+  iss: 'https://atlas.not.rest', aud: 'notrest-plugin',
+  sub: 'fixture@nava.house', seat: 'fixture-seat', mid: MID,
+  prj: ['notrest-plugin'], scp: ['harness', 'push'],
+  jti: 'fixture-jti', iat: now, exp: now + 30 * 86400 }, over);
+const h = b64u(JSON.stringify({ alg: 'EdDSA', typ: 'JWT', kid: 'fixture-kid' }));
+const p = b64u(JSON.stringify(c));
+fs.writeFileSync(HOME + '/atlas-token', h + '.' + p + '.'
+  + b64u(crypto.sign(null, Buffer.from(h + '.' + p, 'ascii'), k.privateKey)) + '\n',
+  { mode: 0o600 });
+JSEOF
+node "$W/mktoken.js" "$TH" "$TFP" good || no "could not sign a fixture token"
+
+TOKOUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$TH" python3 "$A" key --check --keyring "$KR" 2>/dev/null)"; TOKRC=$?
+t "a token admits this machine" "$TOKRC" "0"
+t "…with the SAME sentinel and the SAME ring hash, plus via=token" \
+  "$TOKOUT" "notrest-access: ok ring=$RINGHASH path=$KR via=token"
+printf '%s' "$TOKOUT" | grep -qE '^notrest-access: ok ring=[0-9a-f]{12} ' \
+  && ok "…and still matches the substring the hooks grep for" \
+  || no "the hooks' substring no longer matches — [$TOKOUT]"
+QOUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$TH" python3 "$A" key --check --quiet --keyring "$KR" 2>/dev/null)"
+t "--quiet keeps the sentinel and nothing else" \
+  "$QOUT" "notrest-access: ok ring=$RINGHASH path=$KR via=token"
+printf '%s' "$TOKOUT$QOUT" | grep -qE 'fixture@nava.house|fixture-seat' \
+  && no "a sub or a seat reached hook stdout" || ok "nothing personal on hook stdout"
+
+RH="$W/ringhome"; mkdir -p "$RH"; printf '%s\n' "$KEY" > "$RH/access-key"
+ROUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$RH" python3 "$A" key --check --keyring "$KR" 2>/dev/null)"; RRC=$?
+t "a ring key still admits" "$RRC" "0"
+t "…with the 4.8 sentinel, unchanged — no suffix" "$ROUT" "notrest-access: ok ring=$RINGHASH path=$KR"
+
+NH="$W/nokeyhome"; mkdir -p "$NH"
+NOUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$NH" HOME="$W/nohome" python3 "$A" key --check --quiet --keyring "$KR" 2>/dev/null)"; NRC=$?
+t "neither credential → 7" "$NRC" "7"
+t "…and --quiet stdout is empty on 7" "$(printf '%s' "$NOUT" | wc -c | tr -d ' ')" "0"
+
+EH="$W/expiredring"; mkdir -p "$EH"; node "$W/mktoken.js" "$EH" "$TFP" expired
+printf '%s\n' "$KEY" > "$EH/access-key"
+EOUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$EH" python3 "$A" key --check --keyring "$KR" 2>/dev/null)"; ERC=$?
+t "an expired token with a valid ring is admitted BY THE RING" "$ERC" "0"
+t "…and the sentinel carries no via=token" "$EOUT" "notrest-access: ok ring=$RINGHASH path=$KR"
+
+EN="$W/expirednoring"; mkdir -p "$EN"; node "$W/mktoken.js" "$EN" "$TFP" expired
+EERR="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$EN" HOME="$W/nohome" python3 "$A" key --check --keyring "$KR" 2>&1 >/dev/null)"; EERC=$?
+t "an expired token and no ring → 7" "$EERC" "7"
+printf '%s\n' "$EERR" | grep -q '^RED exp: expired$' \
+  && ok "…and the refusal says which fact, on stderr" \
+  || no "no 'RED exp: expired' on stderr — got [$(printf '%s' "$EERR" | head -n1)]"
+
+LOUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$TH" python3 "$A" key --list --keyring "$KR" 2>/dev/null)"
+printf '%s' "$LOUT" | grep -q 'token: present (sub=fixture@nava.house, exp=' \
+  && ok "key --list names the token's sub and expiry (the only place a sub is printed)" \
+  || no "key --list did not name the token"
+TOKVAL="$(cat "$TH/atlas-token" 2>/dev/null)"
+if [ -z "$TOKVAL" ]; then no "no fixture token to grep for — the leak arm cannot run"
+elif printf '%s' "$LOUT" | grep -qF -- "$TOKVAL"; then no "key --list leaked the token value"
+else ok "key --list never prints the token itself"; fi
+(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$NH" python3 "$A" key --list --keyring "$KR" 2>/dev/null | grep -q 'token: none')
+t "…and says 'token: none' where there is none" "$?" "0"
+
+echo "── L1 · login and the credential helper, against the mock hub"
+if [ ! -f "$MOCKHUB" ]; then
+  no "mockhub.py is missing from this install — the login arm cannot run"
+else
+LH="$W/loginhome"; mkdir -p "$LH"
+RGC="$HOME/.gitconfig"
+RGC_BEFORE="$(shasum -a 256 "$RGC" 2>/dev/null | cut -d' ' -f1)"
+python3 "$MOCKHUB" --port 0 --mode ok --auto-approve-after 1 --print-port \
+  > "$W/hub.port" 2>"$W/hub.log" &
+HUBPID=$!
+HUBURL=""; i=0
+while [ $i -lt 150 ]; do
+  p="$(head -n1 "$W/hub.port" 2>/dev/null)"
+  case "$p" in ''|*[!0-9]*) ;; *) HUBURL="http://127.0.0.1:$p"; break ;; esac
+  sleep 0.1; i=$((i + 1))
+done
+if [ -z "$HUBURL" ]; then
+  no "mockhub never printed a port — $(head -n2 "$W/hub.log" 2>/dev/null)"
+else
+  LOGOUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$LH" python3 "$A" login --base "$HUBURL" 2>/dev/null)"; LRC=$?
+  t "login against the mock hub exits 0" "$LRC" "0"
+  printf '%s' "$LOGOUT" | grep -q '^atlas-token: ok sub=' \
+    && ok "login prints the token line" || no "login printed no token line — [$LOGOUT]"
+  printf '%s' "$LOGOUT" | grep -q '^helper: installed for 127.0.0.1' \
+    && ok "…and installs the credential helper by default" || no "no helper line — [$LOGOUT]"
+  [ -f "$LH/atlas-token" ] && ok "the token is stored under NOTREST_HOME" || no "no token stored"
+  t "…0600, and only 0600" \
+    "$(python3 -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o777)' "$LH/atlas-token" 2>/dev/null)" "384"
+  LTOK="$(cat "$LH/atlas-token" 2>/dev/null)"
+  if [ -z "$LTOK" ]; then no "login stored no token — the leak arm cannot run"
+  elif printf '%s' "$LOGOUT" | grep -qF -- "$LTOK"; then no "login printed the token value"
+  else ok "login never prints the token itself"; fi
+  [ -n "$(git config --global --get "credential.$HUBURL.helper" 2>/dev/null)" ] \
+    && ok "the helper landed in the SANDBOXED git config" \
+    || no "no helper line in $GIT_CONFIG_GLOBAL"
+  t "…and the real ~/.gitconfig is byte-identical afterwards" \
+    "$(shasum -a 256 "$RGC" 2>/dev/null | cut -d' ' -f1)" "$RGC_BEFORE"
+  (unset NOTREST_ACCESS_KEY; NOTREST_HOME="$LH" python3 "$A" key --check --quiet --keyring "$KR" >/dev/null 2>&1)
+  t "the token login just stored admits this machine end-to-end" "$?" "0"
+  # `git credential fill` never contacts the hub — it runs the configured helper — but it
+  # asks for `protocol=https`, so the round trip is only observable over an https URL. The
+  # mock hub is http, hence a second install here rather than a reuse of the login one.
+  HTTPS_HUB="https://127.0.0.1:${HUBURL##*:}"
+  (unset NOTREST_ACCESS_KEY; NOTREST_HOME="$LH" python3 "$A" helper --install --hub "$HTTPS_HUB" >/dev/null 2>&1)
+  t "helper --install exits 0" "$?" "0"
+  (unset NOTREST_ACCESS_KEY; NOTREST_HOME="$LH" python3 "$A" helper --check --hub "$HTTPS_HUB" >/dev/null 2>&1)
+  t "helper --check round-trips git credential fill" "$?" "0"
+  HCOUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$LH" python3 "$A" helper --check --hub "$HTTPS_HUB" 2>/dev/null)"
+  if [ -z "$LTOK" ]; then no "no token to check the helper's silence against"
+  elif printf '%s' "$HCOUT" | grep -qF -- "$LTOK"; then no "helper --check printed the token it received"
+  else ok "helper --check says whether, never what"; fi
+  (unset NOTREST_ACCESS_KEY; NOTREST_HOME="$LH" python3 "$A" helper --uninstall --hub "$HTTPS_HUB" >/dev/null 2>&1)
+  t "helper --uninstall exits 0" "$?" "0"
+  (unset NOTREST_ACCESS_KEY; NOTREST_HOME="$LH" python3 "$A" helper --check --hub "$HTTPS_HUB" >/dev/null 2>&1)
+  t "…and --check then says 1" "$?" "1"
+fi
+kill "$HUBPID" 2>/dev/null; wait "$HUBPID" 2>/dev/null
+fi
+
+echo "── L2 · red-first: each new guard removed, its arm must go wrong"
+amut(){ # NAME SED-EXPR — echoes the mutant path, or records a FAIL and returns 1
+  local d="$W/amut/$1"; mkdir -p "$d"
+  cp "$A" "$d/atlas.py"
+  sed -i.bak "$2" "$d/atlas.py"; rm -f "$d/atlas.py.bak"
+  if cmp -s "$A" "$d/atlas.py"; then
+    no "mutant $1 — the sed changed nothing (the guard moved; this arm is asleep)"; return 1
+  fi
+  python3 -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$d/atlas.py" 2>/dev/null \
+    || { no "mutant $1 — does not parse"; return 1; }
+  echo "$d/atlas.py"
+}
+AM1="$(amut notoken 's/^    if tok_ok:$/    if False:/')"
+[ -n "${AM1:-}" ] && {
+  (unset NOTREST_ACCESS_KEY; NOTREST_HOME="$TH" python3 "$AM1" key --check --quiet --keyring "$KR" >/dev/null 2>&1)
+  t "without the token branch, the token no longer admits" "$?" "7"
+}
+AM2="$(amut noviatag 's/ + " via=token"//')"
+[ -n "${AM2:-}" ] && {
+  M2OUT="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$TH" python3 "$AM2" key --check --quiet --keyring "$KR" 2>/dev/null)"
+  [ "$M2OUT" = "notrest-access: ok ring=$RINGHASH path=$KR" ] \
+    && ok "the via=token arm has teeth (a mutant that drops the suffix is caught)" \
+    || no "dropping via=token changed nothing the arm can see — [$M2OUT]"
+}
+AM3="$(amut nored 's/if tok_reason != "token: absent":/if False:/g')"
+[ -n "${AM3:-}" ] && {
+  M3ERR="$(unset NOTREST_ACCESS_KEY; NOTREST_HOME="$EN" HOME="$W/nohome" python3 "$AM3" key --check --keyring "$KR" 2>&1 >/dev/null)"
+  printf '%s' "$M3ERR" | grep -q 'RED exp: expired' \
+    && no "the RED-on-stderr arm cannot fail — the mutant printed it anyway" \
+    || ok "the RED-on-stderr arm has teeth"
+}
+AM4="$(amut nolisttoken 's/print("  token: none")/pass/')"
+[ -n "${AM4:-}" ] && {
+  (unset NOTREST_ACCESS_KEY; NOTREST_HOME="$NH" python3 "$AM4" key --list --keyring "$KR" 2>/dev/null | grep -q 'token: none')
+  t "without the list line, 'token: none' disappears" "$?" "1"
+}
+fi
+
 echo ""
 echo "atlas fixture: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

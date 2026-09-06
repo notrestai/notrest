@@ -38,8 +38,15 @@ VERBS AND EXIT CODES — the contract other lanes call:
      (the key file, and every private-store path, resolve under ${NOTREST_HOME:-~/.notrest}
       — the same store the hooks read, because two answers to one gate question is worse
       than a closed gate)
+     on 0 stdout may also carry the suffix ` via=token` — the SAME sentinel with the SAME
+     ring hash, admitted by an Atlas identity token rather than a ring key. Hooks match a
+     substring and need no change; nothing personal (sub, seat, expiry) is ever on stdout.
   atlas.py key --revoke <label>                     0 = removed · 7 = no such label
-  atlas.py key --list                               labels + dates (never a key)
+  atlas.py key --list                               labels + dates (never a key), and
+                                                    whether a token is present (the ONLY
+                                                    place a sub is printed; not --quiet)
+  atlas.py login [--base B] [--home H] [--no-install-helper]   0 = token stored · 7 = no token
+  atlas.py helper --install|--check|--uninstall [--hub U]      0 = ok · 1 = not · 2 = usage
   atlas.py bank [--root .] [--adapter file|http|none] [--hub D] [--no-board] [--dry-run]
   atlas.py wire [--root .] [--prove] [--unwire] [--force]
   atlas.py status [--root .] [--json]
@@ -303,6 +310,85 @@ def resolve_key(args):
     return "", ""
 
 
+# ---------------------------------------------------------------------------
+# 4.9 — the identity token, beside the ring
+# ---------------------------------------------------------------------------
+# TWO CREDENTIALS, ONE SENTINEL. The hooks admit this machine on a SUBSTRING of what
+# `key --check` puts on stdout (estate-root.sh matches `notrest-access: ok ring=<12hex>`,
+# atlas-bank-hook.sh matches the prefix), and that 12 hex is sha256 of the committed RING
+# FILE's bytes: it proves atlas.py read the same ring the hook hashed, and it says nothing
+# about HOW the machine was admitted. So a token admission emits the SAME line with the
+# SAME hash and one suffix — ` via=token`. No hook changes, no second shape for anything
+# to match, and a human reading the stream can still tell which credential opened the
+# gate. Nothing personal rides on hook stdout: no sub, no seat, no expiry. Those live in
+# `key --list`, which no hook parses.
+ATLAS_HUB = "https://atlas.not.rest"    # IDENTITY-CONTRACT §2; ATLAS_HUB_BASE overrides
+SIBLING_DIRS = (HERE, os.path.join(PLUGIN_ROOT, "skills", "atlas", "scripts"))
+_SIBLINGS = {}
+
+
+def sibling(name):
+    """Import a 4.9 sibling module (atlas_token / atlas_auth / atlas_helper), LAZILY.
+
+    Beside this file first, then under PLUGIN_ROOT — the same reason GATE_CHECK resolves
+    that way: a COPY of this script under test must still find the real modules, or every
+    mutation arm would look like a broken gate when it only moved the file. Raises
+    ImportError when the module is not in this install, so each caller decides what a
+    partial install means instead of dying on it."""
+    if name in _SIBLINGS:
+        return _SIBLINGS[name]
+    import importlib.util
+    for directory in SIBLING_DIRS:
+        path = os.path.join(directory, name + ".py")
+        if not os.path.isfile(path):
+            continue
+        spec = importlib.util.spec_from_file_location("notrest_" + name, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        _SIBLINGS[name] = mod
+        return mod
+    raise ImportError("no %s.py beside atlas.py or under %s" % (name, PLUGIN_ROOT))
+
+
+def iso_epoch(epoch):
+    try:
+        return datetime.fromtimestamp(int(epoch), timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "?"
+
+
+def token_present(home):
+    """Cheap SHAPE probe: could this machine hold an identity token at all?
+
+    The point is COST. A ring-only machine must not import an Ed25519 verifier on every
+    hook, so the token path is entered only when a file that could be a token exists.
+    Shape only — atlas_token.looks_like_token() remains the authority on what a token is."""
+    if os.path.isfile(os.path.join(home, "atlas-token")):
+        return True
+    for line in (read(os.path.join(home, "access-key")) or "").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            # the transition case (RULING §2): access-key may hold a JWT, not an nrk_ key
+            return line.count(".") == 2 and not line.startswith(KEY_PREFIX)
+    return False
+
+
+def token_verdict(home=None):
+    """(ok, reason, claims) from atlas_token — without importing it when there is no token.
+
+    A missing or broken verifier reads as "this machine has no token", never as a
+    traceback out of a hook: doctor names a broken install, the gate simply closes."""
+    home = home or notrest_home()
+    if not token_present(home):
+        return False, "token: absent", None
+    try:
+        return sibling("atlas_token").verdict(home)
+    except Exception:                                    # noqa: BLE001
+        return False, "token: absent", None
+
+
 def cmd_key(args):
     path = keyring_path(args)
     picked = [bool(args.mint), bool(args.check), bool(args.revoke), bool(args.list)]
@@ -319,10 +405,23 @@ def cmd_key(args):
     if args.list:
         if not rows:
             print("atlas keyring: %s — empty (no keys minted)" % path)
-            return 0
-        print("atlas keyring: %s" % path)
-        for h, label, date, _ in rows:
-            print("  %-24s minted %s  sha256 %s…" % (label, date, h[:12]))
+        else:
+            print("atlas keyring: %s" % path)
+            for h, label, date, _ in rows:
+                print("  %-24s minted %s  sha256 %s…" % (label, date, h[:12]))
+        if not args.quiet:
+            # THE ONLY PLACE A SUB IS PRINTED. `--check`'s stdout is a machine channel a
+            # hook parses and must stay impersonal; this is a human asking what this
+            # machine holds, so the answer may name the person it belongs to.
+            ok, reason, claims = token_verdict()
+            if ok:
+                print("  token: present (sub=%s, exp=%s)"
+                      % (claims.get("sub"), iso_epoch(claims.get("exp"))))
+            elif reason == "token: absent":
+                print("  token: none")
+            else:
+                # present but refused — say which fact, never "invalid" alone
+                print("  token: present (invalid — %s)" % reason)
         return 0
 
     if args.mint:
@@ -373,9 +472,28 @@ def cmd_key(args):
         return 0
 
     # --check: the gate every hook calls. Quiet by contract; the exit code is the answer.
+    #
+    # ORDER (4.9): the TOKEN first, then the ring. A machine that has been through `login`
+    # holds a token; a machine that has not still holds an nrk_ key; both open the same
+    # gate with the same line. The token is looked for only when a token FILE exists, so a
+    # ring-only machine's cost is exactly what it was in 4.8.
+    tok_ok, tok_reason, _tok_claims = token_verdict()
+    if tok_ok:
+        print(SENTINEL % (ring_digest(path), path) + " via=token")
+        if not args.quiet:
+            sys.stderr.write("atlas key: valid — an Atlas identity token admits this "
+                             "machine (%s)\n"
+                             % os.path.join(notrest_home(), "atlas-token"))
+        return 0
+
     key, where = resolve_key(args)
     if not key:
         if not args.quiet:
+            # A token that is merely ABSENT is not news — most machines are ring-only. A
+            # token that was REFUSED is: say the one fact on stderr, where no hook parses,
+            # so "the harness stopped admitting me" has an answer that is not a guess.
+            if tok_reason != "token: absent":
+                sys.stderr.write("RED %s\n" % tok_reason)
             sys.stderr.write("atlas key --check: no access key on this machine "
                              "(looked at --key, NOTREST_ACCESS_KEY, ~/.notrest/access-key)\n")
         return 7
@@ -391,6 +509,8 @@ def cmd_key(args):
                                  % (label, date, where))
             return 0
     if not args.quiet:
+        if tok_reason != "token: absent":
+            sys.stderr.write("RED %s\n" % tok_reason)
         sys.stderr.write("atlas key --check: the key from %s is not in %s\n" % (where, path))
     return 7
 
@@ -406,6 +526,88 @@ def key_ok(args_keyring=None):
     a = _A()
     a.check = True
     return cmd_key(a) == 0
+
+
+# ---------------------------------------------------------------------------
+# login, and the git credential helper (4.9)
+# ---------------------------------------------------------------------------
+def hub_base(explicit=None):
+    return (explicit or os.environ.get("ATLAS_HUB_BASE") or ATLAS_HUB).rstrip("/")
+
+
+def cmd_login(args):
+    """§1 device flow: ask the hub, show the URL and the code, poll, store, verify.
+
+    The token lands 0600 at <home>/atlas-token and is never printed — the two result lines
+    carry three claims and a host, nothing else. The conversation (URL, code, waiting) goes
+    to stderr where the human is; the result goes to stdout."""
+    home = os.path.expanduser(args.home) if args.home else notrest_home()
+    base = hub_base(args.base)
+    try:
+        auth = sibling("atlas_auth")
+    except ImportError:
+        sys.stderr.write("atlas login: atlas_auth.py is not in this install — "
+                         "run doctor before trusting anything else here\n")
+        return 7
+    try:
+        claims = auth.device_login(home, base, out=sys.stderr)
+    except Exception as exc:                             # AuthError carries one fact
+        sys.stderr.write("atlas login: %s\n" % exc)
+        return 7
+    print("atlas-token: ok sub=%s seat=%s exp=%s"
+          % (claims.get("sub"), claims.get("seat"), iso_epoch(claims.get("exp"))))
+    if args.install_helper:
+        try:
+            helper = sibling("atlas_helper")
+        except ImportError:
+            sys.stderr.write("atlas login: atlas_helper.py is not in this install; "
+                             "the token is stored and valid\n")
+            return 0
+        if helper.install(base):
+            print("helper: installed for %s" % helper.hub_host(base))
+        else:
+            # The identity succeeded and that is what 0 means here. A half-done job still
+            # gets said out loud rather than inferred from a missing line.
+            sys.stderr.write("atlas login: the token is stored and valid, but "
+                             "`git config --global` refused the credential helper — "
+                             "install it later with: atlas.py helper --install\n")
+    return 0
+
+
+def cmd_helper(args):
+    """§9's one-line git credential helper: install it, PROVE it, remove it.
+
+    `--check` is a round trip through `git credential fill`, not a look at the config: a
+    helper that is configured and does not answer is the failure worth catching."""
+    picked = [bool(args.install), bool(args.check), bool(args.uninstall)]
+    if sum(1 for x in picked if x) != 1:
+        sys.stderr.write("atlas helper: choose exactly one of --install / --check / "
+                         "--uninstall\n")
+        return 2
+    try:
+        helper = sibling("atlas_helper")
+    except ImportError:
+        sys.stderr.write("atlas helper: atlas_helper.py is not in this install\n")
+        return 1
+    hub = hub_base(args.hub)
+    host = helper.hub_host(hub)
+    if args.install:
+        if helper.install(hub):
+            print("helper: installed for %s" % host)
+            return 0
+        sys.stderr.write("atlas helper: `git config --global` refused the helper\n")
+        return 1
+    if args.uninstall:
+        if helper.uninstall(hub):
+            print("helper: removed for %s" % host)
+            return 0
+        sys.stderr.write("atlas helper: no helper configured for %s\n" % host)
+        return 1
+    if helper.check(hub):
+        print("helper: ok for %s" % host)
+        return 0
+    print("helper: not installed for %s" % host)
+    return 1
 
 
 # ---------------------------------------------------------------------------
@@ -1318,6 +1520,25 @@ def main(argv=None):
     k.add_argument("--keyring", default=None, help="keyring path (default: the plugin's)")
     k.add_argument("--quiet", action="store_true", help="say nothing; the exit code answers")
     k.set_defaults(f=cmd_key)
+
+    lg = sub.add_parser("login", help="Atlas device login — store and verify the token")
+    lg.add_argument("--base", default=None,
+                    help="hub base URL (default: $ATLAS_HUB_BASE, else %s)" % ATLAS_HUB)
+    lg.add_argument("--home", default=None,
+                    help="private store (default: ${NOTREST_HOME:-~/.notrest})")
+    lg.add_argument("--install-helper", dest="install_helper", action="store_true",
+                    default=True, help="also install the git credential helper (default)")
+    lg.add_argument("--no-install-helper", dest="install_helper", action="store_false",
+                    help="store the token only; leave git config alone")
+    lg.set_defaults(f=cmd_login)
+
+    hp = sub.add_parser("helper", help="the git credential helper for the hub host")
+    hp.add_argument("--install", action="store_true", help="write the §9 line to git config")
+    hp.add_argument("--check", action="store_true", help="round-trip `git credential fill`")
+    hp.add_argument("--uninstall", action="store_true", help="remove the §9 line")
+    hp.add_argument("--hub", default=None,
+                    help="hub base URL (default: $ATLAS_HUB_BASE, else %s)" % ATLAS_HUB)
+    hp.set_defaults(f=cmd_helper)
 
     b = sub.add_parser("bank", help="derive the map from exit codes, snapshot it, push it")
     b.add_argument("--root", default=".")
