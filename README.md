@@ -56,6 +56,18 @@ is authorized, and checks Codex's own install inventory. It does not claim Claud
 SessionStart/UserPromptSubmit/SubagentStop hooks run on Codex. See
 `plugins/notrest/docs/CODEX.md` for the exact capability map.
 
+## Atlas identity
+
+From v4.9 (unreleased) a machine's identity is a portal-issued Atlas token, not only a
+hand-carried key: `atlas.py login` (or the Atlas MCP's `atlas_connect` tool, for a browser
+session) writes `~/.notrest/atlas-token`, verified OFFLINE against a vendored RFC 8032 verifier
+and refreshed before it expires. The access-key ring stays in place as the owner's break-glass.
+**One egress destination** — `ATLAS_HUB_BASE` (default `https://atlas.not.rest`), reached only by
+the named atlas modules, never synchronously from a hook. **Secrets by path, never by value** —
+the identity token, the per-project ingest secret, and the view secret each live at a fixed path
+(0600), and no script ever prints, logs, or commits one. Full connect flow, for both a browser
+machine and a headless one: [docs/ATLAS-CONNECT.md](docs/ATLAS-CONNECT.md).
+
 ## Plugins
 
 ### notrest (`notrest`)

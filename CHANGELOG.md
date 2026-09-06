@@ -1,5 +1,50 @@
 # Changelog — the notrest harness
 
+## 4.9.0 — unreleased
+
+**The portal issues the plugin's identity now; the ring becomes the break-glass.** 4.8.1 admitted
+a machine by a key the owner minted by hand and hashed against a keyring committed to the repo.
+4.9 admits it by an Atlas identity token the portal issues to a paying seat.
+
+- **Atlas identity token.** One Ed25519-signed JWT (`alg EdDSA`, kid; claims
+  iss/aud/sub/seat/mid/prj/scp/jti/iat/exp, 30-day life) at `${NOTREST_HOME:-~/.notrest}/atlas-token`
+  (the `access-key` name is still read as an alias in transition). Verified OFFLINE with the
+  vendored RFC 8032 verifier (`skills/atlas/scripts/vendor/verify_token.py`, Atlas-authored, its
+  license line kept verbatim); refresh fires when exp−now < 7 d, the revoked list is cached at
+  SessionStart, and an offline holder simply dies at exp.
+- **`atlas.py login`** is the canonical, user-facing command for the device flow — a headless box
+  logs in with a URL and a code from the Atlas portal — and the same file gains `credential-helper`
+  and `helper` subcommands that install the host-scoped git credential line, so the token never
+  enters a URL, a clone command, or a commit. `atlas_auth.py` and `atlas_helper.py` are the modules
+  underneath it.
+- **The ring stays, as the owner's break-glass.** `atlas.py key --mint/--check/--revoke` still
+  admits a machine when no token is in place — the two verifiers cover each other rather than
+  competing.
+- **The push adapter sends for real.** A bank snapshot converts to the `atlas-hub/1` wire per
+  SCHEMA-v1 (`atlas_wire.py`) and pushes over HTTP, bearer-authenticated by the ingest secret at
+  `~/.notrest/credentials/atlas-ingest-<project>` (the legacy `credentials/atlas-token` name is
+  still read, with one warning to stderr, until this release retires it) — the `http` adapter 4.8.0
+  shipped as a proven stub now actually sends.
+- **The Atlas MCP read server** ships inside the plugin (`skills/atlas/mcp/server.mjs`, vendored
+  byte-exact, plus an `atlas-mcp.sh` wrapper) and registers through a plugin-root `.mcp.json`;
+  `doctor` names a missing `node` (>= 22, a soft dependency) as one line, never a harness failure.
+- **SessionStart refreshes identity** — token refresh and the revoked-list fetch, backgrounded and
+  bounded to ≤ 2 s, silent on failure, so a session start never hangs on the hub.
+- **NETWORK-EGRESS, amended.** 4.9 deliberately changes the no-egress promise: the ONE permitted
+  destination is `ATLAS_HUB_BASE` (default `atlas.not.rest`), reached only from the named atlas
+  modules (`atlas_auth.py`, `atlas_wire.py`, `atlas.py`'s push) and never synchronously from a hook.
+  A loopback-bound mock hub (`mockhub.py`) is allowlisted by its bind, not by exception.
+- **`docs/ATLAS-CONNECT.md`** — the bootstrap page the hub serves verbatim to a new consumer: the
+  credential helper installed before any marketplace command (the clone runs as the system git,
+  which knows nothing about the plugin), path A for a machine with a browser, path B for a headless
+  NAS or container running the device flow.
+
+Stated bounds: the live hub arm is unproven outside the Atlas sandbox — nothing here claims "live"
+without that arm's own exit code; the Linux `/etc/machine-id` fingerprint branch is unexercised on
+this Mac (proven by stubbing) and gets its first real exercise on the NAS; `PINNED_JWKS` stays
+empty (`{"keys": []}`) until Atlas publishes its signing key at hub phase I-A, so a machine with no
+JWKS cache today reads `keys: none pinned or cached` — the truthful state, not a bug.
+
 ## 4.8.1 — 2026-09-06
 
 **The bank runs its tests in a clean environment.** The first live bank on the plugin's own

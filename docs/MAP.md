@@ -4,6 +4,12 @@
 **Mapped:** 2026-09-01, by probing the live tree — every claim below comes from a file read
 or a command run during the mapping session. Nothing here is recalled.
 
+**Delta note (2026-09-06, docket 4.9, unreleased):** the atlas instrument entries and the three
+estate-file rows marked "4.9, unreleased" below were added ahead of a full remap, to point at real
+files this session confirmed on disk. Everything else on this page — including the counts in the
+next paragraph and the v4.8.1 skill/hook totals — still reflects the 2026-09-01 pass and is not
+re-verified here.
+
 **Distribution (v4.8.0).** notrest is **part of Atlas** and ships to Atlas customers. The
 repository is private, so installing takes two things: access to `notrestai/notrest`, and an
 owner-issued key at `~/.notrest/access-key` (or `NOTREST_ACCESS_KEY`). Installed without a valid
@@ -492,6 +498,30 @@ the STALE-at-5 path was gated by the seat on this repo before the upgrade landed
   `--check` is what every hook asks: **0** valid · **7** none or invalid.
 - **Fixture:** `scripts/fixture.sh` — scratch git repos in a mktemp dir, a scratch keyring,
   no network, the real repository never touched.
+- **`atlas_token.py check`** *(4.9, unreleased)* — the Atlas identity token, read from
+  `atlas-token` (alias `access-key`) and verified OFFLINE against the vendored RFC 8032 verifier
+  plus the pinned/cached JWKS. **Exits:** `0` valid · `7` none or invalid.
+- **`atlas_auth.py login`** *(4.9, unreleased)* — the device flow: prints a URL and a code, polls
+  the hub, writes the token bound to this machine's fingerprint; also `refresh` and
+  `fetch_revoked`, both silent on failure.
+- **`atlas_helper.py`** *(4.9, unreleased)* — the git credential-helper protocol, reached through
+  `atlas.py credential-helper` / `atlas.py helper --install`: answers `git credential fill` for the
+  hub host only, so a token never enters a URL, a clone command, or a commit.
+- **`atlas_wire.py`** *(4.9, unreleased)* — converts a bank snapshot to the `atlas-hub/1` wire
+  (SCHEMA-v1) and is the live `http` push adapter: bearer by the ingest secret at
+  `~/.notrest/credentials/atlas-ingest-<project>`, idempotent by head + body hash.
+- **`mockhub.py --port N [--selftest]`** *(4.9, unreleased)* — one stdlib `http.server` standing
+  in for the Atlas hub in fixtures (device flow, refresh, revoked, JWKS, snapshot push); no real
+  network, bound to 127.0.0.1 only.
+- **`vendor/verify_token.py`** *(4.9, unreleased)* — the Atlas-authored RFC 8032 verifier,
+  vendored byte-exact with its license line kept verbatim — the one file under `skills/atlas/`
+  this plugin does not own the text of.
+- **`mcp/server.mjs` + `mcp/atlas-mcp.sh`** *(4.9, unreleased)* — the Atlas MCP **read** server,
+  vendored byte-exact and registered through the plugin-root `.mcp.json`; needs `node >= 22` (a
+  soft dependency doctor names in one line, never a harness failure).
+- **Fixtures** *(4.9, unreleased)*: `fixture-token.sh`, `fixture-auth.sh`, `fixture-wire.sh`,
+  `fixture-helper.sh` (under `skills/atlas/scripts/`), `fixture-mcp.sh` (under
+  `skills/atlas/mcp/`) — each red-first, run against the mock hub, never the live one.
 
 ### watch — "are these facts still true?"
 - **`watch.py due`** — which watched claims are past their re-check date — and, since 4.7.0,
@@ -655,6 +685,9 @@ since moved.
 | **`atlas/`** | **`atlas.py`**, at every commit through the tracked post-commit hook: `snapshots/<commit>.json` written once at `0444` and **never rewritten** (a re-bank that derives differently *reports the difference* and leaves the snapshot standing), `board.json`, `map.md`, `config.json`, and the `born-red.json` receipt. | The Atlas hub via the push adapter, `atlas.py status`, and any session asking whether HEAD is banked. Immutable per commit — history is what the estate looked like when that commit landed. |
 | **`pulse/`** | The **`estate-pulse.sh` daemon**, in the background. `pulse.json` plus one `.txt` per instrument. | `session-start.sh` (echoes the reading), `coord-nudge.sh` (surfaces swarm alerts), the cockpit. Derived and disposable — the ledgers remain the record. |
 | **`~/.notrest/auto-build/`** | The **owner**, via `compile.py auto --on`. Deliberately outside the estate. | `session-start.sh`, to decide whether to echo a nudge or a directive. Authorizes *dispatching* a lane and nothing else — installing is still the owner's act. |
+| **`docs/ATLAS-CONNECT.md`** *(4.9, unreleased)* | The **A7 lane**, from the Atlas identity contract; the hub serves it back verbatim through the `atlas_connect` MCP tool. | A new consumer connecting a machine to Atlas — path A (browser) or path B (headless); the seat, resyncing it whenever the contract's own text changes. |
+| **`docs/DOCKET-4.9.md`** *(4.9, unreleased)* | The **Director seat**, as the wave plan (lanes, fixed interfaces, done-whens, rulings) for the Atlas identity build. | Every dispatched lane (reads its own row before its commission), the owner approving the wave, and this map. |
+| **`briefs/atlas-contract/`** *(4.9, unreleased)* | The **Atlas seat**, sent verbatim by cross-session message and banked here with provenance (`README.md`, hash-verified); never edited — `RULINGS-2026-09-06.md` is the delta. | The lanes implementing identity, push and the MCP server (`atlas_token.py`, `atlas_auth.py`, `atlas_wire.py`, the vendored `verify_token.py` and `mcp/server.mjs`), which cite it as the interface of record. |
 
 ---
 
